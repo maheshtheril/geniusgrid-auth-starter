@@ -1,0 +1,19 @@
+# node / build
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+.yarn/*
+.pnpm-store/
+.vscode/
+.idea/
+
+# env
+.env
+backend/.env
+frontend/.env
+
+# misc
+.DS_Store
