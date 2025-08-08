@@ -7,8 +7,7 @@ import { pool } from '../src/db/index.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const sqlPath = path.join(__dirname, '..', 'migrations', '00_auth_core.sql');
-const sql = fs.readFileSync(sqlPath, 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '00_auth_core.sql'), 'utf8');
 
 (async () => {
   try {
