@@ -1,0 +1,9 @@
+{
+  "routes": [
+    { "type": "rewrite", "source": "/api/*", "destination": "https://geniusgrid-auth-starter.onrender.com/api/:splat" },
+    { "type": "rewrite", "source": "/verify-email", "destination": "/index.html" },
+    { "type": "rewrite", "source": "/login", "destination": "/index.html" },
+    { "type": "rewrite", "source": "/signup", "destination": "/index.html" },
+    { "type": "rewrite", "source": "/*", "destination": "/index.html" }
+  ]
+}
