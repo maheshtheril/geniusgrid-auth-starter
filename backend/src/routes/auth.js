@@ -45,7 +45,7 @@ router.post('/login', async (req, res) => {
   res.cookie('gg_session', raw, {
     httpOnly: true,
     secure: true,
-    sameSite: 'lax',
+    sameSite: 'none',
     path: '/',
     maxAge: SESSION_TTL_HOURS * 60 * 60 * 1000,
   });
