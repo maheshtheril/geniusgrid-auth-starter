@@ -3,6 +3,7 @@ import { Routes, Route, Link } from 'react-router-dom';
 import Signup from './pages/Signup.jsx';
 import Login from './pages/Login.jsx';
 import VerifyEmail from './pages/VerifyEmail.jsx';
+import Landing from './pages/Landing';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         </nav>
       </header>
       <Routes>
+         <Route path="/" element={<Landing />} />
         <Route path="/" element={<Signup />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/login" element={<Login />} />
