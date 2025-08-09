@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* App shell */
+:root { color-scheme: dark; }
+html, body, #root { height: 100%; }
+body { @apply bg-bg text-white antialiased; }
+
+/* Tokens */
+.text-muted { color: theme(colors.muted); }
+.border-border { border-color: theme(colors.border); }
+
+/* Primitives */
+.glass { backdrop-filter: saturate(140%) blur(8px); background: rgba(255,255,255,.04); box-shadow: theme(boxShadow.glass); }
+.panel { @apply glass border border-border; }
+.chip  { @apply px-3 py-1 rounded-xl border border-border glass text-sm; }
+.brand-name { @apply font-extrabold tracking-tight; }
+
+/* Inputs */
+input, select, textarea { @apply w-full rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35; }
+button { @apply outline-none; }
