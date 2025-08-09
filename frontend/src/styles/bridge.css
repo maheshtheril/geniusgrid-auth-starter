@@ -1,0 +1,8 @@
+:root{
+  --bg:#0b0b14; --muted:#9ca3af; --border:rgba(255,255,255,0.12);
+}
+html,body,#root{background:#0b0b14;color:#e5e7eb}
+.text-muted{color:var(--muted)}
+.border-border{border-color:var(--border)}
+.glass{background:rgba(255,255,255,.04);backdrop-filter:blur(8px);border:1px solid var(--border)}
+.btn{cursor:pointer}
