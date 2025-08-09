@@ -1,4 +1,4 @@
-// backend/src/index.js (or your actual entry file)
+// backend/src/server.js
 import 'dotenv/config';
 import express from 'express';
 import cookieParser from 'cookie-parser';
@@ -19,17 +19,45 @@ app.set('trust proxy', 1);
 const FRONTEND_ORIGIN  = process.env.FRONTEND_ORIGIN  || 'https://geniusgrid-web.onrender.com';
 const MARKETING_ORIGIN = process.env.MARKETING_ORIGIN || 'https://geniusgrid-landing.onrender.com';
 
+// Add any additional Render domains here if you use a different site URL:
+const EXTRA_ORIGINS = (process.env.EXTRA_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
 const PUBLIC_ALLOWED = [
   'http://localhost:5173',
   'http://localhost:4173',
   MARKETING_ORIGIN,
   FRONTEND_ORIGIN,
+  ...EXTRA_ORIGINS,
 ].filter(Boolean);
 
 const APP_ALLOWED = [
   'http://localhost:5173',
   FRONTEND_ORIGIN,
+  ...EXTRA_ORIGINS,
 ].filter(Boolean);
+
+// Dynamic CORS helper so we return Access-Control-Allow-Origin only for allowed origins.
+// Also allow requests with no Origin (curl, SSR, health checks).
+function makeCors(allowedList, opts = {}) {
+  const allow = new Set(allowedList);
+  return cors({
+    origin(origin, cb) {
+      if (!origin) return cb(null, true); // non-browser or same-origin
+      if (allow.has(origin)) return cb(null, true);
+      return cb(new Error(`CORS: origin not allowed -> ${origin}`), false);
+    },
+    methods: ['GET', 'HEAD', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: !!opts.credentials, // keep false for public endpoints
+    maxAge: 86400,
+  });
+}
+
+const corsPublic = makeCors(PUBLIC_ALLOWED);
+const corsApp    = makeCors(APP_ALLOWED, { credentials: true });
 
 /* -------------------- Core middleware (order matters) -------------------- */
 app.use(morgan('combined'));
@@ -37,29 +65,8 @@ app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 app.use(helmet({ contentSecurityPolicy: false }));
 
-// ❌ Do NOT add any global app.use(cors(...)) — keep CORS scoped below.
-
-// Public v1 API (no credentials)
-app.use('/api/public/v1', cors({
-  origin: PUBLIC_ALLOWED,
-  credentials: false,
-  methods: ['GET', 'HEAD', 'OPTIONS'],
-  maxAge: 86400,
-}));
-
-// Legacy public API (keep if you still hit /api/public/*)
-app.use('/api/public', cors({
-  origin: PUBLIC_ALLOWED,
-  credentials: false,
-  methods: ['GET', 'HEAD', 'OPTIONS'],
-  maxAge: 86400,
-}));
-
-// Auth/session API (cookies) – only the app FE
-app.use('/api/auth', cors({
-  origin: APP_ALLOWED,
-  credentials: true,
-}));
+// Preflight for everything (so OPTIONS never 404s)
+app.options('*', corsPublic);
 
 /* -------------------- DB -------------------- */
 const pool = new pg.Pool({
@@ -82,11 +89,10 @@ function parseModulesParam(mods) {
     .split(',')
     .map(s => s.trim().toLowerCase())
     .filter(Boolean)
-    .filter((s, i, a) => a.indexOf(s) === i); // dedupe
+    .filter((s, i, a) => a.indexOf(s) === i);
 }
 
 function makeShortCode() {
-  // 10-char, URL-safe, uppercase
   return crypto.randomBytes(8).toString('base64url').slice(0, 10).toUpperCase();
 }
 
@@ -107,13 +113,16 @@ app.get('/__routes', (req, res) => {
 /* -------------------- Health -------------------- */
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-/* -------------------- v1: Modules (landing uses this) -------------------- */
-app.get('/api/public/v1/modules', async (req, res, next) => {
+/* -------------------- PUBLIC v1 (landing) -------------------- */
+// Apply public CORS to the whole v1 subtree
+app.use('/api/public/v1', corsPublic);
+
+// Route-level CORS too (belt & suspenders), guarantees ACAO on this endpoint.
+app.get('/api/public/v1/modules', corsPublic, async (req, res, next) => {
   try {
     const { rows } = await pool.query('SELECT * FROM public.v_modules_public_v1');
     return sendCacheJson(req, res, rows);
   } catch (err) {
-    // Fallback if the view doesn't exist
     if (err?.code !== '42P01') return next(err);
     try {
       const { rows } = await pool.query(`
@@ -137,12 +146,11 @@ app.get('/api/public/v1/modules', async (req, res, next) => {
   }
 });
 
-/* -------------------- v1: Start signup + pre-signup -------------------- */
-app.get('/api/public/v1/start-signup', async (req, res, next) => {
+// start-signup (keep v1 path — update your frontend to use /api/public/v1/start-signup)
+app.get('/api/public/v1/start-signup', corsPublic, async (req, res, next) => {
   try {
     const raw = parseModulesParam(req.query.modules);
     const plan = String(req.query.plan || 'free').toLowerCase();
-
     if (raw.length === 0) return res.status(400).json({ message: 'modules required' });
 
     const { rows } = await pool.query(
@@ -166,7 +174,7 @@ app.get('/api/public/v1/start-signup', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-app.get('/api/public/v1/pre-signup/:code', async (req, res, next) => {
+app.get('/api/public/v1/pre-signup/:code', corsPublic, async (req, res, next) => {
   try {
     const { rows } = await pool.query(
       `SELECT modules, plan_code
@@ -179,15 +187,20 @@ app.get('/api/public/v1/pre-signup/:code', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-/* -------------------- Existing routers (keep) -------------------- */
-app.use('/api', modulesRouter);
-app.use('/api/public', publicAuth);
-app.use('/api/auth', auth);
+/* -------------------- LEGACY PUBLIC (optional) -------------------- */
+app.use('/api/public', corsPublic, publicAuth);
+
+/* -------------------- APP AUTH (cookies) -------------------- */
+app.use('/api/auth', corsApp, auth);
+
+/* -------------------- Other routers -------------------- */
+app.use('/api', corsApp, modulesRouter);
 
 /* -------------------- 404 & Error -------------------- */
 app.use((req, res) => res.status(404).json({ message: 'Not Found' }));
 app.use((err, _req, res, _next) => {
-  console.error('Unhandled error:', err);
+  console.error('Unhandled error:', err?.message);
+  if (process.env.NODE_ENV !== 'production') console.error(err);
   res.status(500).json({ message: 'Internal Server Error' });
 });
 
@@ -196,5 +209,6 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`🚀 GeniusGrid backend running on port ${port}`);
   console.log('Public allowed origins:', PUBLIC_ALLOWED);
+  console.log('App allowed origins   :', APP_ALLOWED);
   console.log('BOOT OK – serving /api/public/v1/modules', new Date().toISOString());
 });
