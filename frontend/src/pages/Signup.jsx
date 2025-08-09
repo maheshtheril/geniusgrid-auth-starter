@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../lib/api";
 
 const LS_KEY = "gg_selected_modules";
 
-// ---------------- UI primitives (tiny) ----------------
+// ------------------- tiny UI primitives -------------------
+function SectionTitle({ children }) {
+  return <div className="text-sm font-semibold mb-2">{children}</div>;
+}
 function Label({ htmlFor, children, hint }) {
   return (
     <div className="flex items-baseline justify-between">
@@ -13,22 +16,16 @@ function Label({ htmlFor, children, hint }) {
     </div>
   );
 }
-function FieldError({ children }) {
-  if (!children) return null;
-  return (
-    <div className="text-xs text-red-300 mt-1">
-      {children}
-    </div>
-  );
+function FieldError({ show, children }) {
+  if (!show) return null;
+  return <div className="text-xs text-red-300 mt-1">{children}</div>;
 }
 function Pill({ children, onRemove }) {
   return (
     <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border text-sm glass">
       {children}
       {onRemove && (
-        <button className="text-muted hover:opacity-80" onClick={onRemove} aria-label="Remove">
-          ×
-        </button>
+        <button className="text-muted hover:opacity-80" onClick={onRemove} aria-label="Remove">×</button>
       )}
     </span>
   );
@@ -37,18 +34,34 @@ function Toggle({ id, checked, onChange, label }) {
   return (
     <label htmlFor={id} className="inline-flex items-center gap-2 cursor-pointer select-none">
       <input id={id} type="checkbox" className="sr-only" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <span
-        className={`w-10 h-6 rounded-full relative transition-all ${checked ? "bg-cyan-400/80" : "bg-white/10 border border-border"}`}
-        role="switch" aria-checked={checked}
-      >
+      <span className={`w-10 h-6 rounded-full relative transition-all ${checked ? "bg-cyan-400/80" : "bg-white/10 border border-border"}`} role="switch" aria-checked={checked}>
         <span className={`absolute top-0.5 ${checked ? "left-5" : "left-0.5"} w-5 h-5 rounded-full bg-white/90 transition-all`} />
       </span>
       <span className="text-sm text-muted">{label}</span>
     </label>
   );
 }
+function Stepper({ steps, current }) {
+  return (
+    <ol className="flex items-center gap-3 mt-6" aria-label="Signup steps">
+      {steps.map((s, i) => {
+        const done = i < current;
+        const active = i === current;
+        return (
+          <li key={s} className="flex items-center gap-2">
+            <span className={`w-6 h-6 rounded-full grid place-items-center text-xs font-bold ${done ? "bg-emerald-500 text-bg" : active ? "bg-cyan-400 text-bg" : "bg-white/10 text-muted border border-border"}`}>
+              {done ? "✓" : i + 1}
+            </span>
+            <span className={`text-sm ${active ? "text-white" : "text-muted"}`}>{s}</span>
+            {i < steps.length - 1 && <span className="w-8 h-[2px] bg-white/10" />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
-// ---------------- helpers ----------------
+// ------------------- constants -------------------
 const COUNTRIES = [
   { code: "IN", name: "India", currency: "INR", phone: "+91", tz: "Asia/Kolkata" },
   { code: "US", name: "United States", currency: "USD", phone: "+1", tz: "America/New_York" },
@@ -66,10 +79,11 @@ const INDUSTRIES = [
   "Services", "Manufacturing", "Retail / eCommerce", "Healthcare",
   "IT / SaaS", "Finance", "Education", "Logistics", "Other"
 ];
-const EMP_SIZE = [
-  "1–5", "6–20", "21–50", "51–200", "201–500", "501–1000", "1000+"
-];
+const EMP_SIZE = [ "1–5", "6–20", "21–50", "51–200", "201–500", "501–1000", "1000+" ];
 
+const STEPS = ["Company", "Contact", "Address", "Localization", "Security", "Review"];
+
+// ------------------- helpers -------------------
 function scorePassword(pw) {
   let s = 0;
   if (!pw) return 0;
@@ -79,21 +93,27 @@ function scorePassword(pw) {
   if (/[a-z]/.test(pw)) s += 1;
   if (/[0-9]/.test(pw)) s += 1;
   if (/[^A-Za-z0-9]/.test(pw)) s += 1;
-  return Math.min(s, 5); // 0..5
+  return Math.min(s, 5);
 }
+const emailRx = /^\S+@\S+\.\S+$/i;
+const urlRx = /^https?:\/\/.+/i;
 
+// ------------------- component -------------------
 export default function Signup() {
   const nav = useNavigate();
   const [sp] = useSearchParams();
   const code = sp.get("code");
 
-  // ---------- catalog / selection ----------
-  const [catalog, setCatalog] = useState([]);          // from DB
-  const [selected, setSelected] = useState(new Set()); // chosen modules
+  // modules
+  const [catalog, setCatalog] = useState([]);
+  const [selected, setSelected] = useState(new Set());
   const [planCode, setPlanCode] = useState("free");
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  // ---------- core account ----------
+  // steps
+  const [step, setStep] = useState(0);
+
+  // company
   const [tenantName, setTenantName] = useState("");
   const [website, setWebsite] = useState("");
   const [industry, setIndustry] = useState("");
@@ -117,32 +137,30 @@ export default function Signup() {
   const [timezone, setTimezone] = useState("Asia/Kolkata");
   const [currency, setCurrency] = useState("INR");
 
-  // auth
+  // security
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [showPw, setShowPw] = useState(false);
   const [agree, setAgree] = useState(false);
   const [marketingOptin, setMarketingOptin] = useState(true);
 
-  // state
+  // misc
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [touched, setTouched] = useState({});
-
   const pwRef = useRef(null);
   const [caps, setCaps] = useState(false);
 
-  // Load catalog for the picker (public endpoint)
+  // initial: load catalog
   useEffect(() => {
     api.get("/public/modules")
       .then(({ data }) => setCatalog(Array.isArray(data) ? data : []))
       .catch(() => setCatalog([]));
   }, []);
 
-  // If a pre-signup code exists, hydrate selection from server
+  // hydrate selection via pre-signup code OR localStorage
   useEffect(() => {
     if (!code) {
-      // Or carry over previous selection if user came here directly
       try {
         const local = JSON.parse(localStorage.getItem(LS_KEY) || "[]");
         if (Array.isArray(local)) setSelected(new Set(local));
@@ -155,26 +173,25 @@ export default function Signup() {
         setSelected(new Set(mods));
         if (data?.plan_code) setPlanCode(String(data.plan_code));
       })
-      .catch(() => {}); // expired code is fine; user can still signup
+      .catch(() => {});
   }, [code]);
 
-  // Keep localStorage in sync so the post-login installer can use it
+  // sync selected to localStorage for post-login installer
   useEffect(() => {
     localStorage.setItem(LS_KEY, JSON.stringify(Array.from(selected)));
   }, [selected]);
 
-  // Adjust defaults when country changes
+  // localized defaults by country
   useEffect(() => {
-    const c = COUNTRIES.find((c) => c.code === country);
+    const c = COUNTRIES.find((x) => x.code === country);
     if (!c) return;
     setCurrency((cur) => cur || c.currency);
     setTimezone((tz) => tz || c.tz);
-    // auto-prefill phone dial code if empty
     if (!phone) setPhone(c.phone + " ");
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [country]);
 
-  // caps lock hint
+  // caps lock indicator
   useEffect(() => {
     const el = pwRef.current;
     if (!el) return;
@@ -189,38 +206,65 @@ export default function Signup() {
 
   const selectedList = useMemo(() => Array.from(selected), [selected]);
   const pwScore = scorePassword(password);
-  const emailValid = /^\S+@\S+\.\S+$/.test(email);
-  const websiteValid = !website || /^https?:\/\/.+/i.test(website);
+  const emailValid = emailRx.test(email);
+  const websiteValid = !website || urlRx.test(website);
 
   function toggleModule(code) {
     const next = new Set(selected);
     next.has(code) ? next.delete(code) : next.add(code);
     setSelected(next);
   }
-
   function markTouched(k) {
     setTouched((t) => ({ ...t, [k]: true }));
   }
 
-  function getFieldError() {
-    if (!tenantName.trim()) return "Please enter your company/tenant name.";
-    if (!fullName.trim()) return "Please enter your name.";
-    if (!emailValid) return "Please enter a valid email.";
-    if (!password || password.length < 8) return "Password must be at least 8 characters.";
-    if (password !== confirm) return "Passwords do not match.";
-    if (!agree) return "Please accept the terms to continue.";
-    if (!websiteValid) return "Website must start with http(s)://";
-    return "";
+  // -------- step validation guards (like Odoo) --------
+  function validateStep(i) {
+    switch (i) {
+      case 0:
+        if (!tenantName.trim()) return "Please enter your company/tenant name.";
+        if (website && !websiteValid) return "Website must start with http(s)://";
+        return "";
+      case 1:
+        if (!fullName.trim()) return "Please enter your name.";
+        if (!emailValid) return "Please enter a valid email.";
+        return "";
+      case 2:
+        // address optional in many setups; keep minimal
+        return "";
+      case 3:
+        if (!language) return "Choose a language.";
+        if (!timezone) return "Enter a valid time zone (e.g. Asia/Kolkata).";
+        if (!currency) return "Enter a currency (e.g. INR).";
+        return "";
+      case 4:
+        if (!password || password.length < 8) return "Password must be at least 8 characters.";
+        if (password !== confirm) return "Passwords do not match.";
+        if (!agree) return "Please accept the terms to continue.";
+        return "";
+      case 5:
+        return "";
+      default:
+        return "";
+    }
+  }
+
+  function nextStep() {
+    const msg = validateStep(step);
+    setError(msg);
+    if (msg) return;
+    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  }
+  function prevStep() {
+    setError("");
+    setStep((s) => Math.max(s - 1, 0));
   }
 
   async function onSubmit(e) {
     e.preventDefault();
-    setError("");
-    const msg = getFieldError();
-    if (msg) {
-      setError(msg);
-      return;
-    }
+    const msg = validateStep(4); // ensure security step valid
+    setError(msg);
+    if (msg) return;
 
     setSubmitting(true);
     try {
@@ -255,7 +299,6 @@ export default function Signup() {
         password,
         marketingOptin,
       };
-
       await api.post("/public/signup", payload);
       nav("/verify-email");
     } catch (err) {
@@ -269,12 +312,15 @@ export default function Signup() {
     }
   }
 
+  // ------------------- layout -------------------
   return (
-    <div className="max-w-4xl mx-auto px-5 py-10">
+    <div className="max-w-5xl mx-auto px-5 py-10">
       <h1 className="text-3xl font-extrabold">Create your GeniusGrid account</h1>
       <p className="text-muted mt-1">Free plan to start. Upgrade anytime.</p>
 
-      {/* Selected modules preview (like Odoo) */}
+      <Stepper steps={STEPS} current={step} />
+
+      {/* Selected modules strip */}
       <div className="glass rounded-xl p-4 mt-6">
         <div className="flex items-center justify-between">
           <div className="font-semibold">Selected modules</div>
@@ -291,334 +337,396 @@ export default function Signup() {
             <span className="text-muted text-sm">No modules selected yet.</span>
           )}
           {selectedList.map((m) => (
-            <Pill key={m} onRemove={() => toggleModule(m)}>
-              {m}
-            </Pill>
+            <Pill key={m} onRemove={() => toggleModule(m)}>{m}</Pill>
           ))}
         </div>
       </div>
 
-      {/* Signup form */}
-      <form onSubmit={onSubmit} className="glass rounded-xl p-5 mt-6 grid gap-5">
+      {/* form card */}
+      <form className="glass rounded-xl p-5 mt-6 grid gap-6" onSubmit={onSubmit}>
         {error && (
           <div className="rounded-lg border border-red-500/30 bg-red-500/10 text-red-200 px-3 py-2">
             {error}
           </div>
         )}
 
-        {/* Company */}
-        <div>
-          <div className="text-sm font-semibold mb-2">Company</div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="tenant">Company / Tenant</Label>
-              <input
-                id="tenant"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
-                value={tenantName}
-                onChange={(e) => setTenantName(e.target.value)}
-                onBlur={() => markTouched("tenant")}
-                placeholder="e.g. Acme Corp"
-                required
-              />
-              <FieldError>{touched.tenant && !tenantName.trim() ? "Required" : ""}</FieldError>
-            </div>
-            <div>
-              <Label htmlFor="website" hint="Optional">Website</Label>
-              <input
-                id="website"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
-                value={website}
-                onChange={(e) => setWebsite(e.target.value)}
-                onBlur={() => markTouched("website")}
-                placeholder="https://example.com"
-              />
-              <FieldError>{touched.website && !websiteValid ? "Must start with http(s)://" : ""}</FieldError>
-            </div>
-            <div>
-              <Label htmlFor="industry">Industry</Label>
-              <select
-                id="industry"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={industry}
-                onChange={(e) => setIndustry(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="employees">Employees</Label>
-              <select
-                id="employees"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={employees}
-                onChange={(e) => setEmployees(e.target.value)}
-              >
-                <option value="">Select…</option>
-                {EMP_SIZE.map((i) => <option key={i} value={i}>{i}</option>)}
-              </select>
-            </div>
-            <div className="md:col-span-2">
-              <Label htmlFor="gst">GST / VAT (optional)</Label>
-              <input
-                id="gst"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={gstVat}
-                onChange={(e) => setGstVat(e.target.value)}
-                placeholder="e.g. 22AAAAA0000A1Z5"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Contact */}
-        <div>
-          <div className="text-sm font-semibold mb-2">Contact</div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="fullname">Your Name</Label>
-              <input
-                id="fullname"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                onBlur={() => markTouched("fullname")}
-                placeholder="e.g. Priya Sharma"
-                required
-              />
-              <FieldError>{touched.fullname && !fullName.trim() ? "Required" : ""}</FieldError>
-            </div>
-            <div>
-              <Label htmlFor="email">Email</Label>
-              <input
-                id="email"
-                type="email"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                onBlur={() => markTouched("email")}
-                placeholder="you@company.com"
-                required
-              />
-              <FieldError>{touched.email && !emailValid ? "Invalid email" : ""}</FieldError>
-            </div>
-            <div className="md:col-span-2">
-              <Label htmlFor="phone">Phone (optional)</Label>
-              <input
-                id="phone"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+91 98765 43210"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Address */}
-        <div>
-          <div className="text-sm font-semibold mb-2">Address</div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <Label htmlFor="street">Street</Label>
-              <input
-                id="street"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={street}
-                onChange={(e) => setStreet(e.target.value)}
-                placeholder="Street address"
-              />
-            </div>
-            <div>
-              <Label htmlFor="city">City</Label>
-              <input
-                id="city"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={city}
-                onChange={(e) => setCity(e.target.value)}
-                placeholder="City"
-              />
-            </div>
-            <div>
-              <Label htmlFor="state">State / Province</Label>
-              <input
-                id="state"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={state}
-                onChange={(e) => setState(e.target.value)}
-                placeholder="State"
-              />
-            </div>
-            <div>
-              <Label htmlFor="postal">Postal Code</Label>
-              <input
-                id="postal"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={postal}
-                onChange={(e) => setPostal(e.target.value)}
-                placeholder="PIN / ZIP"
-              />
-            </div>
-            <div>
-              <Label htmlFor="country">Country</Label>
-              <select
-                id="country"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={country}
-                onChange={(e) => setCountry(e.target.value)}
-              >
-                {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        {/* Localization */}
-        <div>
-          <div className="text-sm font-semibold mb-2">Localization</div>
-          <div className="grid md:grid-cols-3 gap-4">
-            <div>
-              <Label htmlFor="language">Language</Label>
-              <select
-                id="language"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-              >
-                {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <Label htmlFor="timezone">Time zone</Label>
-              <input
-                id="timezone"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={timezone}
-                onChange={(e) => setTimezone(e.target.value)}
-                placeholder="e.g. Asia/Kolkata"
-              />
-            </div>
-            <div>
-              <Label htmlFor="currency">Currency</Label>
-              <input
-                id="currency"
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value)}
-                placeholder="e.g. INR"
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Security */}
-        <div>
-          <div className="text-sm font-semibold mb-2">Security</div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="password" hint="Min 8 chars">Password</Label>
-              <div className="relative">
+        {/* STEP 0 — Company */}
+        {step === 0 && (
+          <div className="grid gap-4">
+            <SectionTitle>Company</SectionTitle>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="tenant">Company / Tenant</Label>
                 <input
-                  id="password"
-                  ref={pwRef}
-                  type={showPw ? "text" : "password"}
-                  className="w-full mt-1 pr-24 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  onBlur={() => markTouched("password")}
-                  placeholder="Create a strong password"
+                  id="tenant"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
+                  value={tenantName}
+                  onChange={(e) => setTenantName(e.target.value)}
+                  onBlur={() => markTouched("tenant")}
+                  placeholder="e.g. Acme Corp"
                   required
                 />
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted px-2 py-1 rounded-md border border-border glass"
-                  onClick={() => setShowPw((v) => !v)}
-                >
-                  {showPw ? "Hide" : "Show"}
-                </button>
+                <FieldError show={touched.tenant && !tenantName.trim()}>Required</FieldError>
               </div>
-              {caps && <div className="text-[11px] text-amber-300 mt-1">Caps Lock is ON.</div>}
-              <div className="mt-2 h-2 rounded bg-white/10 overflow-hidden">
-                <div
-                  className={`h-2 ${pwScore <= 2 ? "bg-red-400" : pwScore === 3 ? "bg-yellow-400" : "bg-emerald-400"}`}
-                  style={{ width: `${(pwScore / 5) * 100}%` }}
+              <div>
+                <Label htmlFor="website" hint="Optional">Website</Label>
+                <input
+                  id="website"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
+                  value={website}
+                  onChange={(e) => setWebsite(e.target.value)}
+                  onBlur={() => markTouched("website")}
+                  placeholder="https://example.com"
+                />
+                <FieldError show={touched.website && !websiteValid}>Must start with http(s)://</FieldError>
+              </div>
+              <div>
+                <Label htmlFor="industry">Industry</Label>
+                <select
+                  id="industry"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={industry}
+                  onChange={(e) => setIndustry(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {INDUSTRIES.map((i) => <option key={i} value={i}>{i}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="employees">Employees</Label>
+                <select
+                  id="employees"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={employees}
+                  onChange={(e) => setEmployees(e.target.value)}
+                >
+                  <option value="">Select…</option>
+                  {EMP_SIZE.map((i) => <option key={i} value={i}>{i}</option>)}
+                </select>
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="gst">GST / VAT (optional)</Label>
+                <input
+                  id="gst"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={gstVat}
+                  onChange={(e) => setGstVat(e.target.value)}
+                  placeholder="e.g. 22AAAAA0000A1Z5"
                 />
               </div>
-              <div className="text-[11px] text-muted mt-1">
-                Use letters, numbers, and symbols for a stronger password.
+            </div>
+          </div>
+        )}
+
+        {/* STEP 1 — Contact */}
+        {step === 1 && (
+          <div className="grid gap-4">
+            <SectionTitle>Contact</SectionTitle>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="fullname">Your Name</Label>
+                <input
+                  id="fullname"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  onBlur={() => markTouched("fullname")}
+                  placeholder="e.g. Priya Sharma"
+                  required
+                />
+                <FieldError show={touched.fullname && !fullName.trim()}>Required</FieldError>
+              </div>
+              <div>
+                <Label htmlFor="email">Email</Label>
+                <input
+                  id="email"
+                  type="email"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  onBlur={() => markTouched("email")}
+                  placeholder="you@company.com"
+                  required
+                />
+                <FieldError show={touched.email && !emailValid}>Invalid email</FieldError>
+              </div>
+              <div className="md:col-span-2">
+                <Label htmlFor="phone">Phone (optional)</Label>
+                <input
+                  id="phone"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  placeholder="+91 98765 43210"
+                />
               </div>
             </div>
-            <div>
-              <Label htmlFor="confirm">Confirm Password</Label>
-              <input
-                id="confirm"
-                type={showPw ? "text" : "password"}
-                className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
-                value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
-                onBlur={() => markTouched("confirm")}
-                placeholder="Re-enter password"
-                required
-              />
-              <FieldError>
-                {touched.confirm && confirm && password !== confirm ? "Passwords don’t match." : ""}
-              </FieldError>
+          </div>
+        )}
+
+        {/* STEP 2 — Address */}
+        {step === 2 && (
+          <div className="grid gap-4">
+            <SectionTitle>Address</SectionTitle>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <Label htmlFor="street">Street</Label>
+                <input
+                  id="street"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  placeholder="Street address"
+                />
+              </div>
+              <div>
+                <Label htmlFor="city">City</Label>
+                <input
+                  id="city"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="City"
+                />
+              </div>
+              <div>
+                <Label htmlFor="state">State / Province</Label>
+                <input
+                  id="state"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={state}
+                  onChange={(e) => setState(e.target.value)}
+                  placeholder="State"
+                />
+              </div>
+              <div>
+                <Label htmlFor="postal">Postal Code</Label>
+                <input
+                  id="postal"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={postal}
+                  onChange={(e) => setPostal(e.target.value)}
+                  placeholder="PIN / ZIP"
+                />
+              </div>
+              <div>
+                <Label htmlFor="country">Country</Label>
+                <select
+                  id="country"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={country}
+                  onChange={(e) => setCountry(e.target.value)}
+                >
+                  {COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Agreements / actions */}
-        <div className="flex flex-col gap-3">
-          <Toggle
-            id="marketing"
-            checked={marketingOptin}
-            onChange={setMarketingOptin}
-            label="Send me product updates & tips (optional)"
-          />
-          <div className="flex items-center gap-2">
-            <input
-              id="agree"
-              type="checkbox"
-              checked={agree}
-              onChange={(e) => setAgree(e.target.checked)}
-            />
-            <label htmlFor="agree" className="text-sm text-muted">
-              I agree to the <a href="/terms" className="underline">Terms</a> and{" "}
-              <a href="/privacy" className="underline">Privacy Policy</a>.
-            </label>
+        {/* STEP 3 — Localization */}
+        {step === 3 && (
+          <div className="grid gap-4">
+            <SectionTitle>Localization</SectionTitle>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <Label htmlFor="language">Language</Label>
+                <select
+                  id="language"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={language}
+                  onChange={(e) => setLanguage(e.target.value)}
+                >
+                  {LANGS.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="timezone">Time zone</Label>
+                <input
+                  id="timezone"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  placeholder="e.g. Asia/Kolkata"
+                />
+              </div>
+              <div>
+                <Label htmlFor="currency">Currency</Label>
+                <input
+                  id="currency"
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2"
+                  value={currency}
+                  onChange={(e) => setCurrency(e.target.value)}
+                  placeholder="e.g. INR"
+                />
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button
-              disabled={submitting}
-              className="rounded-lg px-4 py-2 font-semibold text-bg bg-gradient-to-br from-cyan-300 to-purple-500 disabled:opacity-60"
-            >
-              {submitting ? "Creating account…" : "Create account"}
-            </button>
-            <span className="text-muted text-sm">Plan: {planCode.toUpperCase()}</span>
+        )}
+
+        {/* STEP 4 — Security */}
+        {step === 4 && (
+          <div className="grid gap-4">
+            <SectionTitle>Security</SectionTitle>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="password" hint="Min 8 chars">Password</Label>
+                <div className="relative">
+                  <input
+                    id="password"
+                    ref={pwRef}
+                    type={showPw ? "text" : "password"}
+                    className="w-full mt-1 pr-24 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    onBlur={() => markTouched("password")}
+                    placeholder="Create a strong password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-muted px-2 py-1 rounded-md border border-border glass"
+                    onClick={() => setShowPw((v) => !v)}
+                  >
+                    {showPw ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {caps && <div className="text-[11px] text-amber-300 mt-1">Caps Lock is ON.</div>}
+                <div className="mt-2 h-2 rounded bg-white/10 overflow-hidden">
+                  <div
+                    className={`h-2 ${pwScore <= 2 ? "bg-red-400" : pwScore === 3 ? "bg-yellow-400" : "bg-emerald-400"}`}
+                    style={{ width: `${(pwScore / 5) * 100}%` }}
+                  />
+                </div>
+                <div className="text-[11px] text-muted mt-1">
+                  Use letters, numbers, and symbols for a stronger password.
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="confirm">Confirm Password</Label>
+                <input
+                  id="confirm"
+                  type={showPw ? "text" : "password"}
+                  className="w-full mt-1 rounded-lg border border-border bg-[#0f0f17] px-3 py-2 outline-none focus:ring-4 focus:ring-cyan-300/35"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  onBlur={() => markTouched("confirm")}
+                  placeholder="Re-enter password"
+                  required
+                />
+                <FieldError show={touched.confirm && confirm && password !== confirm}>
+                  Passwords don’t match.
+                </FieldError>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <Toggle
+                id="marketing"
+                checked={marketingOptin}
+                onChange={setMarketingOptin}
+                label="Send me product updates & tips (optional)"
+              />
+              <div className="flex items-center gap-2">
+                <input
+                  id="agree"
+                  type="checkbox"
+                  checked={agree}
+                  onChange={(e) => setAgree(e.target.checked)}
+                />
+                <label htmlFor="agree" className="text-sm text-muted">
+                  I agree to the <a href="/terms" className="underline">Terms</a> and{" "}
+                  <a href="/privacy" className="underline">Privacy Policy</a>.
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 5 — Review */}
+        {step === 5 && (
+          <div className="grid gap-4">
+            <SectionTitle>Review</SectionTitle>
+            <div className="grid md:grid-cols-2 gap-4">
+              <div className="glass p-4 rounded-xl border border-border">
+                <div className="font-semibold mb-2">Company</div>
+                <div className="text-sm"><b>Name:</b> {tenantName || "-"}</div>
+                <div className="text-sm"><b>Website:</b> {website || "-"}</div>
+                <div className="text-sm"><b>Industry:</b> {industry || "-"}</div>
+                <div className="text-sm"><b>Employees:</b> {employees || "-"}</div>
+                <div className="text-sm"><b>GST/VAT:</b> {gstVat || "-"}</div>
+              </div>
+              <div className="glass p-4 rounded-xl border border-border">
+                <div className="font-semibold mb-2">Contact</div>
+                <div className="text-sm"><b>Name:</b> {fullName || "-"}</div>
+                <div className="text-sm"><b>Email:</b> {email || "-"}</div>
+                <div className="text-sm"><b>Phone:</b> {phone || "-"}</div>
+              </div>
+              <div className="glass p-4 rounded-xl border border-border">
+                <div className="font-semibold mb-2">Address</div>
+                <div className="text-sm">{street || "-"}, {city || "-"}, {state || "-"} {postal || "-"}</div>
+                <div className="text-sm"><b>Country:</b> {COUNTRIES.find(c=>c.code===country)?.name || country}</div>
+              </div>
+              <div className="glass p-4 rounded-xl border border-border">
+                <div className="font-semibold mb-2">Localization</div>
+                <div className="text-sm"><b>Language:</b> {LANGS.find(l=>l.code===language)?.label || language}</div>
+                <div className="text-sm"><b>Time zone:</b> {timezone}</div>
+                <div className="text-sm"><b>Currency:</b> {currency}</div>
+              </div>
+              <div className="glass p-4 rounded-xl border border-border md:col-span-2">
+                <div className="font-semibold mb-2">Modules & Plan</div>
+                <div className="text-sm"><b>Plan:</b> {planCode.toUpperCase()}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {selectedList.length ? selectedList.map(m => <Pill key={m}>{m}</Pill>) : <span className="text-muted text-sm">No modules selected</span>}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* footer controls */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-muted text-sm">Step {step + 1} of {STEPS.length}</div>
+          <div className="flex items-center gap-2">
+            {step > 0 && (
+              <button type="button" onClick={prevStep} className="px-4 py-2 rounded-lg border border-border glass">
+                Back
+              </button>
+            )}
+            {step < STEPS.length - 1 && (
+              <button type="button" onClick={nextStep} className="px-4 py-2 rounded-lg font-semibold text-bg bg-gradient-to-br from-cyan-300 to-purple-500">
+                Continue
+              </button>
+            )}
+            {step === STEPS.length - 1 && (
+              <button
+                type="submit"
+                disabled={submitting}
+                className="px-4 py-2 rounded-lg font-semibold text-bg bg-gradient-to-br from-cyan-300 to-purple-500 disabled:opacity-60"
+              >
+                {submitting ? "Creating account…" : "Create account"}
+              </button>
+            )}
+            <span className="text-muted text-sm hidden sm:inline">Plan: {planCode.toUpperCase()}</span>
           </div>
         </div>
       </form>
 
       {/* Module picker modal */}
       {pickerOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4"
-          onClick={() => setPickerOpen(false)}
-        >
+        <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4" onClick={() => setPickerOpen(false)}>
           <div
             className="glass rounded-2xl p-5 max-w-4xl w-full"
             onClick={(e) => e.stopPropagation()}
-            role="dialog" aria-modal="true" aria-label="Add modules"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Add modules"
           >
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-xl font-semibold">Add modules</h3>
-              <button
-                onClick={() => setPickerOpen(false)}
-                className="px-3 py-1 rounded-lg glass border border-border"
-              >
+              <button onClick={() => setPickerOpen(false)} className="px-3 py-1 rounded-lg glass border border-border">
                 Done
               </button>
             </div>
@@ -631,9 +739,7 @@ export default function Signup() {
                   <button
                     key={code}
                     onClick={() => toggleModule(code)}
-                    className={`glass rounded-xl p-4 text-left border border-border transition-shadow hover:shadow-md ${
-                      on ? "ring-2 ring-cyan-300/40" : ""
-                    }`}
+                    className={`glass rounded-xl p-4 text-left border border-border transition-shadow hover:shadow-md ${on ? "ring-2 ring-cyan-300/40" : ""}`}
                     aria-pressed={on}
                   >
                     <div className="font-semibold">{m.name}</div>
@@ -643,9 +749,7 @@ export default function Signup() {
                   </button>
                 );
               })}
-              {catalog.length === 0 && (
-                <div className="text-muted">No modules available.</div>
-              )}
+              {catalog.length === 0 && <div className="text-muted">No modules available.</div>}
             </div>
           </div>
         </div>
