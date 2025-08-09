@@ -12,6 +12,19 @@ const app = express();
 const appOrigins = [process.env.FRONTEND_ORIGIN].filter(Boolean);
 const publicOrigins = [process.env.FRONTEND_ORIGIN, process.env.MARKETING_ORIGIN].filter(Boolean);
 
+const allowed = [
+  "http://localhost:5173",
+  "https://geniusgrid-landing.onrender.com",
+  "https://geniusgrid-web.onrender.com",   // keep if you still use it
+  // "https://your-custom-domain.com",      // add if you have one
+];
+
+app.use("/api/public/v1/modules", cors({
+  origin: allowed,          // array works; cors will match the request's Origin
+  credentials: false,       // keep false so we can use non-credentialed requests
+  methods: ["GET", "HEAD", "OPTIONS"],
+  maxAge: 86400
+}));
 // Trust reverse proxy (for correct IPs when behind Nginx/Cloudflare)
 app.set('trust proxy', 1);
 app.use('/api', modulesRouter);
