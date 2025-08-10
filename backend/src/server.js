@@ -5,6 +5,9 @@ import cors from "cors";
 import session from "express-session";
 import pgSimple from "connect-pg-simple";
 import { pool } from "./db/pool.js";
+import healthRoutes from "./routes/health.routes.js";
+import csrfRoutes from "./routes/csrf.routes.js";
+import bootstrapRoutes from "./routes/bootstrap.routes.js";
 
 // Routes
 import auth from "./routes/auth.js";
@@ -25,6 +28,9 @@ const ORIGINS = [
   "https://geniusgrid-web.onrender.com",
 ];
 
+app.use("/api", healthRoutes);
+app.use("/api/csrf", csrfRoutes);
+app.use("/api/bootstrap", bootstrapRoutes);
 // --- Trust proxy (Render/Cloudflare) ---
 app.set("trust proxy", 1);
 
