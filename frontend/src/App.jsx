@@ -1,9 +1,11 @@
 import React from "react";
+import "./styles.css";
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage.jsx";
 import Signup from "./pages/Signup.jsx";
 import VerifyEmail from "./pages/VerifyEmail.jsx";
+
 
 // Protected shell with sidebar + company switcher
 import ProtectedShell from "./layouts/ProtectedShell.jsx";

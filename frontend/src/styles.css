@@ -153,3 +153,72 @@ input.has-icon{ padding-right:44px }
   .login-left, .login-right{ padding:48px }
   .login-card{ max-width:440px }
 }
+/* ===== App shell (two columns) ===== */
+.app-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr;
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(99,102,241,.10), transparent 60%),
+    radial-gradient(1200px 600px at 110% -10%, rgba(34,211,238,.12), transparent 60%),
+    var(--bg);
+  color: var(--fg);
+}
+.app-main { display: flex; flex-direction: column; min-width: 0; }
+.app-content { padding: 16px; }
+
+/* ===== Sidebar ===== */
+.app-sidebar {
+  margin: 12px;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.sidebar-head { padding: 4px 8px; }
+.sidebar-foot { margin-top: auto; padding: 8px; opacity: .5; }
+
+.nav-vertical { display: flex; flex-direction: column; gap: 4px; }
+.nav-section {
+  padding: 8px 10px;
+  font-weight: 700;
+  color: var(--fg);
+  opacity: .65;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; border-radius: 12px;
+  color: #c9d4e5; text-decoration: none;
+  transition: background .15s ease, color .15s ease, transform .05s ease;
+}
+.nav-item:hover { background: rgba(255,255,255,.06); color: #fff; }
+.nav-item.active { background: rgba(255,255,255,.12); color: #fff; }
+.nav-children { margin-left: 8px; border-left: 1px solid rgba(255,255,255,.08); padding-left: 8px; }
+.nav-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: .6; }
+
+/* ===== Topbar ===== */
+.app-topbar {
+  position: sticky; top: 0; z-index: 10;
+  height: 56px; margin: 12px 12px 0 0; padding: 0 12px;
+  display: flex; align-items: center; gap: 10px;
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 24px 48px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.04);
+}
+.app-topbar .brand { font-weight: 800; letter-spacing: .2px; }
+.app-topbar .spacer { flex: 1; }
+.select {
+  appearance: none;
+  background: var(--card-2);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  height: 40px; line-height: 40px;
+  padding: 0 12px;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 900px) {
+  .app-shell { grid-template-columns: 1fr; }
+  .app-sidebar { display: none; }
+  .app-topbar { margin: 12px; }
+  .app-content { padding: 12px; }
+}
