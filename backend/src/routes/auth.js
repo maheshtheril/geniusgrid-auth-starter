@@ -266,33 +266,71 @@ router.post("/login", loginLimiter, async (req, res) => {
  * This one returns full context (permissions, modules, menus) under /api/auth/me.
  */
 router.get("/me", requireAuth, async (req, res) => {
-  const userId = getUserId(req);
-  const tenantId = getTenantId(req);
+  const tenantId = req.session.tenantId;
+  const userId   = req.session.userId;
 
   const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-    await setTenant(client, tenantId);
+    // optional but good with RLS elsewhere
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
 
-    const { permissions, modules, menus } = await loadContext(client, tenantId, userId);
-    // keep permissions in session for convenience (optional)
-    req.session.user = { ...(req.session.user || {}), id: userId, tenantId, permissions };
+    // 1) effective permissions
+    const { rows: permRows } = await client.query(
+      `SELECT code FROM public.user_effective_permissions WHERE tenant_id=$1 AND user_id=$2`,
+      [tenantId, userId]
+    );
+    const permissions = permRows.map(r => r.code);
 
-    await client.query("COMMIT");
+    // 2) installed modules for tenant
+    const { rows: modules } = await client.query(
+      `SELECT m.code, m.name, m.icon, m.category, m.description
+       FROM public.tenant_modules tm
+       JOIN public.modules m ON m.code = tm.module_code
+       WHERE tm.tenant_id = $1 AND tm.status = 'installed'
+       ORDER BY COALESCE(m.sort_order, 999), m.name`,
+      [tenantId]
+    );
+
+    // 3) permission- and install-filtered menus (Odoo-style)
+    const { rows: menus } = await client.query(
+      `
+      WITH eff_perms AS (
+        SELECT code FROM public.user_effective_permissions
+        WHERE tenant_id = $1 AND user_id = $2
+      ),
+      installed AS (
+        SELECT module_code FROM public.tenant_modules
+        WHERE tenant_id = $1 AND status = 'installed'
+      )
+      SELECT
+        mt.id, mt.code, mt.label, mt.path, mt.icon,
+        mt.module_code, mt.module_type, mt.permission_code,
+        mt.sort_order, mt.parent_id
+      FROM public.tenant_menus tmx
+      JOIN public.menu_templates mt ON mt.id = tmx.menu_id
+      LEFT JOIN installed i ON i.module_code = mt.module_code
+      LEFT JOIN eff_perms p ON (mt.permission_code IS NULL OR p.code = mt.permission_code)
+      WHERE tmx.tenant_id = $1
+        AND (
+             mt.module_type = 'core'
+          OR (mt.module_type = 'app'   AND i.module_code IS NOT NULL)
+          OR (mt.module_type = 'addon' AND i.module_code IS NOT NULL)
+        )
+        AND (mt.permission_code IS NULL OR p.code IS NOT NULL)
+      ORDER BY COALESCE(mt.sort_order, 999), mt.label
+      `,
+      [tenantId, userId]
+    );
+
     res.json({
       user: { id: userId, tenantId, permissions },
       modules,
-      menus,
+      menus
     });
-  } catch (e) {
-    await client.query("ROLLBACK");
-    console.error("Me error:", e);
-    res.status(500).json({ message: "Failed to load session context" });
   } finally {
     client.release();
   }
 });
-
 /* =========================
    Auth: Logout
 ========================= */
