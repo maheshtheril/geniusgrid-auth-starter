@@ -100,7 +100,9 @@ app.post("/api/_echo", (req, res) => {
 app.use("/api/auth", auth);
 app.use("/api", dashboardRoutes);
 app.use("/api/admin", adminUsers);
-
+app.get("/", (_req, res) => {
+  res.status(200).send("GeniusGrid API OK");
+});
 // --- 404 handler ---
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
 
