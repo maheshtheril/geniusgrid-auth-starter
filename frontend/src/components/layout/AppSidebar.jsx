@@ -1,116 +1,79 @@
-import { NavLink, useLocation } from "react-router-dom";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo } from "react";
+import { NavLink } from "react-router-dom";
 import { useEnv } from "@/store/useEnv";
 
-/** Build a tree from menus (uses parent_id). */
-function buildTree(items) {
-  const map = new Map(items.map(i => [i.id, { ...i, children: [] }]));
+function groupByPrefix(items) {
   const roots = [];
-  items.forEach(i => {
-    const n = map.get(i.id);
-    if (i.parent_id && map.has(i.parent_id)) map.get(i.parent_id).children.push(n);
-    else roots.push(n);
-  });
-  const cmp = (a,b)=>(a.sort_order??0)-(b.sort_order??0)||String(a.name).localeCompare(String(b.name));
-  map.forEach(n => n.children.sort(cmp));
-  roots.sort(cmp);
-  return { roots, map };
+  const groups = new Map(); // 'admin' -> { label:'Admin', items:[...] }
+  for (const it of items) {
+    const code = String(it.code || "").toLowerCase();
+    const prefix = code.includes(".") ? code.split(".")[0] : code;
+    if (!code.includes(".")) {
+      // parent candidate
+      groups.set(prefix, { parent: it, items: [] });
+    }
+  }
+  // second pass for children
+  for (const it of items) {
+    const code = String(it.code || "").toLowerCase();
+    const prefix = code.includes(".") ? code.split(".")[0] : null;
+    if (prefix && groups.has(prefix)) {
+      groups.get(prefix).items.push(it);
+    } else if (!prefix) {
+      roots.push(it); // true top-level leaf
+    }
+  }
+  return { roots, groups };
 }
 
 export default function AppSidebar() {
   const { menus } = useEnv();
-  const { roots, map } = useMemo(() => buildTree(menus || []), [menus]);
-  const location = useLocation();
+  const { roots, groups } = useMemo(() => groupByPrefix(menus || []), [menus]);
 
-  // remember expanded groups
-  const [open, setOpen] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem("__gg_menu_open") || "[]")); }
-    catch { return new Set(); }
-  });
-  useEffect(() => {
-    localStorage.setItem("__gg_menu_open", JSON.stringify(Array.from(open)));
-  }, [open]);
-
-  // auto-open parents that contain current route
-  useEffect(() => {
-    if (!menus?.length) return;
-    const active = menus.find(m => m.path && location.pathname.startsWith(m.path));
-    if (!active) return;
-    const next = new Set(open);
-    let cur = active;
-    for (let guard=0; guard<50 && cur?.parent_id; guard++) {
-      next.add(cur.parent_id);
-      cur = map.get(cur.parent_id);
-    }
-    if (next.size !== open.size) setOpen(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, menus]);
-
-  const toggle = (id) => setOpen(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-
-  const Node = ({ node, depth = 0 }) => {
-    const hasChildren = (node.children?.length || 0) > 0;
-    const isOpen = open.has(node.id) || depth === 0; // root open by default
-    const pad = { paddingLeft: 12 + depth * 14 };
-
-    // Parent group → toggle row (caret + optional inline "Open" link)
-    if (hasChildren) {
-      return (
-        <div className="nav-node">
-          <button
-            type="button"
-            className="nav-item nav-toggle"
-            style={pad}
-            onClick={() => toggle(node.id)}
-            aria-expanded={isOpen}
-            aria-controls={`group-${node.id}`}
-          >
-            <span className={"nav-caret" + (isOpen ? " open" : "")}>▸</span>
-            <span className="nav-label">{node.name}</span>
-            {node.path && (
-              <NavLink
-                to={node.path}
-                className="nav-mini-link"
-                onClick={(e)=>e.stopPropagation()}
-              >
-                Open
-              </NavLink>
-            )}
-          </button>
-
-          <div id={`group-${node.id}`} className={"nav-children" + (isOpen ? " open" : "")}>
-            {node.children.map(ch => <Node key={ch.id} node={ch} depth={depth + 1} />)}
-          </div>
-        </div>
-      );
-    }
-
-    // Leaf → regular link
-    return (
-      <div className="nav-node">
-        <NavLink
-          to={node.path || "#"}
-          end
-          className={({isActive}) => "nav-item" + (isActive ? " active" : "")}
-          style={pad}
-        >
-          <span className="nav-caret-spacer" />
-          <span className="nav-dot" /> {node.name}
-        </NavLink>
-      </div>
-    );
-  };
+  console.log("★ AppSidebar mounted. menus:", menus?.length, { roots, groups: [...groups.keys()] });
 
   return (
-    <aside className="app-sidebar panel glass">
-      <div className="sidebar-head text-muted small">Menu</div>
-      <nav className="nav-vertical">
-        {roots.length ? roots.map(n => <Node key={n.id} node={n} />) : <div className="text-muted">No menus</div>}
-      </nav>
+    <aside className="app-sidebar panel glass" style={{ border: "2px solid #7c3aed" }}>
+      <div className="sidebar-head text-muted small">★ Menu (test)</div>
+
+      {/* Grouped parents */}
+      {[...groups.values()]
+        .sort((a,b)=> (a.parent?.sort_order ?? 0) - (b.parent?.sort_order ?? 0))
+        .map(({ parent, items }) => (
+        <details key={parent.id} open>
+          <summary className="nav-item nav-toggle" style={{ cursor: "pointer", fontWeight: 700 }}>
+            {parent.name} <span style={{ marginLeft: "auto", fontSize: 11, opacity: .8 }}>Open</span>
+          </summary>
+          <div className="nav-children open">
+            {items
+              .sort((a,b)=> (a.sort_order ?? 0) - (b.sort_order ?? 0))
+              .map(ch => (
+                <NavLink
+                  key={ch.id}
+                  to={ch.path || "#"}
+                  end
+                  className={({isActive}) => "nav-item" + (isActive ? " active" : "")}
+                  style={{ paddingLeft: 26 }}
+                >
+                  <span className="nav-dot" /> {ch.name}
+                </NavLink>
+              ))}
+          </div>
+        </details>
+      ))}
+
+      {/* Ungrouped roots (if any) */}
+      {roots.length > 0 && (
+        <>
+          <div className="sidebar-head text-muted small" style={{ marginTop: 8 }}>Other</div>
+          {roots.map(n => (
+            <NavLink key={n.id} to={n.path || "#"} end className="nav-item">
+              <span className="nav-dot" /> {n.name}
+            </NavLink>
+          ))}
+        </>
+      )}
+
       <div className="sidebar-foot text-muted small">© GeniusGrid</div>
     </aside>
   );
