@@ -182,6 +182,8 @@ router.post("/login", loginLimiter, async (req, res) => {
   const eml = (email || "").trim().toLowerCase();
   const code = (tenantCode ?? tenant ?? "").trim().toLowerCase();
 
+  const ok = await bcrypt.compare(password, user.password);
+
   if (!eml || !password || !code) {
     return res.status(400).json({ message: "tenantCode, email, password are required" });
   }
