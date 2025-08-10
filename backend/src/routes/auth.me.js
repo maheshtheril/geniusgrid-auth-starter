@@ -63,9 +63,13 @@ router.get("/me", requireAuth, async (req, res) => {
       COALESCE((SELECT json_agg(row_to_json(role_list)) FROM role_list), '[]'::json) AS roles,
       COALESCE((SELECT json_agg(row_to_json(perm_list)) FROM perm_list), '[]'::json) AS permissions,
       COALESCE(
-        (SELECT json_agg(row_to_json(am))
-           FROM allowed_menus am
-          ORDER BY am.sort_order NULLS LAST, am.label),
+        (
+          SELECT json_agg(
+                   row_to_json(am)
+                   ORDER BY am.sort_order NULLS LAST, am.label
+                 )
+          FROM allowed_menus am
+        ),
         '[]'::json
       ) AS menus;
   `;
@@ -73,10 +77,10 @@ router.get("/me", requireAuth, async (req, res) => {
   let client;
   try {
     client = await pool.connect();
-    // Set tenant scope on THIS connection so RLS passes
-    await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant_id]);
 
-    // Optional probe mode to surface exact failing piece
+    // IMPORTANT: make tenant GUC NON-LOCAL so it persists on this connection
+    await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenant_id]);
+
     if (req.query.probe === "1") {
       const steps = [];
       const guc = await client.query(`SELECT current_setting('app.tenant_id', true) AS tenant`);
@@ -106,7 +110,6 @@ router.get("/me", requireAuth, async (req, res) => {
       );
       steps.push({ step: "tenant_modules_installed", count: tmCount.rows[0]?.c ?? null });
 
-      // Try the full query to report exact error if it fails
       try {
         await client.query(sql, [user_id, tenant_id]);
         steps.push({ step: "full_query", ok: true });
