@@ -12,23 +12,15 @@ async function tryQuery(sql, params = []) {
     const { rows } = await pool.query(sql, params);
     return rows || [];
   } catch (e) {
-    // Uncomment if you want to see which optional query failed:
     // console.warn("[bootstrap optional]", e?.message || e);
     return [];
   }
 }
 
-/** Normalize menu row from arbitrary schema into a stable shape */
+/** Normalize menu row into a stable shape */
 function normalizeMenuRow(r) {
   const name =
-    r.name ??
-    r.label ??
-    r.display_name ??
-    r.title ??
-    r.menu_name ??
-    r.code ??
-    String(r.id);
-
+    r.name ?? r.label ?? r.display_name ?? r.title ?? r.menu_name ?? r.code ?? String(r.id);
   const path = r.path ?? r.route ?? r.url ?? null;
 
   let parent_id = r.parent_id ?? r.parent ?? r.parentid ?? null;
@@ -42,7 +34,6 @@ function normalizeMenuRow(r) {
 }
 
 router.get("/", requireAuth, companyContext, async (req, res) => {
-  // Accept both snake_case and camelCase keys set by other routes
   const user_id = req.session?.user_id ?? req.session?.userId;
   const tenant_id = req.session?.tenant_id ?? req.session?.tenantId;
   const requestedCompanyId = req.context?.company_id ?? null;
@@ -56,7 +47,6 @@ router.get("/", requireAuth, companyContext, async (req, res) => {
     const user = userRows[0] || null;
 
     /* ---------- Companies ---------- */
-    // Prefer user-company mapping; if table/rows missing, fall back to all companies in tenant
     let companies = await tryQuery(
       `SELECT c.id, c.name, c.code
          FROM res_company c
@@ -67,7 +57,6 @@ router.get("/", requireAuth, companyContext, async (req, res) => {
     );
 
     if (companies.length === 0) {
-      // fallback: all companies in tenant
       companies = await tryQuery(
         `SELECT id, name, code
            FROM res_company
@@ -77,7 +66,6 @@ router.get("/", requireAuth, companyContext, async (req, res) => {
       );
     }
 
-    // active company: request header (validated by companyContext) or first available
     let activeCompanyId =
       (requestedCompanyId && companies.find((c) => c.id === requestedCompanyId)?.id) ||
       req.session?.company_id ||
@@ -88,7 +76,7 @@ router.get("/", requireAuth, companyContext, async (req, res) => {
       req.session.company_id = activeCompanyId || null;
     }
 
-    /* ---------- Roles (optional) ---------- */
+    /* ---------- Roles ---------- */
     const roles = await tryQuery(
       `SELECT r.id, r.code, r.name
          FROM user_roles ur
@@ -97,7 +85,7 @@ router.get("/", requireAuth, companyContext, async (req, res) => {
       [user_id, tenant_id]
     );
 
-    /* ---------- Permissions (optional) ---------- */
+    /* ---------- Permissions ---------- */
     const permRows = await tryQuery(
       `SELECT DISTINCT p.code
          FROM roles_permissions rp
@@ -108,7 +96,7 @@ router.get("/", requireAuth, companyContext, async (req, res) => {
     );
     const permSet = new Set(permRows.map((r) => r.code).filter(Boolean));
 
-    /* ---------- Menus (schema-agnostic mapping) ---------- */
+    /* ---------- Menus ---------- */
     const rawMenus = await tryQuery(
       `SELECT mt.*, tm.menu_id
          FROM tenant_menus tm
@@ -117,24 +105,25 @@ router.get("/", requireAuth, companyContext, async (req, res) => {
         ORDER BY mt.sort_order NULLS LAST, mt.id`,
       [tenant_id]
     );
-    // Normalize every row to {id,name,path,parent_id,sort_order,permission_code,icon}
     let menus = rawMenus.map(normalizeMenuRow);
 
-    // Filter by permission only when menu declares a permission code
+    // Permission filter with fallback
+    let filtered = menus;
     if (permSet.size > 0) {
-      menus = menus.filter((m) => !m.permission_code || permSet.has(m.permission_code));
+      filtered = menus.filter((m) => !m.permission_code || permSet.has(m.permission_code));
     } else {
-      // No permissions → show only menus without permission requirement
-      menus = menus.filter((m) => !m.permission_code);
+      filtered = menus.filter((m) => !m.permission_code);
     }
+    if (filtered.length === 0) filtered = menus; // fallback if filter kills all menus
+    menus = filtered;
 
-    /* ---------- Settings (optional) ---------- */
+    /* ---------- Settings ---------- */
     const settings = await tryQuery(
       `SELECT module, key, value FROM module_settings WHERE tenant_id=$1`,
       [tenant_id]
     );
 
-    /* ---------- Lightweight dashboard (optional) ---------- */
+    /* ---------- Dashboard ---------- */
     const dashRows = await tryQuery(
       `SELECT
          COALESCE((SELECT COUNT(1) FROM leads l WHERE l.tenant_id=$1),0) AS leads_total,
