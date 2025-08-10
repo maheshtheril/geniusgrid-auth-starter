@@ -16,6 +16,12 @@ const loginLimiter = rateLimit({
   legacyHeaders: false
 });
 
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5,                   // limit each IP to 5 requests per windowMs
+  standardHeaders: true,    // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false,     // Disable the `X-RateLimit-*` headers
+});
 const MAX_ATTEMPTS = 5;   // lock after 5 bad attempts
 const LOCK_MINUTES = 15;  // lock window
 
