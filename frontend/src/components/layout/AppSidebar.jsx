@@ -2,8 +2,8 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useMemo, useState, useEffect } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/** Build tree + parent map */
-function toTree(items) {
+/** Build a tree from menus (uses parent_id). */
+function buildTree(items) {
   const map = new Map(items.map(i => [i.id, { ...i, children: [] }]));
   const roots = [];
   items.forEach(i => {
@@ -19,10 +19,10 @@ function toTree(items) {
 
 export default function AppSidebar() {
   const { menus } = useEnv();
-  const { roots, map } = useMemo(() => toTree(menus || []), [menus]);
+  const { roots, map } = useMemo(() => buildTree(menus || []), [menus]);
   const location = useLocation();
 
-  // Remember expanded nodes in localStorage
+  // remember expanded groups
   const [open, setOpen] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("__gg_menu_open") || "[]")); }
     catch { return new Set(); }
@@ -31,15 +31,14 @@ export default function AppSidebar() {
     localStorage.setItem("__gg_menu_open", JSON.stringify(Array.from(open)));
   }, [open]);
 
-  // Auto-open groups that contain the active route
+  // auto-open parents that contain current route
   useEffect(() => {
     if (!menus?.length) return;
     const active = menus.find(m => m.path && location.pathname.startsWith(m.path));
     if (!active) return;
-    // climb parents and open them
-    let cur = active;
     const next = new Set(open);
-    for (let guard=0; guard<50 && cur?.parent_id; guard++){
+    let cur = active;
+    for (let guard=0; guard<50 && cur?.parent_id; guard++) {
       next.add(cur.parent_id);
       cur = map.get(cur.parent_id);
     }
@@ -55,15 +54,21 @@ export default function AppSidebar() {
 
   const Node = ({ node, depth = 0 }) => {
     const hasChildren = (node.children?.length || 0) > 0;
-    const isOpen = open.has(node.id) || depth === 0; // roots open by default
+    const isOpen = open.has(node.id) || depth === 0; // root open by default
     const pad = { paddingLeft: 12 + depth * 14 };
 
-    // If a node has children, we render it as a TOGGLE ROW.
-    // If it also has a path, we show a small inline link on the right.
+    // Parent group → toggle row (caret + optional inline "Open" link)
     if (hasChildren) {
       return (
         <div className="nav-node">
-          <div className="nav-item nav-toggle" style={pad} onClick={() => toggle(node.id)}>
+          <button
+            type="button"
+            className="nav-item nav-toggle"
+            style={pad}
+            onClick={() => toggle(node.id)}
+            aria-expanded={isOpen}
+            aria-controls={`group-${node.id}`}
+          >
             <span className={"nav-caret" + (isOpen ? " open" : "")}>▸</span>
             <span className="nav-label">{node.name}</span>
             {node.path && (
@@ -75,16 +80,16 @@ export default function AppSidebar() {
                 Open
               </NavLink>
             )}
-          </div>
+          </button>
 
-          <div className={"nav-children" + (isOpen ? " open" : "")}>
+          <div id={`group-${node.id}`} className={"nav-children" + (isOpen ? " open" : "")}>
             {node.children.map(ch => <Node key={ch.id} node={ch} depth={depth + 1} />)}
           </div>
         </div>
       );
     }
 
-    // Leaf: regular link
+    // Leaf → regular link
     return (
       <div className="nav-node">
         <NavLink

@@ -269,3 +269,30 @@ input.has-icon{ padding-right:44px }
   transition: max-height .18s ease;
 }
 .nav-children.open { max-height: 1000px; } /* enough to reveal */
+/* Collapsible tree sidebar */
+.nav-item {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 10px; border-radius:12px;
+  color:#c9d4e5; text-decoration:none;
+  background:transparent; border:0; width:100%; text-align:left;
+  transition:background .15s ease, color .15s ease;
+  cursor:pointer;
+}
+.nav-item:hover { background: rgba(255,255,255,.06); color:#fff; }
+.nav-item.active { background: rgba(255,255,255,.12); color:#fff; }
+
+.nav-toggle .nav-label { font-weight:700; }
+.nav-mini-link { margin-left:auto; font-size:11px; color:#93c5fd; opacity:.9; }
+.nav-mini-link:hover { text-decoration:underline; }
+
+.nav-caret { display:inline-block; width:12px; transform:rotate(0deg); transition:transform .12s ease; opacity:.8; }
+.nav-caret.open { transform:rotate(90deg); }
+.nav-caret-spacer { display:inline-block; width:12px; }
+
+.nav-children {
+  margin-left: 10px; padding-left: 8px;
+  border-left: 1px solid rgba(255,255,255,.08);
+  max-height: 0; overflow: hidden;
+  transition: max-height .18s ease;
+}
+.nav-children.open { max-height: 1000px; } /* simple slide */
