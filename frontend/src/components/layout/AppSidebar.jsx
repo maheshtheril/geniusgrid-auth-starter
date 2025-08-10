@@ -1,46 +1,28 @@
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
 import { useMemo, useState, useEffect } from "react";
 import { useEnv } from "@/store/useEnv";
 
+/** Build tree + parent map */
 function toTree(items) {
-  // index by id and by code
-  const byId = new Map(items.map(i => [i.id, { ...i, children: [] }]));
-  const byCode = new Map(items.map(i => [i.code, byId.get(i.id)]));
-
-  // if no parent_id, try to infer from code prefix before the first dot
-  for (const i of items) {
-    const node = byId.get(i.id);
-    if (!node.parent_id && typeof node.code === "string" && node.code.includes(".")) {
-      const parentCode = node.code.split(".")[0]; // 'admin.users' -> 'admin'
-      const parent = byCode.get(parentCode);
-      if (parent && parent !== node) {
-        node.parent_id = parent.id; // virtual link for the tree
-      }
-    }
-  }
-
-  // build tree
+  const map = new Map(items.map(i => [i.id, { ...i, children: [] }]));
   const roots = [];
-  for (const node of byId.values()) {
-    if (node.parent_id && byId.has(node.parent_id)) {
-      byId.get(node.parent_id).children.push(node);
-    } else {
-      roots.push(node);
-    }
-  }
-
-  // sort by sort_order then name
-  const cmp = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.name).localeCompare(String(b.name));
-  for (const n of byId.values()) n.children.sort(cmp);
+  items.forEach(i => {
+    const n = map.get(i.id);
+    if (i.parent_id && map.has(i.parent_id)) map.get(i.parent_id).children.push(n);
+    else roots.push(n);
+  });
+  const cmp = (a,b)=>(a.sort_order??0)-(b.sort_order??0)||String(a.name).localeCompare(String(b.name));
+  map.forEach(n => n.children.sort(cmp));
   roots.sort(cmp);
-  return roots;
+  return { roots, map };
 }
 
 export default function AppSidebar() {
   const { menus } = useEnv();
-  const tree = useMemo(() => toTree(menus || []), [menus]);
+  const { roots, map } = useMemo(() => toTree(menus || []), [menus]);
+  const location = useLocation();
 
-  // remember expanded nodes
+  // Remember expanded nodes in localStorage
   const [open, setOpen] = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("__gg_menu_open") || "[]")); }
     catch { return new Set(); }
@@ -48,6 +30,22 @@ export default function AppSidebar() {
   useEffect(() => {
     localStorage.setItem("__gg_menu_open", JSON.stringify(Array.from(open)));
   }, [open]);
+
+  // Auto-open groups that contain the active route
+  useEffect(() => {
+    if (!menus?.length) return;
+    const active = menus.find(m => m.path && location.pathname.startsWith(m.path));
+    if (!active) return;
+    // climb parents and open them
+    let cur = active;
+    const next = new Set(open);
+    for (let guard=0; guard<50 && cur?.parent_id; guard++){
+      next.add(cur.parent_id);
+      cur = map.get(cur.parent_id);
+    }
+    if (next.size !== open.size) setOpen(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, menus]);
 
   const toggle = (id) => setOpen(prev => {
     const next = new Set(prev);
@@ -57,28 +55,47 @@ export default function AppSidebar() {
 
   const Node = ({ node, depth = 0 }) => {
     const hasChildren = (node.children?.length || 0) > 0;
-    const padded = { paddingLeft: 12 + depth * 14 };
-    const isOpen = open.has(node.id) || depth === 0; // open roots by default
+    const isOpen = open.has(node.id) || depth === 0; // roots open by default
+    const pad = { paddingLeft: 12 + depth * 14 };
 
-    return (
-      <div className="nav-node">
-        {node.path ? (
-          <NavLink to={node.path} end className={({isActive}) => "nav-item" + (isActive ? " active" : "")} style={padded}>
-            <span className="nav-caret-spacer" />
-            <span className="nav-dot" /> {node.name}
-          </NavLink>
-        ) : (
-          <button type="button" className="nav-item nav-toggle" style={padded} onClick={() => toggle(node.id)}>
+    // If a node has children, we render it as a TOGGLE ROW.
+    // If it also has a path, we show a small inline link on the right.
+    if (hasChildren) {
+      return (
+        <div className="nav-node">
+          <div className="nav-item nav-toggle" style={pad} onClick={() => toggle(node.id)}>
             <span className={"nav-caret" + (isOpen ? " open" : "")}>▸</span>
             <span className="nav-label">{node.name}</span>
-          </button>
-        )}
+            {node.path && (
+              <NavLink
+                to={node.path}
+                className="nav-mini-link"
+                onClick={(e)=>e.stopPropagation()}
+              >
+                Open
+              </NavLink>
+            )}
+          </div>
 
-        {hasChildren && (
           <div className={"nav-children" + (isOpen ? " open" : "")}>
             {node.children.map(ch => <Node key={ch.id} node={ch} depth={depth + 1} />)}
           </div>
-        )}
+        </div>
+      );
+    }
+
+    // Leaf: regular link
+    return (
+      <div className="nav-node">
+        <NavLink
+          to={node.path || "#"}
+          end
+          className={({isActive}) => "nav-item" + (isActive ? " active" : "")}
+          style={pad}
+        >
+          <span className="nav-caret-spacer" />
+          <span className="nav-dot" /> {node.name}
+        </NavLink>
       </div>
     );
   };
@@ -87,7 +104,7 @@ export default function AppSidebar() {
     <aside className="app-sidebar panel glass">
       <div className="sidebar-head text-muted small">Menu</div>
       <nav className="nav-vertical">
-        {tree.length ? tree.map(n => <Node key={n.id} node={n} />) : <div className="text-muted">No menus</div>}
+        {roots.length ? roots.map(n => <Node key={n.id} node={n} />) : <div className="text-muted">No menus</div>}
       </nav>
       <div className="sidebar-foot text-muted small">© GeniusGrid</div>
     </aside>

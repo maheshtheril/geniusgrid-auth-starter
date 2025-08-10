@@ -248,3 +248,24 @@ input.has-icon{ padding-right:44px }
 .nav-children.open { max-height: 1000px; } /* enough to reveal; simple & effective */
 
 .nav-dot { width:6px; height:6px; border-radius:50%; background: currentColor; opacity:.6; }
+/* collapsible groups */
+.nav-toggle { font-weight: 700; }
+.nav-mini-link {
+  margin-left: auto;
+  font-size: 11px;
+  color: #93c5fd;
+  opacity: .85;
+}
+.nav-mini-link:hover { text-decoration: underline; }
+
+.nav-caret { display:inline-block; width:12px; transform:rotate(0deg); transition:transform .12s ease; opacity:.8; }
+.nav-caret.open { transform:rotate(90deg); }
+.nav-caret-spacer { display:inline-block; width:12px; }
+
+.nav-children {
+  margin-left: 10px; padding-left: 8px;
+  border-left: 1px solid rgba(255,255,255,.08);
+  max-height: 0; overflow: hidden;
+  transition: max-height .18s ease;
+}
+.nav-children.open { max-height: 1000px; } /* enough to reveal */
