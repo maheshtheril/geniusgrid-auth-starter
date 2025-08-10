@@ -81,13 +81,13 @@ async function loadContext(client, tenantId, userId) {
 }
 
 function getTenantId(req) {
-  return req.session?.tenantId ?? req.session?.user?.tenantId ?? null;
+  return req.session?.tenantId ?? req.session?.tenant_id ?? req.session?.user?.tenantId ?? null;
 }
 function getUserId(req) {
-  return req.session?.userId ?? req.session?.user?.id ?? null;
+  return req.session?.userId ?? req.session?.user_id ?? req.session?.user?.id ?? null;
 }
 async function setTenant(client, tenantId) {
-  // Use set_config() (binds are OK); SET LOCAL with $1 is not allowed
+  // Use set_config() (binds are OK)
   await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
 }
 
@@ -156,9 +156,11 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
     await new Promise((resolve, reject) => {
       req.session.regenerate((err) => (err ? reject(err) : resolve()));
     });
-    // Re-seed normalized session (both shapes)
+    // Re-seed normalized session (set both shapes for compatibility)
     req.session.userId = userId;
+    req.session.user_id = userId;
     req.session.tenantId = tenantId;
+    req.session.tenant_id = tenantId;
     req.session.user = { id: userId, tenantId };
 
     await logApi(client, {
@@ -195,13 +197,16 @@ router.post("/login", loginLimiter, async (req, res) => {
   const { email: rawEmail, password, tenantCode: rawTenantCode, tenant } = req.body || {};
   const email = (rawEmail || "").trim().toLowerCase();
   const tenantCode = ((rawTenantCode || tenant) || "").trim();
-  if (!email || !password || !tenantCode) return res.status(400).json({ message: "tenantCode, email, password are required" });
+  if (!email || !password || !tenantCode) {
+    return res.status(400).json({ message: "tenantCode, email, password are required" });
+  }
 
   const client = await pool.connect();
   try {
-    const t = await client.query(`SELECT id FROM public.tenants WHERE code=$1`, [tenantCode]);
+    const t = await client.query(`SELECT id, is_active FROM public.tenants WHERE code=$1`, [tenantCode]);
     if (!t.rows.length) return res.status(400).json({ message: "Invalid tenant" });
     const tenantId = t.rows[0].id;
+    if (t.rows[0].is_active === false) return res.status(403).json({ message: "Tenant inactive" });
 
     await setTenant(client, tenantId);
 
@@ -258,10 +263,21 @@ router.post("/login", loginLimiter, async (req, res) => {
       [user.id]
     );
 
-    req.session.userId = user.id;
-    req.session.tenantId = tenantId;
-    req.session.user = { id: user.id, tenantId };
-    req.session.save(() => res.json({ ok: true }));
+    // Regenerate then set both camelCase and snake_case keys
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ message: "Session error" });
+
+      req.session.userId = user.id;
+      req.session.user_id = user.id;
+      req.session.tenantId = tenantId;
+      req.session.tenant_id = tenantId;
+      req.session.user = { id: user.id, tenantId };
+
+      req.session.save((saveErr) => {
+        if (saveErr) return res.status(500).json({ message: "Session save error" });
+        return res.json({ ok: true });
+      });
+    });
   } catch (e) {
     console.error("LOGIN ERROR:", e);
     res.status(500).json({ message: "Login error" });
@@ -269,7 +285,6 @@ router.post("/login", loginLimiter, async (req, res) => {
     client.release();
   }
 });
-
 
 /* =========================
    Auth: Me (contextful)
