@@ -5,83 +5,81 @@ import cors from "cors";
 import session from "express-session";
 import pgSimple from "connect-pg-simple";
 import { pool } from "./db/pool.js";
+
+// Routes
 import healthRoutes from "./routes/health.routes.js";
 import csrfRoutes from "./routes/csrf.routes.js";
 import bootstrapRoutes from "./routes/bootstrap.routes.js";
-
-// Routes
 import auth from "./routes/auth.js";
+import authMe from "./routes/auth.me.js";
 import adminUsers from "./routes/adminUsers.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
-import authMe from "./routes/auth.me.js";
 
 const app = express();
 const PgStore = pgSimple(session);
 
-// --- Config ---
 const isProd = process.env.NODE_ENV === "production";
 const PORT = process.env.PORT || 4000;
 
 // Frontend origins allowed to send credentials
 const ORIGINS = [
   "http://localhost:5173",
-  "https://geniusgrid-web.onrender.com",
+  "https://geniusgrid-web.onrender.com"
 ];
 
-app.use("/api", healthRoutes);
-app.use("/api/csrf", csrfRoutes);
-app.use("/api/bootstrap", bootstrapRoutes);
-// --- Trust proxy (Render/Cloudflare) ---
+// Trust proxy (Render/Cloudflare) so secure cookies work
 app.set("trust proxy", 1);
 
-// --- Security headers ---
+// Security headers
 app.use(
   helmet({
     contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
+    crossOriginEmbedderPolicy: false
   })
 );
 
-// --- Body parsing ---
+// JSON body
 app.use(express.json({ limit: "1mb" }));
 
-// --- CORS (with credentials) ---
+// CORS (must be before routes + session usage)
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // curl / Postman (no Origin)
-      return ORIGINS.includes(origin) ? cb(null, true) : cb(new Error("CORS blocked"));
+      if (!origin) return cb(null, true); // curl/Postman/no Origin
+      return ORIGINS.includes(origin) ? cb(null, true) : cb(null, false);
     },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "X-Requested-With",
+      "X-Company-ID",
+      "X-CSRF-Token",
+      "Authorization"
+    ]
   })
 );
-
-// Preflight helper (optional)
+// Preflight helper
 app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
-// --- Session (MUST come before routes) ---
+// Session (must be before any route that reads/writes req.session)
 app.use(
   session({
-    store: new PgStore({
-      pool,
-      createTableIfMissing: true, // auto-creates "session" table
-      // tableName: "session",
-    }),
+    store: new PgStore({ pool, createTableIfMissing: true }),
     name: "__erp_sid",
     secret: process.env.SESSION_SECRET || "CHANGE_ME",
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd,              // HTTPS on Render
+      secure: isProd,                 // Render uses HTTPS
       sameSite: isProd ? "none" : "lax", // allow cross-site in prod
-      maxAge: 1000 * 60 * 60 * 8,  // 8h
-    },
+      maxAge: 1000 * 60 * 60 * 8      // 8h
+    }
   })
 );
 
-// --- Per-request tenant scope (GUC) ---
-// Support either camelCase or snake_case keys on req.session
+// Per-request tenant scope (optional helper)
 app.use(async (req, _res, next) => {
   try {
     const tid = req.session?.tenantId || req.session?.tenant_id;
@@ -95,13 +93,13 @@ app.use(async (req, _res, next) => {
   }
 });
 
-// --- Health & Diagnostics ---
+/* ---------- Health & diagnostics ---------- */
 app.get("/api/health", (_req, res) => {
   res.status(200).json({
     ok: true,
     service: "GeniusGrid API",
     env: process.env.NODE_ENV || "development",
-    time: new Date().toISOString(),
+    time: new Date().toISOString()
   });
 });
 
@@ -110,7 +108,7 @@ app.get("/api/session-debug", (req, res) => {
     hasSession: !!req.session,
     userId: req.session?.userId ?? req.session?.user_id ?? null,
     tenantId: req.session?.tenantId ?? req.session?.tenant_id ?? null,
-    sid: req.sessionID || null,
+    sid: req.sessionID || null
   });
 });
 
@@ -118,11 +116,14 @@ app.post("/api/_echo", (req, res) => {
   res.json({ got: req.body || null, sid: req.sessionID || null });
 });
 
-// --- Mount routes (after session!) ---
-app.use("/api/auth", auth);        // login/reset/etc (sets req.session.*)
-app.use("/api/auth", authMe);      // /api/auth/me (reads req.session.*)
+/* ---------- Mount routes (after CORS + session!) ---------- */
+app.use("/api/auth", auth);           // login/reset/etc (sets req.session.*)
+app.use("/api/auth", authMe);         // /api/auth/me
 app.use("/api", dashboardRoutes);
 app.use("/api/admin", adminUsers);
+app.use("/api/csrf", csrfRoutes);
+app.use("/api/bootstrap", bootstrapRoutes);
+app.use("/api", healthRoutes);        // also fine here
 
 // Root
 app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
