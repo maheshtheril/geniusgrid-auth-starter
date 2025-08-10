@@ -87,8 +87,8 @@ function getUserId(req) {
   return req.session?.userId ?? req.session?.user_id ?? req.session?.user?.id ?? null;
 }
 async function setTenant(client, tenantId) {
-  // Use set_config() (binds are OK)
-  await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+  // IMPORTANT: non-local so the setting persists on this connection
+  await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
 /* =========================
@@ -112,7 +112,7 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
     await client.query("BEGIN");
     await setTenant(client, tenantId);
 
-    // Verify current password via crypt() (DB has the hash)
+    // Verify current password via crypt()
     const { rows: ok } = await client.query(
       `SELECT 1 FROM public.res_users WHERE id = $1 AND password = crypt($2, password) LIMIT 1`,
       [userId, currentPassword]
@@ -156,7 +156,7 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
     await new Promise((resolve, reject) => {
       req.session.regenerate((err) => (err ? reject(err) : resolve()));
     });
-    // Re-seed normalized session (set both shapes for compatibility)
+    // Re-seed normalized session (set both shapes)
     req.session.userId = userId;
     req.session.user_id = userId;
     req.session.tenantId = tenantId;
@@ -451,6 +451,11 @@ router.post("/password/reset", resetLimiter, async (req, res) => {
     client.release();
   }
 });
+
+/* =========================
+   DEV HELPERS (remove for production)
+========================= */
+
 // DEV ONLY: set IDs into the session (no auth)
 router.post("/dev/set-session", (req, res) => {
   const { userId, tenantId } = req.body || {};
@@ -477,5 +482,81 @@ router.get("/dev/show-session", (req, res) => {
   });
 });
 
+// DEV ONLY: ensure demo admin exists and seed session
+router.post("/dev/seed-admin", async (req, res) => {
+  const { tenantCode = "demo", email = "admin@demo.local", password = "admin" } = req.body || {};
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const t = await client.query(
+      `SELECT id FROM public.tenants WHERE code=$1 LIMIT 1`,
+      [tenantCode]
+    );
+    if (t.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ message: `Tenant '${tenantCode}' not found` });
+    }
+    const tenantId = t.rows[0].id;
+
+    await setTenant(client, tenantId);
+
+    // ensure unique expression index for upsert on (tenant_id, lower(email))
+    await client.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_res_users_tenant_lower_email
+      ON public.res_users (tenant_id, lower(email))
+    `);
+
+    // update-then-insert to be compatible without named constraint
+    const u = await client.query(
+      `
+      WITH up AS (
+        UPDATE public.res_users
+           SET password = crypt($3, gen_salt('bf',12)),
+               is_active = true,
+               name = COALESCE(name, 'Administrator'),
+               failed_attempts = 0,
+               locked_until = NULL,
+               updated_at = now()
+         WHERE tenant_id = $1 AND lower(email) = lower($2)
+         RETURNING id
+      ), ins AS (
+        INSERT INTO public.res_users (tenant_id, email, password, is_active, name, failed_attempts, locked_until, updated_at)
+        SELECT $1, $2, crypt($3, gen_salt('bf',12)), true, 'Administrator', 0, NULL, now()
+        WHERE NOT EXISTS (SELECT 1 FROM up)
+        RETURNING id
+      )
+      SELECT id FROM up
+      UNION ALL
+      SELECT id FROM ins
+      LIMIT 1
+      `,
+      [tenantId, email, password]
+    );
+    const userId = u.rows[0].id;
+
+    await client.query("COMMIT");
+
+    // seed session (both shapes)
+    req.session.regenerate((err) => {
+      if (err) return res.status(500).json({ message: "Session error" });
+      req.session.userId = userId;
+      req.session.user_id = userId;
+      req.session.tenantId = tenantId;
+      req.session.tenant_id = tenantId;
+      req.session.user = { id: userId, tenantId };
+      req.session.save((saveErr) => {
+        if (saveErr) return res.status(500).json({ message: "Session save error" });
+        return res.json({ ok: true, tenantId, userId });
+      });
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("[dev/seed-admin]", e);
+    return res.status(500).json({ message: "seed-admin failed" });
+  } finally {
+    client.release();
+  }
+});
 
 export default router;
