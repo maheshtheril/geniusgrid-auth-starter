@@ -5,9 +5,9 @@ import { requireAuth } from "../middleware/requireAuth.js";
 const router = express.Router();
 
 /**
- * GET /api/auth/me
+ * GET /api/auth/me[?probe=1]
  * Returns current user profile, roles, permissions, and menus for tenant.
- * IMPORTANT: set app.tenant_id on the SAME connection used for the query.
+ * PROBE mode returns step-by-step diagnostics to identify RLS/schema issues.
  */
 router.get("/me", requireAuth, async (req, res) => {
   const user_id =
@@ -76,12 +76,58 @@ router.get("/me", requireAuth, async (req, res) => {
     // Set tenant scope on THIS connection so RLS passes
     await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenant_id]);
 
-    const { rows } = await client.query(sql, [user_id, tenant_id]);
+    // Optional probe mode to surface exact failing piece
+    if (req.query.probe === "1") {
+      const steps = [];
+      const guc = await client.query(`SELECT current_setting('app.tenant_id', true) AS tenant`);
+      steps.push({ step: "guc", tenant: guc.rows[0]?.tenant || null });
 
+      const meVis = await client.query(
+        `SELECT 1 FROM public.res_users WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
+        [user_id, tenant_id]
+      );
+      steps.push({ step: "res_users_visible", count: meVis.rowCount });
+
+      const urVis = await client.query(
+        `SELECT 1 FROM public.user_roles WHERE tenant_id=$1 AND user_id=$2 LIMIT 1`,
+        [tenant_id, user_id]
+      );
+      steps.push({ step: "user_roles_visible", count: urVis.rowCount });
+
+      const miCount = await client.query(
+        `SELECT COUNT(*)::int AS c FROM public.menu_items WHERE tenant_id=$1`,
+        [tenant_id]
+      );
+      steps.push({ step: "menu_items_count", count: miCount.rows[0]?.c ?? null });
+
+      const tmCount = await client.query(
+        `SELECT COUNT(*)::int AS c FROM public.tenant_modules WHERE tenant_id=$1 AND status='installed'`,
+        [tenant_id]
+      );
+      steps.push({ step: "tenant_modules_installed", count: tmCount.rows[0]?.c ?? null });
+
+      // Try the full query to report exact error if it fails
+      try {
+        await client.query(sql, [user_id, tenant_id]);
+        steps.push({ step: "full_query", ok: true });
+        return res.json({ ok: true, steps });
+      } catch (err) {
+        return res.status(500).json({
+          ok: false,
+          steps,
+          code: err.code || null,
+          message: err.message,
+          detail: err.detail || null,
+          where: err.where || null,
+        });
+      }
+    }
+
+    // Normal /me response
+    const { rows } = await client.query(sql, [user_id, tenant_id]);
     if (!rows?.length || !rows[0]?.profile) {
       return res.status(401).json({ error: "User not found in tenant" });
     }
-
     const { profile, roles, permissions, menus } = rows[0];
     return res.json({ profile, roles, permissions, menus });
   } catch (err) {
