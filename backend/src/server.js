@@ -22,17 +22,17 @@ const PORT = process.env.PORT || 4000;
 // In prod, Render is HTTPS, so Secure + SameSite=None is required for cross-site cookies.
 const ORIGINS = [
   "http://localhost:5173",
-  "https://geniusgrid-web.onrender.com"
+  "https://geniusgrid-web.onrender.com",
 ];
 
-// --- Trust proxy (Render/Nginx) ---
+// --- Trust proxy (Render/Cloudflare) ---
 app.set("trust proxy", 1);
 
 // --- Security headers ---
 app.use(
   helmet({
-    contentSecurityPolicy: false,            // simplify for APIs
-    crossOriginEmbedderPolicy: false,        // avoid breaking some libs
+    contentSecurityPolicy: false,     // API-friendly
+    crossOriginEmbedderPolicy: false,
   })
 );
 
@@ -51,7 +51,7 @@ app.use(
   })
 );
 
-// Preflight helper (optional but nice)
+// Preflight helper (optional)
 app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
 // --- Session (MUST come before routes) ---
@@ -60,7 +60,7 @@ app.use(
     store: new PgStore({
       pool,
       createTableIfMissing: true, // auto-creates "session" table
-      // tableName: "session",    // uncomment to customize
+      // tableName: "session",
     }),
     name: "__erp_sid",
     secret: process.env.SESSION_SECRET || "CHANGE_ME",
@@ -78,13 +78,38 @@ app.use(
   })
 );
 
-// --- Health & Diagnostics (place BEFORE other routers to avoid interference) ---
+// --- Per-request tenant scope (GUC) ---
+// Ensures RLS sees the correct tenant for every request using the session tenantId
+app.use(async (req, _res, next) => {
+  try {
+    const tid = req.session?.tenantId;
+    if (tid) {
+      await pool.query("SELECT set_config('app.tenant_id', $1, true)", [tid]);
+    }
+  } catch (e) {
+    // Don't block the request on scope failure — your route handlers can handle errors
+    console.error("[tenant-scope]", e?.message || e);
+  } finally {
+    next();
+  }
+});
+
+// --- Health & Diagnostics (place BEFORE other routers) ---
 app.get("/api/health", (_req, res) => {
   res.status(200).json({
     ok: true,
     service: "GeniusGrid API",
     env: process.env.NODE_ENV || "development",
     time: new Date().toISOString(),
+  });
+});
+
+// Session visibility debug (safe to remove later)
+app.get("/api/session-debug", (req, res) => {
+  res.json({
+    hasSession: !!req.session,
+    userId: req.session?.userId || null,
+    tenantId: req.session?.tenantId || null,
   });
 });
 
@@ -100,9 +125,11 @@ app.post("/api/_echo", (req, res) => {
 app.use("/api/auth", auth);
 app.use("/api", dashboardRoutes);
 app.use("/api/admin", adminUsers);
+
 app.get("/", (_req, res) => {
   res.status(200).send("GeniusGrid API OK");
 });
+
 // --- 404 handler ---
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
 
