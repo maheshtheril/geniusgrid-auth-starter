@@ -222,3 +222,29 @@ input.has-icon{ padding-right:44px }
   .app-topbar { margin: 12px; }
   .app-content { padding: 12px; }
 }
+/* === Tree sidebar === */
+.nav-item {
+  display:flex; align-items:center; gap:8px;
+  padding:8px 10px; border-radius:12px;
+  color:#c9d4e5; text-decoration:none;
+  background:transparent; border:0; width:100%; text-align:left;
+  transition:background .15s ease, color .15s ease;
+  cursor:pointer;
+}
+.nav-item:hover { background: rgba(255,255,255,.06); color:#fff; }
+.nav-item.active { background: rgba(255,255,255,.12); color:#fff; }
+
+.nav-toggle .nav-label { font-weight:700; }
+.nav-caret { display:inline-block; width:12px; transform: rotate(0deg); transition: transform .12s ease; opacity:.8; }
+.nav-caret.open { transform: rotate(90deg); }
+.nav-caret-spacer { display:inline-block; width:12px; } /* aligns leaf items with parents */
+
+.nav-children {
+  margin-left: 10px; padding-left: 8px;
+  border-left: 1px solid rgba(255,255,255,.08);
+  max-height: 0; overflow: hidden;
+  transition: max-height .18s ease;
+}
+.nav-children.open { max-height: 1000px; } /* enough to reveal; simple & effective */
+
+.nav-dot { width:6px; height:6px; border-radius:50%; background: currentColor; opacity:.6; }
