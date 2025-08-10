@@ -192,8 +192,9 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
  * Body: { tenantCode | tenant, email, password }
  */
 router.post("/login", loginLimiter, async (req, res) => {
-  const { email, password, tenantCode: rawTenantCode, tenant } = req.body || {};
-  const tenantCode = (rawTenantCode || tenant || "").trim();
+  const { email: rawEmail, password, tenantCode: rawTenantCode, tenant } = req.body || {};
+  const email = (rawEmail || "").trim().toLowerCase();
+  const tenantCode = ((rawTenantCode || tenant) || "").trim();
 
   if (!email || !password || !tenantCode) {
     return res.status(400).json({ message: "tenantCode, email, password are required" });
@@ -201,54 +202,86 @@ router.post("/login", loginLimiter, async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const t = await client.query(`SELECT id FROM public.tenants WHERE code=$1`, [tenantCode]);
+    // 1) tenant resolve
+    const t = await client.query(
+      `SELECT id FROM public.tenants WHERE code = $1`,
+      [tenantCode]
+    );
     if (!t.rows.length) return res.status(400).json({ message: "Invalid tenant" });
     const tenantId = t.rows[0].id;
 
-    await setTenant(client, tenantId);
+    await setTenant(client, tenantId); // your helper
 
+    // 2) user lookup (note: locked_until column name!)
     const { rows } = await client.query(
       `SELECT id, email, password, is_active, failed_attempts, locked_until
          FROM public.res_users
-        WHERE lower(email) = lower($1)
+        WHERE lower(email) = $1
         LIMIT 1`,
       [email]
     );
     if (!rows.length) return res.status(401).json({ message: "Invalid credentials" });
 
     const user = rows[0];
-    if (!user.is_active) return res.status(403).json({ message: "User inactive" });
-    if (user.locked_until && new Date(user.locked_until) > new Date()) {
-      return res.status(423).json({ message: "Account locked. Try again later." });
+
+    // 3) TEMP BYPASS for dev: disable lock checks via env
+    if (process.env.DISABLE_LOGIN_LOCK === "1") {
+      if (user.failed_attempts > 0 || user.locked_until) {
+        await client.query(
+          `UPDATE public.res_users
+             SET failed_attempts = 0,
+                 locked_until   = NULL,
+                 updated_at     = now()
+           WHERE id = $1`,
+          [user.id]
+        );
+        user.failed_attempts = 0;
+        user.locked_until = null;
+      }
     }
 
-    const ok = await bcrypt.compare(password, user.password); // bcryptjs
+    // 4) status checks
+    if (!user.is_active) {
+      return res.status(403).json({ message: "User inactive" });
+    }
+    if (process.env.DISABLE_LOGIN_LOCK !== "1") {
+      if (user.locked_until && new Date(user.locked_until) > new Date()) {
+        return res.status(423).json({ message: "Account locked. Try again later." });
+      }
+    }
+
+    // 5) password verify
+    const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
       await client.query(
         `UPDATE public.res_users
            SET failed_attempts = failed_attempts + 1,
-               locked_until = CASE WHEN failed_attempts + 1 >= $2
-                                   THEN now() + ($3 || ' minutes')::interval
-                                   ELSE locked_until END,
-               updated_at = now()
+               locked_until    = CASE
+                 WHEN failed_attempts + 1 >= $2
+                 THEN now() + ($3 || ' minutes')::interval
+                 ELSE locked_until END,
+               updated_at      = now()
          WHERE id = $1`,
         [user.id, MAX_ATTEMPTS, String(LOCK_MINUTES)]
       );
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
+    // 6) success → clear lock and stamp login
     await client.query(
       `UPDATE public.res_users
-         SET failed_attempts = 0, locked_until = NULL, last_login_at = now(), updated_at = now()
+         SET failed_attempts = 0,
+             locked_until   = NULL,
+             last_login_at  = now(),
+             updated_at     = now()
        WHERE id = $1`,
       [user.id]
     );
 
-    // Normalize session (support both shapes)
-    req.session.userId = user.id;
+    // 7) session
+    req.session.userId   = user.id;
     req.session.tenantId = tenantId;
-    req.session.user = { id: user.id, tenantId };
-
+    req.session.user     = { id: user.id, tenantId };
     req.session.save(() => res.json({ ok: true }));
   } catch (e) {
     console.error("LOGIN ERROR:", e);
