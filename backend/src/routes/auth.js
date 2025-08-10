@@ -17,20 +17,18 @@ const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
   standardHeaders: true,
-  legacyHeaders: false
+  legacyHeaders: false,
 });
-
 const resetLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
 });
-
 const changeLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
 
-const MAX_ATTEMPTS = 5;   // lock after 5 bad attempts (kept for your policy if used elsewhere)
-const LOCK_MINUTES = 15;  // lock window
+const MAX_ATTEMPTS = 5;
+const LOCK_MINUTES = 15;
 
 /* =========================
    Helpers
@@ -38,18 +36,6 @@ const LOCK_MINUTES = 15;  // lock window
 function validatePasswordPolicy(pw) {
   if (typeof pw !== "string" || pw.length < 8) return "Password must be at least 8 characters.";
   return null;
-}
-
-async function columnExists(table, column) {
-  const q = `
-    SELECT 1
-      FROM information_schema.columns
-     WHERE table_schema = 'public'
-       AND lower(table_name) = lower($1)
-       AND lower(column_name) = lower($2)
-     LIMIT 1`;
-  const r = await pool.query(q, [table, column]);
-  return r.rowCount > 0;
 }
 
 // Build user context: permissions, installed modules, menus
@@ -63,7 +49,7 @@ async function loadContext(client, tenantId, userId) {
     WHERE ur.tenant_id = $1 AND ur.user_id = $2
   `;
   const { rows: permRows } = await client.query(permsQ, [tenantId, userId]);
-  const permissions = permRows.map(r => r.code);
+  const permissions = permRows.map((r) => r.code);
 
   const modsQ = `
     SELECT m.code, m.name, m.icon, m.category, m.description
@@ -94,6 +80,17 @@ async function loadContext(client, tenantId, userId) {
   return { permissions, modules, menus };
 }
 
+function getTenantId(req) {
+  return req.session?.tenantId ?? req.session?.user?.tenantId ?? null;
+}
+function getUserId(req) {
+  return req.session?.userId ?? req.session?.user?.id ?? null;
+}
+async function setTenant(client, tenantId) {
+  // Use set_config() (binds are OK); SET LOCAL with $1 is not allowed
+  await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
+}
+
 /* =========================
    Auth: Change password
 ========================= */
@@ -107,28 +104,36 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
   const policyErr = validatePasswordPolicy(newPassword);
   if (policyErr) return res.status(400).json({ message: policyErr });
 
-  const { id: userId, tenantId } = req.session.user;
-  const client = await pool.connect();
+  const userId = getUserId(req);
+  const tenantId = getTenantId(req);
 
+  const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+    await setTenant(client, tenantId);
 
-    // Verify current password via crypt()
+    // Verify current password via crypt() (DB has the hash)
     const { rows: ok } = await client.query(
       `SELECT 1 FROM public.res_users WHERE id = $1 AND password = crypt($2, password) LIMIT 1`,
       [userId, currentPassword]
     );
     if (ok.length === 0) {
       await logApi(client, {
-        tenantId, userId, method: "POST", path, statusCode: 400,
-        reqBody: null, resBody: { message: "Bad current password" }, ip: req.ip, userAgent: req.headers["user-agent"]
+        tenantId,
+        userId,
+        method: "POST",
+        path,
+        statusCode: 400,
+        reqBody: null,
+        resBody: { message: "Bad current password" },
+        ip: req.ip,
+        userAgent: req.headers["user-agent"],
       });
       await client.query("ROLLBACK");
       return res.status(400).json({ message: "Current password is incorrect" });
     }
 
-    // Update password (assumes DB trigger hashes it) and reset counters
+    // Update password (DB trigger hashes it) and reset counters
     await client.query(
       `UPDATE public.res_users
           SET password = $2,
@@ -149,14 +154,23 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
 
     // Rotate the session id (mitigate fixation)
     await new Promise((resolve, reject) => {
-      req.session.regenerate(err => (err ? reject(err) : resolve()));
+      req.session.regenerate((err) => (err ? reject(err) : resolve()));
     });
-    // Re-seed minimal session payload
-    req.session.user = { ...req.session.user, id: userId, tenantId };
+    // Re-seed normalized session (both shapes)
+    req.session.userId = userId;
+    req.session.tenantId = tenantId;
+    req.session.user = { id: userId, tenantId };
 
     await logApi(client, {
-      tenantId, userId, method: "POST", path, statusCode: 200,
-      reqBody: null, resBody: { ok: true }, ip: req.ip, userAgent: req.headers["user-agent"]
+      tenantId,
+      userId,
+      method: "POST",
+      path,
+      statusCode: 200,
+      reqBody: null,
+      resBody: { ok: true },
+      ip: req.ip,
+      userAgent: req.headers["user-agent"],
     });
 
     await client.query("COMMIT");
@@ -177,9 +191,7 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
  * POST /api/auth/login
  * Body: { tenantCode | tenant, email, password }
  */
-// POST /api/auth/login
-router.post("/login", async (req, res) => {
-  console.log("LOGIN BODY keys:", Object.keys(req.body || {}));
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password, tenantCode: rawTenantCode, tenant } = req.body || {};
   const tenantCode = (rawTenantCode || tenant || "").trim();
 
@@ -189,22 +201,19 @@ router.post("/login", async (req, res) => {
 
   const client = await pool.connect();
   try {
-    const t = await client.query("SELECT id FROM public.tenants WHERE code=$1", [tenantCode]);
-    console.log("TENANT rows:", t.rows.length);
+    const t = await client.query(`SELECT id FROM public.tenants WHERE code=$1`, [tenantCode]);
     if (!t.rows.length) return res.status(400).json({ message: "Invalid tenant" });
     const tenantId = t.rows[0].id;
 
-    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
-    console.log("GUC set for tenant:", tenantId);
+    await setTenant(client, tenantId);
 
     const { rows } = await client.query(
       `SELECT id, email, password, is_active, failed_attempts, locked_until
-       FROM public.res_users
-       WHERE lower(email) = lower($1)
-       LIMIT 1`,
+         FROM public.res_users
+        WHERE lower(email) = lower($1)
+        LIMIT 1`,
       [email]
     );
-    console.log("USER rows:", rows.length);
     if (!rows.length) return res.status(401).json({ message: "Invalid credentials" });
 
     const user = rows[0];
@@ -214,17 +223,16 @@ router.post("/login", async (req, res) => {
     }
 
     const ok = await bcrypt.compare(password, user.password); // bcryptjs
-    console.log("BCRYPT OK:", ok);
     if (!ok) {
       await client.query(
         `UPDATE public.res_users
            SET failed_attempts = failed_attempts + 1,
-               locked_until = CASE WHEN failed_attempts + 1 >= 5
-                                   THEN now() + interval '15 minutes'
+               locked_until = CASE WHEN failed_attempts + 1 >= $2
+                                   THEN now() + ($3 || ' minutes')::interval
                                    ELSE locked_until END,
                updated_at = now()
          WHERE id = $1`,
-        [user.id]
+        [user.id, MAX_ATTEMPTS, String(LOCK_MINUTES)]
       );
       return res.status(401).json({ message: "Invalid credentials" });
     }
@@ -236,8 +244,11 @@ router.post("/login", async (req, res) => {
       [user.id]
     );
 
+    // Normalize session (support both shapes)
     req.session.userId = user.id;
     req.session.tenantId = tenantId;
+    req.session.user = { id: user.id, tenantId };
+
     req.session.save(() => res.json({ ok: true }));
   } catch (e) {
     console.error("LOGIN ERROR:", e);
@@ -247,24 +258,32 @@ router.post("/login", async (req, res) => {
   }
 });
 
-
 /* =========================
-   Auth: Me (with context)
+   Auth: Me (contextful)
 ========================= */
-router.get("/me", async (req, res) => {
-  const sess = req.session?.user;
-  if (!sess) return res.status(401).json({ message: "Unauthorized" });
+/**
+ * NOTE: You also have GET /api/me in dashboard routes (minimal user).
+ * This one returns full context (permissions, modules, menus) under /api/auth/me.
+ */
+router.get("/me", requireAuth, async (req, res) => {
+  const userId = getUserId(req);
+  const tenantId = getTenantId(req);
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    await client.query(`SET LOCAL app.tenant_id = $1`, [sess.tenantId]);
+    await setTenant(client, tenantId);
 
-    const { permissions, modules, menus } = await loadContext(client, sess.tenantId, sess.id);
-    req.session.user.permissions = permissions;
+    const { permissions, modules, menus } = await loadContext(client, tenantId, userId);
+    // keep permissions in session for convenience (optional)
+    req.session.user = { ...(req.session.user || {}), id: userId, tenantId, permissions };
 
     await client.query("COMMIT");
-    res.json({ user: { ...sess, permissions }, modules, menus });
+    res.json({
+      user: { id: userId, tenantId, permissions },
+      modules,
+      menus,
+    });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("Me error:", e);
@@ -279,7 +298,10 @@ router.get("/me", async (req, res) => {
 ========================= */
 router.post("/logout", (req, res) => {
   try {
-    req.session.destroy(() => res.json({ ok: true }));
+    req.session.destroy(() => {
+      res.clearCookie("__erp_sid");
+      res.json({ ok: true });
+    });
   } catch {
     res.json({ ok: true });
   }
@@ -299,24 +321,32 @@ router.post("/password/forgot", resetLimiter, async (req, res) => {
     await client.query("BEGIN");
 
     const { rows: t } = await client.query(
-      `SELECT id, code, is_active FROM public.tenants WHERE code = $1`, [tenantCode]
+      `SELECT id, code, is_active FROM public.tenants WHERE code = $1`,
+      [tenantCode]
     );
     const tenant = t[0];
-    const done = () => res.json({ ok: true }); // 200 always (avoid enumeration)
+    const done = () => res.json({ ok: true }); // always 200 to avoid enumeration
 
-    if (!tenant || tenant.is_active !== true) { await client.query("ROLLBACK"); return done(); }
+    if (!tenant || tenant.is_active !== true) {
+      await client.query("ROLLBACK");
+      return done();
+    }
 
-    await client.query(`SET LOCAL app.tenant_id = $1`, [tenant.id]);
+    await setTenant(client, tenant.id);
 
     const { rows: u } = await client.query(
-      `SELECT id, email, is_active FROM public.res_users
-       WHERE tenant_id=$1 AND lower(email)=lower($2) LIMIT 1`,
+      `SELECT id, email, is_active
+         FROM public.res_users
+        WHERE tenant_id=$1 AND lower(email)=lower($2)
+        LIMIT 1`,
       [tenant.id, email]
     );
     const user = u[0];
-    if (!user || user.is_active !== true) { await client.query("ROLLBACK"); return done(); }
+    if (!user || user.is_active !== true) {
+      await client.query("ROLLBACK");
+      return done();
+    }
 
-    // raw token -> store only hash
     const raw = newRawToken(32);
     await client.query(
       `INSERT INTO public.auth_tokens (tenant_id, user_id, kind, token_hash, expires_at)
@@ -324,7 +354,9 @@ router.post("/password/forgot", resetLimiter, async (req, res) => {
       [tenant.id, user.id, raw]
     );
 
-    const resetUrl = `${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/reset-password?tenant=${encodeURIComponent(tenant.code)}&email=${encodeURIComponent(user.email)}&token=${raw}`;
+    const resetUrl = `${process.env.FRONTEND_ORIGIN || "http://localhost:5173"}/reset-password?tenant=${encodeURIComponent(
+      tenant.code
+    )}&email=${encodeURIComponent(user.email)}&token=${raw}`;
 
     await sendPasswordReset({ to: user.email, tenantCode: tenant.code, resetUrl });
 
@@ -353,7 +385,8 @@ router.post("/password/reset", resetLimiter, async (req, res) => {
     await client.query("BEGIN");
 
     const { rows: t } = await client.query(
-      `SELECT id, code, is_active FROM public.tenants WHERE code = $1`, [tenantCode]
+      `SELECT id, code, is_active FROM public.tenants WHERE code = $1`,
+      [tenantCode]
     );
     const tenant = t[0];
     if (!tenant || tenant.is_active !== true) {
@@ -361,7 +394,7 @@ router.post("/password/reset", resetLimiter, async (req, res) => {
       return res.status(400).json({ message: "Invalid reset request" });
     }
 
-    await client.query(`SET LOCAL app.tenant_id = $1`, [tenant.id]);
+    await setTenant(client, tenant.id);
 
     const { rows: u } = await client.query(
       `SELECT id FROM public.res_users WHERE tenant_id=$1 AND lower(email)=lower($2) LIMIT 1`,
@@ -392,7 +425,7 @@ router.post("/password/reset", resetLimiter, async (req, res) => {
       return res.status(400).json({ message: "Invalid or expired token" });
     }
 
-    // set new password (assumes hashing is handled by trigger or store raw to be hashed via trigger)
+    // set new password (DB trigger hashes it)
     await client.query(
       `UPDATE public.res_users SET password = $2, updated_at = now() WHERE id = $1`,
       [user.id, newPassword]
