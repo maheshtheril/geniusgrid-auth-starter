@@ -2,77 +2,68 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/** Build a robust tree: uses parent_id; if missing, infers from dotted code like "admin.users" -> parent "admin" */
-function buildTree(items) {
-  const rows = (items || []).map(r => ({ ...r, children: [] }));
-  const byId = new Map(rows.map(r => [r.id, r]));
-  const byCode = new Map(rows.map(r => [r.code, r]));
+function normPath(p) {
+  if (!p) return null;
+  const s = String(p).trim();
+  if (!s.startsWith("/")) return "/" + s;
+  return s.replace(/\/+$/,""); // no trailing slash
+}
+function pathParts(p) { return (normPath(p) || "").split("/").filter(Boolean); }
+function isParentPath(p) { return pathParts(p).length === 2; } // e.g. /app/admin
 
-  // infer parent if not set
-  for (const r of rows) {
-    if (!r.parent_id && typeof r.code === "string" && r.code.includes(".")) {
-      const parentCode = r.code.split(".")[0]; // "admin.users" -> "admin"
-      const parent = byCode.get(parentCode);
-      if (parent && parent.id !== r.id) r.parent_id = parent.id;
-    }
+// Build parent->children purely from path
+function buildTreeByPath(items = []) {
+  const rows = items.map(r => ({ ...r, path: normPath(r.path), children: [] }));
+  const parents = rows.filter(r => r.path && isParentPath(r.path));
+  const roots = [...parents];
+
+  // Attach children whose path starts with parent.path + '/'
+  for (const parent of parents) {
+    const pref = parent.path + "/";
+    const kids = rows.filter(r => r !== parent && r.path && r.path.startsWith(pref));
+    // Only attach direct children (length === parentParts+1)
+    const targetLen = pathParts(parent.path).length + 1;
+    parent.children = kids.filter(k => pathParts(k.path).length === targetLen);
   }
 
-  const roots = [];
+  // Orphan leaves that don’t match any parent stay as roots
+  const attachedIds = new Set(parents.flatMap(p => p.children.map(c => c.id)));
   for (const r of rows) {
-    if (r.parent_id && byId.has(r.parent_id)) byId.get(r.parent_id).children.push(r);
-    else roots.push(r);
+    if (!parents.includes(r) && !attachedIds.has(r.id)) roots.push(r);
   }
 
-  const cmp = (a, b) =>
-    (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
-    String(a.name).localeCompare(String(b.name));
+  // Sort
+  const cmp = (a,b)=>(a.sort_order??0)-(b.sort_order??0)||String(a.name).localeCompare(String(b.name));
+  roots.sort(cmp);
+  parents.forEach(p => p.children.sort(cmp));
 
-  const sortRec = (n) => { n.children.sort(cmp); n.children.forEach(sortRec); };
-  roots.sort(cmp); roots.forEach(sortRec);
-
-  return { roots, byId };
+  // Parent map for auto-open
+  const byPath = new Map(rows.map(r => [r.path, r]));
+  return { roots, parents, byPath };
 }
 
-/** Small caret icon (no deps) */
 function Caret({ open }) {
   return (
     <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden
-         style={{ transform: `rotate(${open ? 90 : 0}deg)`, transition: "transform .18s ease" }}>
-      <path d="M8 5l8 7-8 7" fill="none" stroke="currentColor" strokeWidth="2"
-            strokeLinecap="round" strokeLinejoin="round"/>
+      style={{ transform:`rotate(${open?90:0}deg)`, transition:"transform .18s ease" }}>
+      <path d="M8 5l8 7-8 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
   );
 }
 
-/** Height transition wrapper for smooth collapse */
 function Collapse({ open, children, id }) {
   const ref = useRef(null);
-  const [h, setH] = useState(open ? "auto" : 0);
-
+  const [h,setH] = useState(open ? "auto" : 0);
   useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    if (open) {
-      const full = el.scrollHeight;
-      setH(full);
-      const t = setTimeout(() => setH("auto"), 180);
-      return () => clearTimeout(t);
-    } else {
-      const full = el.scrollHeight;
-      setH(full);
-      requestAnimationFrame(() => setH(0));
-    }
+    const el = ref.current; if (!el) return;
+    if (open) { const full = el.scrollHeight; setH(full); const t=setTimeout(()=>setH("auto"),180); return ()=>clearTimeout(t); }
+    const full = el.scrollHeight; setH(full); requestAnimationFrame(()=>setH(0));
   }, [open, children?.length]);
-
   return (
-    <div id={id} ref={ref}
-         style={{
-           maxHeight: typeof h === "number" ? h + "px" : h,
-           overflow: "hidden",
-           transition: "max-height .18s ease",
-           marginLeft: 10, paddingLeft: 8,
-           borderLeft: "1px solid rgba(255,255,255,.08)"
-         }}>
+    <div id={id} ref={ref} style={{
+      maxHeight: typeof h==="number" ? h+"px" : h, overflow:"hidden", transition:"max-height .18s ease",
+      marginLeft:10, paddingLeft:8, borderLeft:"1px solid rgba(255,255,255,.08)"
+    }}>
       {children}
     </div>
   );
@@ -80,80 +71,75 @@ function Collapse({ open, children, id }) {
 
 export default function AppSidebar() {
   const { menus } = useEnv();
-  const { roots, byId } = useMemo(() => buildTree(menus), [menus]);
+  const { roots, parents, byPath } = useMemo(() => buildTreeByPath(menus), [menus]);
   const location = useLocation();
 
-  // open state persists
+  // Persist open state by parent path
   const [open, setOpen] = useState(() => {
-    try { return new Set(JSON.parse(localStorage.getItem("__gg_menu_open") || "[]")); }
+    try { return new Set(JSON.parse(localStorage.getItem("__gg_menu_open_paths") || "[]")); }
     catch { return new Set(); }
   });
   useEffect(() => {
-    localStorage.setItem("__gg_menu_open", JSON.stringify(Array.from(open)));
+    localStorage.setItem("__gg_menu_open_paths", JSON.stringify(Array.from(open)));
   }, [open]);
 
-  // auto-open parents for current route
+  // Auto-open the parent of the current route
   useEffect(() => {
-    if (!menus?.length) return;
-    const active = menus.find(m => m.path && location.pathname.startsWith(m.path));
-    if (!active) return;
-    const next = new Set(open);
-    let cur = active;
-    for (let guard = 0; guard < 50 && cur?.parent_id; guard++) {
-      next.add(cur.parent_id);
-      cur = byId.get(cur.parent_id);
+    const cur = normPath(location.pathname);
+    if (!cur) return;
+    // find nearest parent segment: /app/{group}
+    const parts = pathParts(cur);
+    if (parts.length >= 2) {
+      const parentPath = "/" + parts.slice(0,2).join("/");
+      if (byPath.has(parentPath) && !open.has(parentPath)) {
+        const next = new Set(open); next.add(parentPath); setOpen(next);
+      }
     }
-    if (next.size !== open.size) setOpen(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname, menus]);
+  }, [location.pathname, byPath, open]);
 
-  const toggle = (id) => setOpen(prev => {
-    const n = new Set(prev);
-    n.has(id) ? n.delete(id) : n.add(id);
-    return n;
+  const toggle = (parentPath) => setOpen(prev => {
+    const n = new Set(prev); n.has(parentPath) ? n.delete(parentPath) : n.add(parentPath); return n;
   });
 
   const Leaf = ({ node, depth }) => (
     <div className="nav-node">
-      <NavLink
-        to={node.path || "#"}
-        end
-        className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}
-        style={{ paddingLeft: 12 + depth * 14 }}>
-        <span style={{ width: 12, display: "inline-block" }} />
+      <NavLink to={node.path || "#"} end
+        className={({isActive})=>"nav-item"+(isActive?" active":"")}
+        style={{ paddingLeft: 12 + depth*14 }}>
+        <span style={{ width:12, display:"inline-block" }} />
         <span className="nav-dot" /> <span>{node.name}</span>
       </NavLink>
     </div>
   );
 
   const Group = ({ node, depth }) => {
-    const isOpen = open.has(node.id) || depth === 0; // roots open by default
+    const parentPath = node.path;
+    const isOpen = open.has(parentPath) || depth===0;
     return (
       <div className="nav-node">
         <button
           type="button"
           className="nav-item nav-toggle"
-          style={{ paddingLeft: 12 + depth * 14 }}
-          onClick={() => toggle(node.id)}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(node.id); } }}
+          style={{ paddingLeft: 12 + depth*14 }}
+          onClick={() => toggle(parentPath)}
+          onKeyDown={(e)=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); toggle(parentPath); } }}
           aria-expanded={isOpen}
-          aria-controls={`group-${node.id}`}>
+          aria-controls={`group-${parentPath}`}
+        >
           <Caret open={isOpen} />
           <span className="nav-label">{node.name}</span>
           {node.path && (
-            <NavLink to={node.path} className="nav-mini-link" onClick={(e) => e.stopPropagation()}>
+            <NavLink to={node.path} className="nav-mini-link" onClick={(e)=>e.stopPropagation()}>
               Open
             </NavLink>
           )}
         </button>
 
-        <Collapse open={isOpen} id={`group-${node.id}`}>
+        <Collapse open={isOpen} id={`group-${parentPath}`}>
           {node.children.map(ch =>
-            ch.children?.length ? (
-              <Group key={ch.id} node={ch} depth={depth + 1} />
-            ) : (
-              <Leaf key={ch.id} node={ch} depth={depth + 1} />
-            )
+            parents.find(p => p.path === ch.path) // if a child is also parent-level (rare)
+              ? <Group key={ch.id} node={ch} depth={depth+1}/>
+              : <Leaf key={ch.id} node={ch} depth={depth+1}/>
           )}
         </Collapse>
       </div>
@@ -165,7 +151,7 @@ export default function AppSidebar() {
       <div className="sidebar-head text-muted small">Menu</div>
       <nav className="nav-vertical">
         {roots.length
-          ? roots.map(n => (n.children?.length ? <Group key={n.id} node={n} depth={0} /> : <Leaf key={n.id} node={n} depth={0} />))
+          ? roots.map(n => (n.children?.length ? <Group key={n.id} node={n} depth={0}/> : <Leaf key={n.id} node={n} depth={0}/>))
           : <div className="text-muted">No menus</div>}
       </nav>
       <div className="sidebar-foot text-muted small">© GeniusGrid</div>

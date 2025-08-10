@@ -355,3 +355,11 @@ input.has-icon{ padding-right:44px }
 .nav-dot{ width:6px; height:6px; border-radius:999px; background:currentColor; opacity:.6; display:inline-block }
 
 /* collapse container handled inline by <Collapse/> */
+.nav-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:12px;background:transparent;border:0;width:100%;text-align:left;color:#c9d4e5;text-decoration:none;cursor:pointer;transition:background .15s ease,color .15s ease}
+.nav-item:hover{background:rgba(255,255,255,.06);color:#fff}
+.nav-item.active{background:rgba(255,255,255,.12);color:#fff}
+.nav-toggle .nav-label{font-weight:700}
+.nav-mini-link{margin-left:auto;font-size:11px;color:#93c5fd;opacity:.9}
+.nav-mini-link:hover{text-decoration:underline}
+.nav-item:focus-visible{outline:2px solid var(--brand);outline-offset:2px;background:rgba(99,102,241,.08)}
+.nav-dot{width:6px;height:6px;border-radius:999px;background:currentColor;opacity:.6;display:inline-block}
