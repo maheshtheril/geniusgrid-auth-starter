@@ -177,113 +177,76 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
  * POST /api/auth/login
  * Body: { tenantCode | tenant, email, password }
  */
-router.post("/login", loginLimiter, async (req, res) => {
-  const { email, password, tenant, tenantCode } = req.body || {};
-  const eml = (email || "").trim().toLowerCase();
-  const code = (tenantCode ?? tenant ?? "").trim().toLowerCase();
+// POST /api/auth/login
+router.post("/login", async (req, res) => {
+  console.log("LOGIN BODY keys:", Object.keys(req.body || {}));
+  const { email, password, tenantCode: rawTenantCode, tenant } = req.body || {};
+  const tenantCode = (rawTenantCode || tenant || "").trim();
 
-  const ok = await bcrypt.compare(password, user.password);
-
-  if (!eml || !password || !code) {
+  if (!email || !password || !tenantCode) {
     return res.status(400).json({ message: "tenantCode, email, password are required" });
   }
 
+  const client = await pool.connect();
   try {
-    // 1) Tenant by code or slug
-    let tRes = await pool.query(
-      `SELECT id, code, name FROM public.tenants WHERE lower(code) = $1 LIMIT 1`,
-      [code]
+    const t = await client.query("SELECT id FROM public.tenants WHERE code=$1", [tenantCode]);
+    console.log("TENANT rows:", t.rows.length);
+    if (!t.rows.length) return res.status(400).json({ message: "Invalid tenant" });
+    const tenantId = t.rows[0].id;
+
+    await client.query("SELECT set_config('app.tenant_id', $1, true)", [tenantId]);
+    console.log("GUC set for tenant:", tenantId);
+
+    const { rows } = await client.query(
+      `SELECT id, email, password, is_active, failed_attempts, locked_until
+       FROM public.res_users
+       WHERE lower(email) = lower($1)
+       LIMIT 1`,
+      [email]
     );
-    if (tRes.rowCount === 0 && await columnExists("tenants", "slug")) {
-      tRes = await pool.query(
-        `SELECT id, slug AS code, name FROM public.tenants WHERE lower(slug) = $1 LIMIT 1`,
-        [code]
+    console.log("USER rows:", rows.length);
+    if (!rows.length) return res.status(401).json({ message: "Invalid credentials" });
+
+    const user = rows[0];
+    if (!user.is_active) return res.status(403).json({ message: "User inactive" });
+    if (user.locked_until && new Date(user.locked_until) > new Date()) {
+      return res.status(423).json({ message: "Account locked. Try again later." });
+    }
+
+    const ok = await bcrypt.compare(password, user.password); // bcryptjs
+    console.log("BCRYPT OK:", ok);
+    if (!ok) {
+      await client.query(
+        `UPDATE public.res_users
+           SET failed_attempts = failed_attempts + 1,
+               locked_until = CASE WHEN failed_attempts + 1 >= 5
+                                   THEN now() + interval '15 minutes'
+                                   ELSE locked_until END,
+               updated_at = now()
+         WHERE id = $1`,
+        [user.id]
       );
-    }
-    if (tRes.rowCount === 0) {
-      return res.status(401).json({ message: "Unknown tenant" });
-    }
-    const tenantRow = tRes.rows[0];
-    const tenantId = tenantRow.id;
-
-    // 2) Which password column in res_users?
-    const hasPwdHash = await columnExists("res_users", "password_hash");
-    const hasPwd = await columnExists("res_users", "password");
-    if (!hasPwdHash && !hasPwd) {
-      console.error("[LOGIN ERROR] res_users has no password/password_hash column");
-      return res.status(500).json({ message: "Server auth config error" });
-    }
-
-    // 3) Verify credentials in SQL (pgcrypto)
-    const credSql = hasPwdHash
-      ? `
-        SELECT u.id, u.email, u.is_active
-          FROM public.res_users u
-         WHERE lower(u.email) = $1
-           AND crypt($2, u.password_hash) = u.password_hash
-         LIMIT 1
-      `
-      : `
-        SELECT u.id, u.email, u.is_active
-          FROM public.res_users u
-         WHERE lower(u.email) = $1
-           AND crypt($2, u.password) = u.password
-         LIMIT 1
-      `;
-
-    const uRes = await pool.query(credSql, [eml, password]);
-    if (uRes.rowCount === 0) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
-    const user = uRes.rows[0];
-    if (user.is_active === false) {
-      return res.status(401).json({ message: "User inactive" });
-    }
 
-    // 4) Ensure user belongs to this tenant (if schema supports it)
-    let memberOK = true;
-    if (await columnExists("user_roles", "tenant_id")) {
-      const m = await pool.query(
-        `SELECT 1 FROM public.user_roles WHERE user_id = $1 AND tenant_id = $2 LIMIT 1`,
-        [user.id, tenantId]
-      );
-      memberOK = m.rowCount > 0;
-    } else if (
-      (await columnExists("res_user_companies", "company_id")) &&
-      (await columnExists("res_company", "tenant_id"))
-    ) {
-      const m = await pool.query(
-        `SELECT 1
-           FROM public.res_user_companies uc
-           JOIN public.res_company c ON c.id = uc.company_id
-          WHERE uc.user_id = $1 AND c.tenant_id = $2
-          LIMIT 1`,
-        [user.id, tenantId]
-      );
-      memberOK = m.rowCount > 0;
-    }
-    if (!memberOK) {
-      return res.status(401).json({ message: "User not assigned to this tenant" });
-    }
+    await client.query(
+      `UPDATE public.res_users
+         SET failed_attempts = 0, locked_until = NULL, last_login_at = now(), updated_at = now()
+       WHERE id = $1`,
+      [user.id]
+    );
 
-    // 5) Create session
-    req.session.user = {
-      id: user.id,
-      email: eml,
-      tenantId,
-      at: Date.now()
-    };
-
-    return res.json({
-      ok: true,
-      user: { id: user.id, email: eml },
-      tenant: { id: tenantId, code: tenantRow.code }
-    });
-  } catch (err) {
-    console.error("[LOGIN ERROR]", err);
-    return res.status(500).json({ message: "Login error" });
+    req.session.userId = user.id;
+    req.session.tenantId = tenantId;
+    req.session.save(() => res.json({ ok: true }));
+  } catch (e) {
+    console.error("LOGIN ERROR:", e);
+    res.status(500).json({ message: "Login error" });
+  } finally {
+    client.release();
   }
 });
+
 
 /* =========================
    Auth: Me (with context)
