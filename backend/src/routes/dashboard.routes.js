@@ -18,7 +18,7 @@ function getUserId(req) {
 async function setTenant(client, tenantId) {
   if (!tenantId) return;
   // local GUC for this txn/connection
-  await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
+  await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [tenantId]);
 }
 
 function normalizeDateISO(v) {
