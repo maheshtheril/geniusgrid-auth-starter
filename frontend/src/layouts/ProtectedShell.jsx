@@ -1,20 +1,23 @@
-// src/layouts/ProtectedShell.jsx
+// -----------------------------------------------
+// src/layouts/ProtectedShell.jsx (updated layout)
+// -----------------------------------------------
 import { Outlet } from "react-router-dom";
 import ProtectedLayout from "./ProtectedLayout";
 import Sidebar from "@/components/Sidebar";
-import CompanySwitcher from "@/components/CompanySwitcher";
+import { Topbar } from "@/components/Topbar";
+import { CompanySwitcher } from "@/components/CompanySwitcher";
 
 export default function ProtectedShell() {
   return (
     <ProtectedLayout>
-      <div className="h-screen w-screen flex">
+      <div className="min-h-screen w-full bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100 flex">
         <Sidebar />
         <main className="flex-1 min-w-0">
-          <header className="border-b p-3 flex items-center gap-3">
-            <CompanySwitcher />
-            <div className="ml-auto text-sm opacity-70">GeniusGrid</div>
-          </header>
-          <div className="p-4">
+          <Topbar />
+          <div className="p-3">
+            <div className="mb-3 flex items-center gap-2">
+              <CompanySwitcher />
+            </div>
             <Outlet />
           </div>
         </main>
