@@ -296,3 +296,45 @@ input.has-icon{ padding-right:44px }
   transition: max-height .18s ease;
 }
 .nav-children.open { max-height: 1000px; } /* simple slide */
+/* Sidebar collapsible arrow for <summary> */
+.app-sidebar summary {
+  list-style: none; /* remove default marker */
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.app-sidebar summary::before {
+  content: "▸"; /* arrow shape */
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%) rotate(0deg);
+  transition: transform 0.2s ease;
+  font-size: 0.8rem;
+}
+
+.app-sidebar details[open] summary::before {
+  transform: translateY(-50%) rotate(90deg);
+}
+/* --- World-class sidebar polish (works with your tokens) --- */
+.nav-item{
+  display:flex; align-items:center; gap:8px;
+  padding:8px 10px; border-radius:12px;
+  background:transparent; border:0; width:100%; text-align:left;
+  color:#c9d4e5; text-decoration:none; cursor:pointer;
+  transition:background .15s ease, color .15s ease;
+}
+.nav-item:hover{ background:rgba(255,255,255,.06); color:#fff }
+.nav-item.active{ background:rgba(255,255,255,.12); color:#fff }
+.nav-toggle .nav-label{ font-weight:700 }
+.nav-mini-link{ margin-left:auto; font-size:11px; color:#93c5fd; opacity:.9 }
+.nav-mini-link:hover{ text-decoration:underline }
+
+/* focus ring for keyboard users */
+.nav-item:focus-visible{
+  outline:2px solid var(--brand);
+  outline-offset:2px;
+  background:rgba(99,102,241,.08);
+}
+
+/* container spacing already handled in app-shell */

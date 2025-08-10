@@ -1,79 +1,195 @@
-import { useMemo } from "react";
-import { NavLink } from "react-router-dom";
+import { NavLink, useLocation } from "react-router-dom";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useEnv } from "@/store/useEnv";
 
-function groupByPrefix(items) {
+/* ---------- Tiny inline icons (no dependencies) ---------- */
+function Caret({ open }) {
+  return (
+    <svg
+      width="12" height="12" viewBox="0 0 24 24" aria-hidden
+      style={{ transform: `rotate(${open ? 90 : 0}deg)`, transition: "transform .18s ease" }}
+    >
+      <path d="M8 5l8 7-8 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+function Dot() {
+  return <span style={{ width: 6, height: 6, borderRadius: 999, background: "currentColor", opacity: .6, display: "inline-block" }} />;
+}
+
+/* ---------- Build a robust tree ---------- */
+function toTree(items) {
+  // clone
+  const rows = (items || []).map(r => ({ ...r, children: [] }));
+  const byId = new Map(rows.map(r => [r.id, r]));
+  const byCode = new Map(rows.map(r => [r.code, r]));
+
+  // infer parent_id from dotted code if missing: "crm.leads" -> parent "crm"
+  for (const r of rows) {
+    if (!r.parent_id && typeof r.code === "string" && r.code.includes(".")) {
+      const parentCode = r.code.split(".")[0];
+      const parent = byCode.get(parentCode);
+      if (parent && parent.id !== r.id) r.parent_id = parent.id;
+    }
+  }
+
   const roots = [];
-  const groups = new Map(); // 'admin' -> { label:'Admin', items:[...] }
-  for (const it of items) {
-    const code = String(it.code || "").toLowerCase();
-    const prefix = code.includes(".") ? code.split(".")[0] : code;
-    if (!code.includes(".")) {
-      // parent candidate
-      groups.set(prefix, { parent: it, items: [] });
-    }
+  for (const r of rows) {
+    if (r.parent_id && byId.has(r.parent_id)) byId.get(r.parent_id).children.push(r);
+    else roots.push(r);
   }
-  // second pass for children
-  for (const it of items) {
-    const code = String(it.code || "").toLowerCase();
-    const prefix = code.includes(".") ? code.split(".")[0] : null;
-    if (prefix && groups.has(prefix)) {
-      groups.get(prefix).items.push(it);
-    } else if (!prefix) {
-      roots.push(it); // true top-level leaf
+  const cmp = (a, b) =>
+    (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+    String(a.name).localeCompare(String(b.name));
+
+  const sortRec = (n) => { n.children.sort(cmp); n.children.forEach(sortRec); };
+  roots.sort(cmp); roots.forEach(sortRec);
+
+  return { roots, byId };
+}
+
+/* ---------- Height auto-animation container ---------- */
+function Collapse({ open, children, id }) {
+  const ref = useRef(null);
+  const [h, setH] = useState(open ? "auto" : 0);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (open) {
+      const full = el.scrollHeight;
+      setH(full);
+      const t = setTimeout(() => setH("auto"), 180);
+      return () => clearTimeout(t);
+    } else {
+      // from auto -> pixel -> 0 for smooth collapse
+      const full = el.scrollHeight;
+      setH(full);
+      requestAnimationFrame(() => setH(0));
     }
-  }
-  return { roots, groups };
+  }, [open, children?.length]);
+
+  return (
+    <div
+      id={id}
+      ref={ref}
+      style={{
+        maxHeight: typeof h === "number" ? h + "px" : h,
+        overflow: "hidden",
+        transition: "max-height .18s ease",
+        marginLeft: 10,
+        paddingLeft: 8,
+        borderLeft: "1px solid rgba(255,255,255,.08)"
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export default function AppSidebar() {
   const { menus } = useEnv();
-  const { roots, groups } = useMemo(() => groupByPrefix(menus || []), [menus]);
+  const { roots, byId } = useMemo(() => toTree(menus), [menus]);
+  const location = useLocation();
 
-  console.log("★ AppSidebar mounted. menus:", menus?.length, { roots, groups: [...groups.keys()] });
+  // Persisted open state
+  const [open, setOpen] = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("__gg_menu_open") || "[]")); }
+    catch { return new Set(); }
+  });
+  useEffect(() => {
+    localStorage.setItem("__gg_menu_open", JSON.stringify(Array.from(open)));
+  }, [open]);
+
+  // Auto-open parents for active route
+  useEffect(() => {
+    if (!menus?.length) return;
+    const active = menus.find(m => m.path && location.pathname.startsWith(m.path));
+    if (!active) return;
+    const next = new Set(open);
+    let cur = active;
+    for (let guard = 0; guard < 50 && cur?.parent_id; guard++) {
+      next.add(cur.parent_id);
+      cur = byId.get(cur.parent_id);
+    }
+    if (next.size !== open.size) setOpen(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, menus]);
+
+  const toggle = (id) =>
+    setOpen(prev => {
+      const n = new Set(prev);
+      n.has(id) ? n.delete(id) : n.add(id);
+      return n;
+    });
+
+  const GroupRow = ({ node, depth }) => {
+    const isOpen = open.has(node.id) || depth === 0; // open roots by default
+    return (
+      <div className="nav-node">
+        <button
+          type="button"
+          className="nav-item nav-toggle"
+          style={{ paddingLeft: 12 + depth * 14 }}
+          onClick={() => toggle(node.id)}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(node.id); } }}
+          aria-expanded={isOpen}
+          aria-controls={`group-${node.id}`}
+        >
+          <Caret open={isOpen} />
+          <span className="nav-label">{node.name}</span>
+          {node.path && (
+            <NavLink
+              to={node.path}
+              className="nav-mini-link"
+              onClick={(e) => e.stopPropagation()}
+            >
+              Open
+            </NavLink>
+          )}
+        </button>
+
+        <Collapse open={isOpen} id={`group-${node.id}`}>
+          {node.children.map(ch =>
+            ch.children?.length ? (
+              <GroupRow key={ch.id} node={ch} depth={depth + 1} />
+            ) : (
+              <LeafRow key={ch.id} node={ch} depth={depth + 1} />
+            )
+          )}
+        </Collapse>
+      </div>
+    );
+  };
+
+  const LeafRow = ({ node, depth }) => (
+    <div className="nav-node">
+      <NavLink
+        to={node.path || "#"}
+        end
+        className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}
+        style={{ paddingLeft: 12 + depth * 14 }}
+      >
+        <span style={{ width: 12, display: "inline-block" }} />
+        <Dot /> <span>{node.name}</span>
+      </NavLink>
+    </div>
+  );
 
   return (
-    <aside className="app-sidebar panel glass" style={{ border: "2px solid #7c3aed" }}>
-      <div className="sidebar-head text-muted small">★ Menu (test)</div>
-
-      {/* Grouped parents */}
-      {[...groups.values()]
-        .sort((a,b)=> (a.parent?.sort_order ?? 0) - (b.parent?.sort_order ?? 0))
-        .map(({ parent, items }) => (
-        <details key={parent.id} open>
-          <summary className="nav-item nav-toggle" style={{ cursor: "pointer", fontWeight: 700 }}>
-            {parent.name} <span style={{ marginLeft: "auto", fontSize: 11, opacity: .8 }}>Open</span>
-          </summary>
-          <div className="nav-children open">
-            {items
-              .sort((a,b)=> (a.sort_order ?? 0) - (b.sort_order ?? 0))
-              .map(ch => (
-                <NavLink
-                  key={ch.id}
-                  to={ch.path || "#"}
-                  end
-                  className={({isActive}) => "nav-item" + (isActive ? " active" : "")}
-                  style={{ paddingLeft: 26 }}
-                >
-                  <span className="nav-dot" /> {ch.name}
-                </NavLink>
-              ))}
-          </div>
-        </details>
-      ))}
-
-      {/* Ungrouped roots (if any) */}
-      {roots.length > 0 && (
-        <>
-          <div className="sidebar-head text-muted small" style={{ marginTop: 8 }}>Other</div>
-          {roots.map(n => (
-            <NavLink key={n.id} to={n.path || "#"} end className="nav-item">
-              <span className="nav-dot" /> {n.name}
-            </NavLink>
-          ))}
-        </>
-      )}
-
+    <aside className="app-sidebar panel glass">
+      <div className="sidebar-head text-muted small">Menu</div>
+      <nav className="nav-vertical">
+        {roots.length
+          ? roots.map(n =>
+              n.children?.length ? (
+                <GroupRow key={n.id} node={n} depth={0} />
+              ) : (
+                <LeafRow key={n.id} node={n} depth={0} />
+              )
+            )
+          : <div className="text-muted">No menus</div>}
+      </nav>
       <div className="sidebar-foot text-muted small">© GeniusGrid</div>
     </aside>
   );
