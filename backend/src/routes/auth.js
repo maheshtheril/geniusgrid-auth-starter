@@ -451,5 +451,31 @@ router.post("/password/reset", resetLimiter, async (req, res) => {
     client.release();
   }
 });
+// DEV ONLY: set IDs into the session (no auth)
+router.post("/dev/set-session", (req, res) => {
+  const { userId, tenantId } = req.body || {};
+  if (!userId || !tenantId) return res.status(400).json({ message: "userId and tenantId required" });
+
+  // no regenerate: keep current sid
+  req.session.userId = userId;
+  req.session.user_id = userId;
+  req.session.tenantId = tenantId;
+  req.session.tenant_id = tenantId;
+  req.session.user = { id: userId, tenantId };
+
+  req.session.save((err) => {
+    if (err) return res.status(500).json({ message: "Session save error" });
+    return res.json({ ok: true, session: { userId, tenantId } });
+  });
+});
+
+// DEV ONLY: show current session payload (no auth)
+router.get("/dev/show-session", (req, res) => {
+  res.json({
+    sid: req.sessionID || null,
+    session: req.session || null,
+  });
+});
+
 
 export default router;
