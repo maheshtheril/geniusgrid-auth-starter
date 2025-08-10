@@ -1,41 +1,84 @@
 // src/routes/dashboard.routes.js
 import { Router } from "express";
-import { pool } from "../db/pool.js";            // your pg Pool
+import { pool } from "../db/pool.js";
 import { requireAuth } from "../middleware/requireAuth.js";
 
 const router = Router();
 
-// Helpers
+/* ---------- helpers ---------- */
+
+function getTenantId(req) {
+  // support both shapes in case middleware sets req.session.user
+  return req.session?.tenantId || req.session?.user?.tenantId || null;
+}
+function getUserId(req) {
+  return req.session?.userId || req.session?.user?.id || null;
+}
+
 async function setTenant(client, tenantId) {
+  if (!tenantId) return;
+  // local GUC for this txn/connection
   await client.query(`SET LOCAL app.tenant_id = $1`, [tenantId]);
 }
 
 function normalizeDateISO(v) {
-  // accepts 'YYYY-MM-DD' or Date; returns 'YYYY-MM-DD'
   if (!v) return null;
   if (v instanceof Date) return v.toISOString().slice(0, 10);
   return String(v).slice(0, 10);
 }
-
 function defaultRangeIfMissing(from, to) {
-  // default to last 30 days, inclusive
   const today = new Date();
-  const start = new Date(today); start.setDate(today.getDate() - 29);
+  const start = new Date(today);
+  start.setDate(today.getDate() - 29); // last 30 days inclusive
   return {
     from: normalizeDateISO(from) || start.toISOString().slice(0, 10),
     to: normalizeDateISO(to) || today.toISOString().slice(0, 10),
   };
 }
 
-// All routes require a logged-in session
+/* ---------- auth gate for all routes below ---------- */
 router.use(requireAuth);
+
+/**
+ * GET /api/me
+ * Returns the current user (scoped by tenant via RLS).
+ */
+router.get("/me", async (req, res) => {
+  const userId = getUserId(req);
+  const tenantId = getTenantId(req);
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await setTenant(client, tenantId);
+
+    const { rows } = await client.query(
+      `SELECT id, email, name, is_active
+         FROM public.res_users
+        WHERE id = $1
+        LIMIT 1`,
+      [userId]
+    );
+
+    await client.query("COMMIT");
+    if (!rows.length) return res.status(404).json({ message: "User not found" });
+    return res.json(rows[0]);
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("GET /api/me error:", e);
+    return res.status(500).json({ message: "Server error" });
+  } finally {
+    client.release();
+  }
+});
 
 /**
  * GET /api/dashboard/sales-daily?from=YYYY-MM-DD&to=YYYY-MM-DD&companyId=<uuid?>
  * Returns daily series: orders_count, orders_amount, invoices_amount, cash_collected
  */
 router.get("/dashboard/sales-daily", async (req, res) => {
-  const { tenantId } = req.session.user;
+  const tenantId = getTenantId(req);
   const { companyId } = req.query;
   const { from, to } = defaultRangeIfMissing(req.query.from, req.query.to);
 
@@ -58,7 +101,7 @@ router.get("/dashboard/sales-daily", async (req, res) => {
     res.json(rows);
   } catch (e) {
     await client.query("ROLLBACK");
-    console.error("sales-daily error:", e);
+    console.error("GET /dashboard/sales-daily error:", e);
     res.status(500).json({ message: "Failed to load sales series" });
   } finally {
     client.release();
@@ -70,7 +113,7 @@ router.get("/dashboard/sales-daily", async (req, res) => {
  * Returns daily values for a given metric key
  */
 router.get("/dashboard/usage-daily", async (req, res) => {
-  const { tenantId } = req.session.user;
+  const tenantId = getTenantId(req);
   const { metric } = req.query;
   if (!metric) return res.status(400).json({ message: "metric is required" });
 
@@ -95,7 +138,7 @@ router.get("/dashboard/usage-daily", async (req, res) => {
     res.json(rows);
   } catch (e) {
     await client.query("ROLLBACK");
-    console.error("usage-daily error:", e);
+    console.error("GET /dashboard/usage-daily error:", e);
     res.status(500).json({ message: "Failed to load usage series" });
   } finally {
     client.release();
@@ -107,7 +150,7 @@ router.get("/dashboard/usage-daily", async (req, res) => {
  * Returns per-day auth failures and 5xx counts
  */
 router.get("/dashboard/health", async (req, res) => {
-  const { tenantId } = req.session.user;
+  const tenantId = getTenantId(req);
   const { from, to } = defaultRangeIfMissing(req.query.from, req.query.to);
 
   const client = await pool.connect();
@@ -131,7 +174,7 @@ router.get("/dashboard/health", async (req, res) => {
     res.json(rows);
   } catch (e) {
     await client.query("ROLLBACK");
-    console.error("health error:", e);
+    console.error("GET /dashboard/health error:", e);
     res.status(500).json({ message: "Failed to load health series" });
   } finally {
     client.release();
@@ -143,7 +186,7 @@ router.get("/dashboard/health", async (req, res) => {
  * Returns installed modules with labels/icons (for dynamic menus)
  */
 router.get("/modules/installed", async (req, res) => {
-  const { tenantId } = req.session.user;
+  const tenantId = getTenantId(req);
 
   const client = await pool.connect();
   try {
@@ -163,7 +206,7 @@ router.get("/modules/installed", async (req, res) => {
     res.json(rows);
   } catch (e) {
     await client.query("ROLLBACK");
-    console.error("modules/installed error:", e);
+    console.error("GET /modules/installed error:", e);
     res.status(500).json({ message: "Failed to load installed modules" });
   } finally {
     client.release();
