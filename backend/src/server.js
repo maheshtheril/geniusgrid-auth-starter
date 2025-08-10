@@ -10,6 +10,9 @@ import { pool } from "./db/pool.js";
 import auth from "./routes/auth.js";
 import adminUsers from "./routes/adminUsers.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
+import authMe from "./routes/auth.me.js";
+
+
 
 const app = express();
 const PgStore = pgSimple(session);
@@ -51,6 +54,7 @@ app.use(
   })
 );
 
+app.use("/api/auth", authMe);
 // Preflight helper (optional)
 app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
