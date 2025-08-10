@@ -30,7 +30,7 @@ function normalizeMenuRow(r) {
   const permission_code = r.permission_code ?? r.permission ?? r.perm_code ?? null;
   const icon = r.icon ?? r.emoji ?? null;
 
-  return { id: r.id, name, path, parent_id, sort_order, permission_code, icon };
+  return { id: r.id, code: r.code ?? null, name, path, parent_id, sort_order, permission_code, icon };
 }
 
 router.get("/", requireAuth, companyContext, async (req, res) => {

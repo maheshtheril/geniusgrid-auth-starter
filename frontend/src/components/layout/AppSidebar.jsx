@@ -3,17 +3,36 @@ import { useMemo, useState, useEffect } from "react";
 import { useEnv } from "@/store/useEnv";
 
 function toTree(items) {
-  const map = new Map(items.map(i => [i.id, { ...i, children: [] }]));
+  // index by id and by code
+  const byId = new Map(items.map(i => [i.id, { ...i, children: [] }]));
+  const byCode = new Map(items.map(i => [i.code, byId.get(i.id)]));
+
+  // if no parent_id, try to infer from code prefix before the first dot
+  for (const i of items) {
+    const node = byId.get(i.id);
+    if (!node.parent_id && typeof node.code === "string" && node.code.includes(".")) {
+      const parentCode = node.code.split(".")[0]; // 'admin.users' -> 'admin'
+      const parent = byCode.get(parentCode);
+      if (parent && parent !== node) {
+        node.parent_id = parent.id; // virtual link for the tree
+      }
+    }
+  }
+
+  // build tree
   const roots = [];
-  items.forEach(i => {
-    const n = map.get(i.id);
-    if (i.parent_id && map.has(i.parent_id)) map.get(i.parent_id).children.push(n);
-    else roots.push(n);
-  });
-  // order children by sort_order then name
-  const sort = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.name).localeCompare(String(b.name));
-  map.forEach(n => n.children.sort(sort));
-  roots.sort(sort);
+  for (const node of byId.values()) {
+    if (node.parent_id && byId.has(node.parent_id)) {
+      byId.get(node.parent_id).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  }
+
+  // sort by sort_order then name
+  const cmp = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.name).localeCompare(String(b.name));
+  for (const n of byId.values()) n.children.sort(cmp);
+  roots.sort(cmp);
   return roots;
 }
 
