@@ -3,16 +3,14 @@ import axios from "axios";
 
 export const http = axios.create({
   baseURL: import.meta.env.VITE_API_URL || "/api",
-  withCredentials: true,
-  xsrfCookieName: "_csrf",
-  xsrfHeaderName: "X-CSRF-Token",
+  withCredentials: true
 });
 
 http.interceptors.response.use(
-  r => r,
-  err => {
+  (r) => r,
+  (err) => {
     if (err?.response?.status === 401) {
-      window.location.href = "/login";
+      window.location.replace("/login");
     }
     return Promise.reject(err);
   }

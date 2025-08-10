@@ -1,32 +1,37 @@
-import React from 'react';
-import { Routes, Route, Link } from 'react-router-dom';
+import React from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
 
-import LoginPage from './pages/LoginPage.jsx';
-import Signup from './pages/Signup.jsx';
-import VerifyEmail from './pages/VerifyEmail.jsx';
-// (Temporarily remove Landing import to avoid confusion)
-// import Landing from './pages/Landing.jsx';
+import LoginPage from "./pages/LoginPage.jsx";
+import Signup from "./pages/Signup.jsx";
+import VerifyEmail from "./pages/VerifyEmail.jsx";
+
+// Protected shell with sidebar + company switcher
+import ProtectedShell from "./layouts/ProtectedShell.jsx";
+
+// Example protected pages
+import DashboardPage from "./pages/DashboardPage.jsx";
+import LeadsPage from "./pages/LeadsPage.jsx";
+import CompaniesPage from "./pages/CompaniesPage.jsx";
 
 export default function App() {
   return (
-    <div style={{ maxWidth: 720, margin: '40px auto', fontFamily: 'system-ui, sans-serif' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h2>GeniusGrid</h2>
-        <nav style={{ display: 'flex', gap: 12 }}>
-          <Link to="/signup">Signup</Link>
-          <Link to="/login">Login</Link>
-        </nav>
-      </header>
+    <Routes>
+      {/* ---------- Public Routes ---------- */}
+      <Route path="/" element={<Navigate to="/login" replace />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
 
-      <Routes>
-        {/* TEMP: force root to show login */}
-        <Route path="/" element={<LoginPage />} />
+      {/* ---------- Protected Routes ---------- */}
+      <Route path="/dashboard" element={<ProtectedShell />}>
+        <Route index element={<DashboardPage />} />
+        <Route path="leads" element={<LeadsPage />} />
+        <Route path="companies" element={<CompaniesPage />} />
+        {/* add more protected routes here */}
+      </Route>
 
-        {/* Keep these */}
-        <Route path="/signup" element={<Signup />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
-      </Routes>
-    </div>
+      {/* Catch-all: redirect to login */}
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 }
