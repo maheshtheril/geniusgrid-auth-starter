@@ -58,7 +58,7 @@ export default function SignupWizard() {
     }
     setLoadingAI(true);
     try {
-      const res = await axios.post("/api/ai/module-suggestions", {
+      const res = await axios.post("api/ai/module-suggestions", {
         industry: company.industry,
       });
       const aiModules = res.data.suggestions || [];

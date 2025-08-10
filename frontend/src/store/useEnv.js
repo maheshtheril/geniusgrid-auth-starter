@@ -15,9 +15,8 @@ export const useEnv = create((set, get) => ({
   dashboard: {},
 
   async bootstrap() {
-    const { data } = await http.get("/bootstrap");
+    const { data } = await http.get("bootstrap"); // ← no leading slash
     set({ ...data, ready: true });
-    // quick sanity log
     console.log("BOOTSTRAP", {
       user: data.user?.email,
       companies: data.companies?.length,
@@ -27,7 +26,7 @@ export const useEnv = create((set, get) => ({
   },
 
   async setActiveCompany(companyId) {
-    await http.get("/bootstrap", { headers: { "X-Company-ID": companyId } });
+    await http.get("bootstrap", { headers: { "X-Company-ID": companyId } }); // ← no leading slash
     await get().bootstrap();
   }
 }));
