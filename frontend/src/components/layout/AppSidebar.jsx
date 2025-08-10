@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   ChevronDown,
@@ -12,39 +12,28 @@ import {
 } from "lucide-react";
 
 /**
- * AppSidebar.jsx — world‑class collapsible sidebar
- *
- * Features
- * - Collapsible with persisted state (localStorage: gg.sidebarCollapsed)
- * - Nested groups with per‑group expand/collapse (persisted)
- * - Hover pop‑out submenus when collapsed
- * - Active route highlight synced with react-router
- * - Keyboard + screen‑reader a11y (ARIA, roving focus)
- * - Optional role/permission filtering
- * - Light/Dark theme toggle hook point
- *
- * Usage
- * <AppSidebar fetchMenus={async ()=> (await axios.get('/api/tenant/menus',{withCredentials:true})).data} />
+ * AppSidebar.jsx — collapsible sidebar (robust)
+ * - Safe if fetchMenus prop is missing or not a function
+ * - Collapsible + persisted; group expand persisted
+ * - Hover popout when collapsed
+ * - Active highlight with react-router
+ * - Tailwind JIT-safe (no dynamic class names)
  */
 
 const STORAGE_KEYS = {
   COLLAPSED: "gg.sidebarCollapsed",
-  OPEN_GROUPS: "gg.sidebarOpenGroups", // string[] of menu ids
+  OPEN_GROUPS: "gg.sidebarOpenGroups",
 };
 
-/**
- * Menu item shape expected from API (flat list ok):
- * { id, name, path, icon, parent_id, sort_order, permission_code }
- */
-
 export default function AppSidebar({
-  fetchMenus,
-  permissions = new Set(), // e.g., new Set(["admin.users.view"]) — optional
+  fetchMenus,                  // optional function: () => Promise<Menu[] | {menus:Menu[]}>
+  permissions = new Set(),     // optional Set<string>
   onThemeToggle,
   initialCollapsed,
 }) {
   const location = useLocation();
   const navigate = useNavigate();
+
   const [collapsed, setCollapsed] = useState(() => {
     if (typeof initialCollapsed === "boolean") return initialCollapsed;
     const v = localStorage.getItem(STORAGE_KEYS.COLLAPSED);
@@ -61,17 +50,39 @@ export default function AppSidebar({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // ✅ Robust loader: uses prop if it’s a function, else falls back to direct fetch
+  const getMenus = useCallback(async () => {
+    try {
+      let data;
+      if (typeof fetchMenus === "function") {
+        data = await fetchMenus();
+      } else {
+        const base =
+          import.meta.env.VITE_API_URL ||
+          "https://geniusgrid-auth-starter.onrender.com/api";
+        const res = await fetch(`${base}/tenant/menus`, {
+          credentials: "include",
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      }
+      return Array.isArray(data) ? data : data?.menus || [];
+    } catch (err) {
+      console.error("Sidebar: getMenus failed", err);
+      throw err;
+    }
+  }, [fetchMenus]);
+
   useEffect(() => {
     let live = true;
     (async () => {
       setLoading(true);
       try {
-        const data = await fetchMenus();
+        const rows = await getMenus();
         if (!live) return;
-        setMenus(Array.isArray(data) ? data : data?.menus || []);
+        setMenus(rows);
         setError(null);
       } catch (e) {
-        console.error("Sidebar: fetchMenus failed", e);
         if (!live) return;
         setError("Could not load menus");
       } finally {
@@ -81,7 +92,7 @@ export default function AppSidebar({
     return () => {
       live = false;
     };
-  }, [fetchMenus]);
+  }, [getMenus]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEYS.COLLAPSED, collapsed ? "1" : "0");
@@ -91,7 +102,10 @@ export default function AppSidebar({
     localStorage.setItem(STORAGE_KEYS.OPEN_GROUPS, JSON.stringify(openGroups));
   }, [openGroups]);
 
-  const tree = useMemo(() => buildTree(filterByPermission(menus, permissions)), [menus, permissions]);
+  const tree = useMemo(
+    () => buildTree(filterByPermission(menus, permissions)),
+    [menus, permissions]
+  );
 
   // auto-open ancestor groups for current route
   useEffect(() => {
@@ -163,7 +177,10 @@ export default function AppSidebar({
               );
               el?.scrollIntoView({ block: "center" });
               el?.classList.add("ring", "ring-indigo-400");
-              setTimeout(() => el?.classList.remove("ring", "ring-indigo-400"), 900);
+              setTimeout(
+                () => el?.classList.remove("ring", "ring-indigo-400"),
+                900
+              );
             }}
           />
         </div>
@@ -177,17 +194,19 @@ export default function AppSidebar({
             {String(error)}
           </div>
         )}
-        {!loading && !error && tree.map((node) => (
-          <MenuNode
-            key={node.id}
-            node={node}
-            depth={0}
-            collapsed={collapsed}
-            openGroups={openGroups}
-            toggleGroup={toggleGroup}
-            activePath={location.pathname}
-          />
-        ))}
+        {!loading &&
+          !error &&
+          tree.map((node) => (
+            <MenuNode
+              key={node.id}
+              node={node}
+              depth={0}
+              collapsed={collapsed}
+              openGroups={openGroups}
+              toggleGroup={toggleGroup}
+              activePath={location.pathname}
+            />
+          ))}
       </nav>
 
       {/* Footer */}
@@ -204,8 +223,18 @@ export default function AppSidebar({
   );
 }
 
-function MenuNode({ node, depth, collapsed, openGroups, toggleGroup, activePath }) {
-  const isActive = useMemo(() => isActivePath(activePath, node.path), [activePath, node.path]);
+function MenuNode({
+  node,
+  depth,
+  collapsed,
+  openGroups,
+  toggleGroup,
+  activePath,
+}) {
+  const isActive = useMemo(
+    () => isActivePath(activePath, node.path),
+    [activePath, node.path]
+  );
   const isOpen = openGroups.includes(node.id);
   const hasChildren = node.children?.length;
 
@@ -214,8 +243,12 @@ function MenuNode({ node, depth, collapsed, openGroups, toggleGroup, activePath 
     return (
       <div className="relative" role="treeitem" aria-expanded={isOpen}>
         <button
-          onMouseEnter={(e) => e.currentTarget.nextSibling?.classList.remove("hidden")}
-          onMouseLeave={(e) => e.currentTarget.nextSibling?.classList.add("hidden")}
+          onMouseEnter={(e) =>
+            e.currentTarget.nextSibling?.classList.remove("hidden")
+          }
+          onMouseLeave={(e) =>
+            e.currentTarget.nextSibling?.classList.add("hidden")
+          }
           className={`group mt-1 flex w-full items-center gap-2 rounded-xl px-3 py-2 hover:bg-neutral-100 dark:hover:bg-neutral-800 ${
             isActive ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40" : ""
           }`}
@@ -223,6 +256,7 @@ function MenuNode({ node, depth, collapsed, openGroups, toggleGroup, activePath 
           aria-expanded={false}
           data-menu-name={node.name.toLowerCase()}
           onClick={() => toggleGroup(node.id)}
+          title={node.name}
         >
           <MenuIconRenderer name={node.icon} />
         </button>
@@ -232,7 +266,9 @@ function MenuNode({ node, depth, collapsed, openGroups, toggleGroup, activePath 
           onMouseEnter={(e) => e.currentTarget.classList.remove("hidden")}
           onMouseLeave={(e) => e.currentTarget.classList.add("hidden")}
         >
-          <div className="px-3 py-2 text-xs font-semibold opacity-70">{node.name}</div>
+          <div className="px-3 py-2 text-xs font-semibold opacity-70">
+            {node.name}
+          </div>
           <div className="max-h-[70vh] overflow-auto p-1">
             {node.children.map((child) => (
               <LeafOrGroup
@@ -264,12 +300,21 @@ function MenuNode({ node, depth, collapsed, openGroups, toggleGroup, activePath 
   );
 }
 
-function LeafOrGroup({ node, depth, collapsed, openGroups, toggleGroup, activePath }) {
+function LeafOrGroup({
+  node,
+  depth,
+  collapsed,
+  openGroups,
+  toggleGroup,
+  activePath,
+}) {
   const isActive = isActivePath(activePath, node.path);
   const hasChildren = node.children?.length;
   const isOpen = openGroups.includes(node.id);
 
-  const padding = `pl-${Math.min(2 + depth * 2, 10)}`; // tailwind safe values
+  // ✅ Tailwind JIT-safe padding (no dynamic class names)
+  const PADS = ["pl-2", "pl-4", "pl-6", "pl-8", "pl-10"];
+  const padding = PADS[Math.min(depth, PADS.length - 1)];
 
   if (!hasChildren) {
     return (
@@ -303,7 +348,9 @@ function LeafOrGroup({ node, depth, collapsed, openGroups, toggleGroup, activePa
         title={collapsed ? node.name : undefined}
       >
         <MenuIconRenderer name={node.icon} />
-        {!collapsed && <span className="flex-1 truncate text-left">{node.name}</span>}
+        {!collapsed && (
+          <span className="flex-1 truncate text-left">{node.name}</span>
+        )}
         {collapsed ? (
           <ChevronRight className="h-4 w-4 opacity-60" />
         ) : isOpen ? (
@@ -344,7 +391,8 @@ function isActivePath(current, path) {
 }
 
 function filterByPermission(list, permissions) {
-  if (!permissions || !(permissions instanceof Set) || permissions.size === 0) return list;
+  if (!permissions || !(permissions instanceof Set) || permissions.size === 0)
+    return list;
   return list.filter((m) => !m.permission_code || permissions.has(m.permission_code));
 }
 
@@ -352,7 +400,9 @@ function buildTree(rows) {
   if (!Array.isArray(rows)) return [];
   const map = new Map();
   const roots = [];
-  const sorted = [...rows].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const sorted = [...rows].sort(
+    (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  );
   for (const r of sorted) map.set(r.id, { ...r, children: [] });
   for (const r of sorted) {
     const node = map.get(r.id);
@@ -378,7 +428,6 @@ function findAncestorIdsByPath(tree, path) {
 }
 
 function MenuIconRenderer({ name }) {
-  // map common icon strings to lucide; fallback to generic dot
   const map = {
     admin: MenuIcon,
     settings: MenuIcon,
@@ -387,7 +436,7 @@ function MenuIconRenderer({ name }) {
     crm: MenuIcon,
     sales: MenuIcon,
   };
-  const Icon = (name && map[name.toLowerCase()]) || MenuIcon;
+  const Icon = (name && map[String(name).toLowerCase()]) || MenuIcon;
   return <Icon className="h-4 w-4 shrink-0 opacity-80" />;
 }
 
