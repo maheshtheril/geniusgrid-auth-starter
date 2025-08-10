@@ -1,17 +1,9 @@
 // src/lib/http.js
 import axios from "axios";
 
+const base = (import.meta.env.VITE_API_URL || "/api").replace(/\/+$/,""); // trim trailing slash
+
 export const http = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "/api",
+  baseURL: base,              // e.g. https://.../api
   withCredentials: true
 });
-
-http.interceptors.response.use(
-  (r) => r,
-  (err) => {
-    if (err?.response?.status === 401) {
-      window.location.replace("/login");
-    }
-    return Promise.reject(err);
-  }
-);
