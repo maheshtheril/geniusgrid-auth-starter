@@ -12,7 +12,11 @@ export function requireAuth(req, res, next) {
     req.session?.tenantId ??
     req.session?.user?.tenantId ??
     null;
-
+console.log("AUTH CHECK", {
+  userId: req.session?.userId,
+  tenantId: req.session?.tenantId,
+  raw: req.session
+});
   if (!userId || !tenantId) {
     return res.status(401).json({ message: "Unauthorized" });
   }
