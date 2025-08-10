@@ -558,5 +558,42 @@ router.post("/dev/seed-admin", async (req, res) => {
     client.release();
   }
 });
+// DEV: diagnose login RLS scope
+router.post("/dev/diag-login", async (req, res) => {
+  const { tenant = "demo", email = "admin@demo.local", password = "admin" } = req.body || {};
+  const client = await pool.connect();
+  try {
+    const t = await client.query(`SELECT id FROM public.tenants WHERE code=$1`, [tenant]);
+    if (!t.rowCount) return res.status(400).json({ message: "tenant not found" });
+    const tenantId = t.rows[0].id;
+
+    // <-- this MUST be non-local
+    await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
+
+    const guc   = await client.query(`SELECT current_setting('app.tenant_id', true) AS guc`);
+    const scope = await client.query(`SELECT ensure_tenant_scope() AS scope`);
+
+    const q = await client.query(
+      `SELECT id, email, is_active, failed_attempts, locked_until,
+              (password = crypt($3, password)) AS ok
+         FROM public.res_users
+        WHERE tenant_id = $1 AND lower(email) = lower($2)
+        LIMIT 1`,
+      [tenantId, email, password]
+    );
+
+    res.json({
+      tenantId,
+      guc: guc.rows[0]?.guc ?? null,
+      ensure_tenant_scope: scope.rows[0]?.scope ?? null,
+      rowCount: q.rowCount,
+      row: q.rows[0] || null,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
+  }
+});
 
 export default router;
