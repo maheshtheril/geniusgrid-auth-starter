@@ -6,93 +6,162 @@ import { companyContext } from "../middleware/companyContext.js";
 
 const router = express.Router();
 
+/** Utility: run a query and return [] on error (for optional tables) */
+async function tryQuery(sql, params = []) {
+  try {
+    const { rows } = await pool.query(sql, params);
+    return rows || [];
+  } catch (e) {
+    // Uncomment if you want to see which optional query failed:
+    // console.warn("[bootstrap optional]", e?.message || e);
+    return [];
+  }
+}
+
+/** Normalize menu row from arbitrary schema into a stable shape */
+function normalizeMenuRow(r) {
+  const name =
+    r.name ??
+    r.label ??
+    r.display_name ??
+    r.title ??
+    r.menu_name ??
+    r.code ??
+    String(r.id);
+
+  const path = r.path ?? r.route ?? r.url ?? null;
+
+  let parent_id = r.parent_id ?? r.parent ?? r.parentid ?? null;
+  if (typeof parent_id === "string" && parent_id.trim() === "") parent_id = null;
+
+  const sort_order = r.sort_order ?? r.order ?? r.position ?? 0;
+  const permission_code = r.permission_code ?? r.permission ?? r.perm_code ?? null;
+  const icon = r.icon ?? r.emoji ?? null;
+
+  return { id: r.id, name, path, parent_id, sort_order, permission_code, icon };
+}
+
 router.get("/", requireAuth, companyContext, async (req, res) => {
-  const { user_id, tenant_id } = req.session;
-  const company_id = req.context?.company_id || null;
+  // Accept both snake_case and camelCase keys set by other routes
+  const user_id = req.session?.user_id ?? req.session?.userId;
+  const tenant_id = req.session?.tenant_id ?? req.session?.tenantId;
+  const requestedCompanyId = req.context?.company_id ?? null;
 
   try {
-    const userQ = await pool.query(
-      `SELECT id, name, email FROM res_users WHERE id=$1 AND tenant_id=$2`,
+    /* ---------- User ---------- */
+    const userRows = await tryQuery(
+      `SELECT id, name, email FROM res_users WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
       [user_id, tenant_id]
     );
+    const user = userRows[0] || null;
 
-    const rolesQ = await pool.query(
-      `SELECT r.id, r.code, r.name
-       FROM user_roles ur
-       JOIN roles r ON r.id = ur.role_id
-       WHERE ur.user_id = $1 AND r.tenant_id = $2`,
-      [user_id, tenant_id]
-    );
-
-    const permsQ = await pool.query(
-      `SELECT DISTINCT p.code
-       FROM roles_permissions rp
-       JOIN permissions p ON p.id = rp.permission_id
-       JOIN user_roles ur ON ur.role_id = rp.role_id
-       WHERE ur.user_id = $1 AND p.tenant_id = $2`,
-      [user_id, tenant_id]
-    );
-
-    const companiesQ = await pool.query(
+    /* ---------- Companies ---------- */
+    // Prefer user-company mapping; if table/rows missing, fall back to all companies in tenant
+    let companies = await tryQuery(
       `SELECT c.id, c.name, c.code
-       FROM res_company c
-       JOIN user_companies uc ON uc.company_id = c.id
-       WHERE c.tenant_id = $1 AND uc.user_id = $2
-       ORDER BY c.name`,
+         FROM res_company c
+         JOIN user_companies uc ON uc.company_id = c.id
+        WHERE c.tenant_id = $1 AND uc.user_id = $2
+        ORDER BY c.name`,
       [tenant_id, user_id]
     );
 
-    const menusQ = await pool.query(
-      `SELECT mt.id, mt.name, mt.icon, mt.path, mt.parent_id, mt.sort_order, mt.permission_code
-       FROM tenant_menus tm
-       JOIN menu_templates mt ON mt.id = tm.menu_id
-       WHERE tm.tenant_id = $1
-       ORDER BY mt.sort_order, mt.name`,
-      [tenant_id]
-    );
-
-    const settingsQ = await pool.query(
-      `SELECT module, key, value
-       FROM module_settings
-       WHERE tenant_id = $1`,
-      [tenant_id]
-    );
-
-    // filter menus by permission set
-    const permSet = new Set(permsQ.rows.map(r => r.code));
-    const menus = menusQ.rows.filter(m => !m.permission_code || permSet.has(m.permission_code));
-
-    // pick active company (existing session selection or first allowed)
-    const activeCompany = company_id && companiesQ.rows.find(c => c.id === company_id)
-      ? company_id
-      : (companiesQ.rows[0]?.id || null);
-
-    if (activeCompany && activeCompany !== req.session.company_id) {
-      req.session.company_id = activeCompany;
+    if (companies.length === 0) {
+      // fallback: all companies in tenant
+      companies = await tryQuery(
+        `SELECT id, name, code
+           FROM res_company
+          WHERE tenant_id = $1
+          ORDER BY name`,
+        [tenant_id]
+      );
     }
 
-    // Optional: lightweight dashboard summary
-    const dashboardQ = await pool.query(
-      `SELECT
-         (SELECT COUNT(1) FROM leads l WHERE l.tenant_id=$1) AS leads_total,
-         (SELECT COUNT(1) FROM deals d WHERE d.tenant_id=$1) AS deals_total,
-         (SELECT COUNT(1) FROM notifications n WHERE n.tenant_id=$1 AND n.user_id=$2 AND n.is_read=false) AS unread_notifications` ,
-      [tenant_id, user_id]
+    // active company: request header (validated by companyContext) or first available
+    let activeCompanyId =
+      (requestedCompanyId && companies.find((c) => c.id === requestedCompanyId)?.id) ||
+      req.session?.company_id ||
+      companies[0]?.id ||
+      null;
+
+    if (activeCompanyId !== req.session?.company_id) {
+      req.session.company_id = activeCompanyId || null;
+    }
+
+    /* ---------- Roles (optional) ---------- */
+    const roles = await tryQuery(
+      `SELECT r.id, r.code, r.name
+         FROM user_roles ur
+         JOIN roles r ON r.id = ur.role_id
+        WHERE ur.user_id = $1 AND r.tenant_id = $2`,
+      [user_id, tenant_id]
     );
 
+    /* ---------- Permissions (optional) ---------- */
+    const permRows = await tryQuery(
+      `SELECT DISTINCT p.code
+         FROM roles_permissions rp
+         JOIN permissions p ON p.id = rp.permission_id
+         JOIN user_roles ur ON ur.role_id = rp.role_id
+        WHERE ur.user_id = $1 AND p.tenant_id = $2`,
+      [user_id, tenant_id]
+    );
+    const permSet = new Set(permRows.map((r) => r.code).filter(Boolean));
+
+    /* ---------- Menus (schema-agnostic mapping) ---------- */
+    const rawMenus = await tryQuery(
+      `SELECT mt.*, tm.menu_id
+         FROM tenant_menus tm
+         JOIN menu_templates mt ON mt.id = tm.menu_id
+        WHERE tm.tenant_id = $1
+        ORDER BY mt.sort_order NULLS LAST, mt.id`,
+      [tenant_id]
+    );
+    // Normalize every row to {id,name,path,parent_id,sort_order,permission_code,icon}
+    let menus = rawMenus.map(normalizeMenuRow);
+
+    // Filter by permission only when menu declares a permission code
+    if (permSet.size > 0) {
+      menus = menus.filter((m) => !m.permission_code || permSet.has(m.permission_code));
+    } else {
+      // No permissions → show only menus without permission requirement
+      menus = menus.filter((m) => !m.permission_code);
+    }
+
+    /* ---------- Settings (optional) ---------- */
+    const settings = await tryQuery(
+      `SELECT module, key, value FROM module_settings WHERE tenant_id=$1`,
+      [tenant_id]
+    );
+
+    /* ---------- Lightweight dashboard (optional) ---------- */
+    const dashRows = await tryQuery(
+      `SELECT
+         COALESCE((SELECT COUNT(1) FROM leads l WHERE l.tenant_id=$1),0) AS leads_total,
+         COALESCE((SELECT COUNT(1) FROM deals d WHERE d.tenant_id=$1),0) AS deals_total,
+         COALESCE((SELECT COUNT(1) FROM notifications n
+                    WHERE n.tenant_id=$1
+                      AND (n.user_id=$2 OR n.user_id IS NULL)
+                      AND n.is_read=false),0) AS unread_notifications`,
+      [tenant_id, user_id]
+    );
+    const dashboard =
+      dashRows[0] || { leads_total: 0, deals_total: 0, unread_notifications: 0 };
+
+    /* ---------- Response ---------- */
     res.json({
-      user: userQ.rows[0],
+      user,
       tenant: { id: tenant_id },
-      roles: rolesQ.rows,
+      roles,
       permissions: Array.from(permSet),
-      companies: companiesQ.rows,
-      activeCompanyId: activeCompany,
+      companies,
+      activeCompanyId,
       menus,
-      settings: settingsQ.rows,
-      dashboard: dashboardQ.rows[0] || { leads_total: 0, deals_total: 0, unread_notifications: 0 }
+      settings,
+      dashboard
     });
   } catch (e) {
-    console.error("/api/bootstrap error", e);
+    console.error("/api/bootstrap fatal", e?.stack || e);
     res.status(500).json({ message: "Bootstrap failed" });
   }
 });
