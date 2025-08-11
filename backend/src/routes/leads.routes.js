@@ -5,9 +5,15 @@ import { requireAuth } from "../middleware/requireAuth.js";
 
 const router = express.Router();
 
-// --- tenant helper (adjust if you store tenant differently) ---
+// ---- tenant helper ----
 function getTenantId(req) {
-  return req.session?.tenant_id || req.user?.tenant_id || req.headers["x-tenant-id"];
+  // prefer what your auth sets on the session; fall back to header
+  return (
+    req.session?.tenantId ||
+    req.session?.tenant_id ||
+    req.headers["x-tenant-id"] ||
+    req.headers["x-company-id"]
+  );
 }
 
 // GET /api/leads?page&size&q&status&owner
@@ -47,6 +53,7 @@ router.get("/", requireAuth, async (req, res) => {
   }
 
   const offset = (page - 1) * size;
+
   const listSQL = `
     SELECT id, name, company, email, phone, status, owner, score,
            ai_summary, ai_next, updated_at
@@ -63,14 +70,13 @@ router.get("/", requireAuth, async (req, res) => {
       pool.query(countSQL, params),
     ]);
 
-    // normalize ai_next to array if stored as JSON/text
-    const items = list.rows.map(r => ({
+    const items = list.rows.map((r) => ({
       ...r,
       ai_next: Array.isArray(r.ai_next)
         ? r.ai_next
-        : (typeof r.ai_next === "string" && r.ai_next.startsWith("["))
-            ? JSON.parse(r.ai_next)
-            : r.ai_next || []
+        : typeof r.ai_next === "string" && r.ai_next.startsWith("[")
+        ? JSON.parse(r.ai_next)
+        : r.ai_next || [],
     }));
 
     res.json({ items, total: count.rows[0].total });
@@ -78,6 +84,19 @@ router.get("/", requireAuth, async (req, res) => {
     console.error("GET /leads error:", err);
     res.status(500).json({ error: "Failed to load leads" });
   }
+});
+
+// GET /api/leads/pipelines  (stub so the UI has something to render)
+router.get("/pipelines", requireAuth, async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  // Replace with real data if you have a pipelines table
+  res.json([
+    { id: "default", name: "Default Pipeline" },
+    { id: "inbound", name: "Inbound" },
+    { id: "outbound", name: "Outbound" },
+  ]);
 });
 
 // PATCH /api/leads/:id  { status }
@@ -105,14 +124,14 @@ router.patch("/:id", requireAuth, async (req, res) => {
   }
 });
 
-// POST /api/leads/:id/ai-refresh → mock AI for now
+// POST /api/leads/:id/ai-refresh  (mock AI refresh)
 router.post("/:id/ai-refresh", requireAuth, async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const { id } = req.params;
+
   try {
-    // Simple mock to unblock UI; replace with real AI call later.
     const score = Math.floor(50 + Math.random() * 50);
     const ai_summary =
       "Prospect shows moderate intent. Prior interactions indicate interest in a demo within 7 days.";
@@ -131,11 +150,20 @@ router.post("/:id/ai-refresh", requireAuth, async (req, res) => {
       WHERE id = $4 AND tenant_id = $5
       RETURNING id, score, ai_summary, ai_next, updated_at;
     `;
-    const r = await pool.query(q, [score, ai_summary, JSON.stringify(ai_next), id, tenantId]);
+    const r = await pool.query(q, [
+      score,
+      ai_summary,
+      JSON.stringify(ai_next),
+      id,
+      tenantId,
+    ]);
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
-    // normalize ai_next back to array
+
     const row = r.rows[0];
-    row.ai_next = Array.isArray(row.ai_next) ? row.ai_next : JSON.parse(row.ai_next || "[]");
+    row.ai_next = Array.isArray(row.ai_next)
+      ? row.ai_next
+      : JSON.parse(row.ai_next || "[]");
+
     res.json(row);
   } catch (err) {
     console.error("POST /leads/:id/ai-refresh error:", err);

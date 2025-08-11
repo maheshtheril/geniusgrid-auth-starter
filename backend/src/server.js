@@ -19,36 +19,24 @@ import leadsModule from "./routes/leadsModule.routes.js";
 
 const app = express();
 const PgStore = pgSimple(session);
-
 const isProd = process.env.NODE_ENV === "production";
 const PORT = process.env.PORT || 4000;
 
-// Frontend origins allowed to send credentials
-const ORIGINS = [
-  "http://localhost:5173",
-  "https://geniusgrid-web.onrender.com"
-];
+const ORIGINS = ["http://localhost:5173", "https://geniusgrid-web.onrender.com"];
 
-// Trust proxy (Render/Cloudflare) so secure cookies work
 app.set("trust proxy", 1);
-app.use("/api/leads", leadsRoutes);
-app.use("/api", leadsModule);
-// Security headers
+
 app.use(
-  helmet({
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false
-  })
+  helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false })
 );
 
-// JSON body
 app.use(express.json({ limit: "1mb" }));
 
-// CORS (must be before routes + session usage)
+// ✅ CORS FIRST
 app.use(
   cors({
     origin: (origin, cb) => {
-      if (!origin) return cb(null, true); // curl/Postman/no Origin
+      if (!origin) return cb(null, true);
       return ORIGINS.includes(origin) ? cb(null, true) : cb(null, false);
     },
     credentials: true,
@@ -62,10 +50,9 @@ app.use(
     ]
   })
 );
-// Preflight helper
 app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
-// Session (must be before any route that reads/writes req.session)
+// ✅ SESSION SECOND
 app.use(
   session({
     store: new PgStore({ pool, createTableIfMissing: true }),
@@ -75,72 +62,38 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd,                 // Render uses HTTPS
-      sameSite: isProd ? "none" : "lax", // allow cross-site in prod
-      maxAge: 1000 * 60 * 60 * 8      // 8h
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      maxAge: 1000 * 60 * 60 * 8
     }
   })
 );
 
-// Per-request tenant scope (optional helper)
+// (optional) tenant scope…
 app.use(async (req, _res, next) => {
   try {
     const tid = req.session?.tenantId || req.session?.tenant_id;
     if (tid) {
       await pool.query("SELECT set_config('app.tenant_id', $1, true)", [tid]);
     }
-  } catch (e) {
-    console.error("[tenant-scope]", e?.message || e);
-  } finally {
-    next();
-  }
+  } catch {}
+  next();
 });
 
-/* ---------- Health & diagnostics ---------- */
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({
-    ok: true,
-    service: "GeniusGrid API",
-    env: process.env.NODE_ENV || "development",
-    time: new Date().toISOString()
-  });
-});
-
-app.get("/api/session-debug", (req, res) => {
-  res.json({
-    hasSession: !!req.session,
-    userId: req.session?.userId ?? req.session?.user_id ?? null,
-    tenantId: req.session?.tenantId ?? req.session?.tenant_id ?? null,
-    sid: req.sessionID || null
-  });
-});
-
-app.post("/api/_echo", (req, res) => {
-  res.json({ got: req.body || null, sid: req.sessionID || null });
-});
-
-/* ---------- Mount routes (after CORS + session!) ---------- */
-app.use("/api/auth", auth);           // login/reset/etc (sets req.session.*)
-app.use("/api/auth", authMe);         // /api/auth/me
+/* ---------- NOW mount routes ---------- */
+app.use("/api/auth", auth);
+app.use("/api/auth", authMe);
 app.use("/api", dashboardRoutes);
 app.use("/api/admin", adminUsers);
 app.use("/api/csrf", csrfRoutes);
 app.use("/api/bootstrap", bootstrapRoutes);
-app.use("/api", healthRoutes);        // also fine here
+app.use("/api", healthRoutes);
 
-// Root
+// ✅ These two must be DOWN HERE (after CORS + session)
+app.use("/api/leads", leadsRoutes);
+app.use("/api", leadsModule);
+
 app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
-
-// 404
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
-
-// Error handler
-app.use((err, _req, res, _next) => {
-  console.error("[ERROR]", err?.message || err);
-  res.status(500).json({ message: "Server error" });
-});
-
-// Start
-app.listen(PORT, () => {
-  console.log(`API listening on :${PORT} (${isProd ? "prod" : "dev"})`);
-});
+app.use((err, _req, res, _next) => res.status(500).json({ message: "Server error" }));
+app.listen(PORT, () => console.log(`API listening on :${PORT}`));
