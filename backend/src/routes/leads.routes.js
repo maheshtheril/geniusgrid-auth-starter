@@ -15,11 +15,11 @@ function getTenantId(req) {
 }
 
 async function setTenant(client, tenantId) {
-  // NON-LOCAL so it persists for the session/connection
+  // NON-LOCAL so it persists for this connection (RLS/GUC)
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
-// Quick probe: GET /api/leads/ping (public in server.js)
+// Public probe is mounted in server.js as /api/leads/ping (no cookie)
 router.get("/ping", (_req, res) => res.status(200).json({ ok: true }));
 
 // GET /api/leads?page&size&q&status&owner
@@ -69,7 +69,6 @@ router.get("/", async (req, res) => {
 
   const client = await pool.connect();
   try {
-    // ensure the same connection sees the tenant scope (for RLS)
     await setTenant(client, tenantId);
 
     const [list, count] = await Promise.all([
@@ -86,7 +85,8 @@ router.get("/", async (req, res) => {
         : r.ai_next || [],
     }));
 
-    res.json({ items, total: count.rows[0].total, page, size });
+    // return both items and data for maximum FE compatibility
+    res.json({ items, data: items, total: count.rows[0].total, page, size });
   } catch (err) {
     console.error("GET /leads error:", err);
     res.status(500).json({ error: "Failed to load leads" });
@@ -95,15 +95,34 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET /api/leads/pipelines (stub)
+// GET /api/leads/pipelines  -> return { items: [...] } (and data alias)
 router.get("/pipelines", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
-  res.json([
+
+  const items = [
     { id: "default", name: "Default Pipeline" },
     { id: "inbound", name: "Inbound" },
     { id: "outbound", name: "Outbound" },
-  ]);
+  ];
+  res.json({ items, data: items, defaultPipelineId: "default" });
+});
+
+// GET /api/leads/stages?pipeline=default  -> return { items: [...] }
+router.get("/stages", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  const pipeline = (req.query.pipeline || "default").toString();
+  // Simple stub; replace with real DB table if you have one
+  const items = [
+    { id: "new",       key: "new",       name: "New",        order: 1, pipeline },
+    { id: "qualified", key: "qualified", name: "Qualified",  order: 2, pipeline },
+    { id: "proposal",  key: "proposal",  name: "Proposal",   order: 3, pipeline },
+    { id: "won",       key: "won",       name: "Won",        order: 4, pipeline },
+    { id: "lost",      key: "lost",      name: "Lost",       order: 5, pipeline },
+  ];
+  res.json({ items, data: items });
 });
 
 // PATCH /api/leads/:id  { status }
@@ -135,7 +154,7 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-// POST /api/leads/:id/ai-refresh (mock AI refresh)
+// POST /api/leads/:id/ai-refresh  (mock AI refresh)
 router.post("/:id/ai-refresh", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
