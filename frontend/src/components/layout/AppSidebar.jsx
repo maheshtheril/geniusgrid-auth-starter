@@ -118,19 +118,103 @@ export default function AppSidebar() {
 
 
   // auto-expand ancestry when not collapsed
-  useEffect(() => {
-    if (collapsed || !tree.length) return;
-    const activeAncestors = new Set();
-    const visit = (nodes, parents = []) => {
-      for (const n of nodes) {
-        const inTrail = n.path && pathname.startsWith(n.path);
-        if (inTrail) parents.forEach((p) => activeAncestors.add(p.path));
-        if (n.children?.length) visit(n.children, [...parents, n]);
+useEffect(() => {
+  let cancelled = false;
+
+  async function fetchMenus() {
+    setLoading(true);
+
+    // resolve API base robustly
+    const apiBase =
+      (env && env.API_BASE) ||
+      (import.meta?.env?.VITE_API_URL) ||
+      ""; // will use same-origin /api/tenant/menus
+
+    const url = `${apiBase}/api/tenant/menus`.replace(/([^:]\/)\/+/g, "$1");
+
+    try {
+      console.log("[Sidebar] fetching menus from:", url);
+      const res = await fetch(url, {
+        method: "GET",
+        credentials: "include",
+        headers: { Accept: "application/json" }
+      });
+
+      console.log("[Sidebar] HTTP:", res.status, res.statusText);
+
+      let json = null;
+      try {
+        json = await res.json();
+      } catch {
+        console.warn("[Sidebar] response not JSON");
       }
-    };
-    visit(tree, []);
-    setExpanded(activeAncestors);
-  }, [pathname, collapsed, tree]);
+
+      if (cancelled) return;
+
+      console.log("[Sidebar] raw JSON:", json);
+
+      // Accept common shapes: array | {menus} | {items} | {data}
+      const raw = Array.isArray(json)
+        ? json
+        : Array.isArray(json?.menus)
+        ? json.menus
+        : Array.isArray(json?.items)
+        ? json.items
+        : Array.isArray(json?.data)
+        ? json.data
+        : [];
+
+      // Normalize minimally for your existing logic
+      const normalized = raw.map((r) => ({
+        ...r,
+        id: r.id ?? r.menu_id ?? r.uuid ?? r.code ?? r.path ?? crypto.randomUUID(),
+        name: r.name ?? r.title ?? r.label ?? r.code ?? "Untitled",
+        path: r.path ?? r.url ?? r.href ?? null,
+        sort_order: r.sort_order ?? r.order ?? r.position ?? 0,
+        children: Array.isArray(r.children) ? r.children : undefined
+      }));
+
+      console.table(
+        (normalized || []).slice(0, 5).map(({ id, name, path, sort_order }) => ({
+          id,
+          name,
+          path,
+          sort_order
+        }))
+      );
+
+      // If nothing usable came back, drop in a tiny fallback so we can see the UI is alive.
+      if (!normalized.length) {
+        console.warn("[Sidebar] no menus found; showing fallback sample for debug.");
+        const fallback = [
+          { id: "crm", name: "CRM", path: "/app/crm", sort_order: 10 },
+          { id: "crm.leads", name: "Leads", path: "/app/crm/leads", sort_order: 11 },
+          { id: "admin", name: "Admin", path: "/app/admin", sort_order: 20 },
+          { id: "admin.users", name: "Users", path: "/app/admin/users", sort_order: 21 }
+        ];
+        setMenus(fallback);
+      } else {
+        setMenus(normalized);
+      }
+    } catch (e) {
+      console.error("[Sidebar] menus load error:", e);
+      if (!cancelled) {
+        // show fallback so UI still proves rendering
+        setMenus([
+          { id: "fallback.home", name: "Home", path: "/dashboard", sort_order: 0 }
+        ]);
+      }
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
+  }
+
+  fetchMenus();
+  return () => {
+    cancelled = true;
+  };
+}, [env]);
+
 
   const toggleCollapsed = () => setCollapsed((c) => !c);
   const toggleGroup = (path) =>
