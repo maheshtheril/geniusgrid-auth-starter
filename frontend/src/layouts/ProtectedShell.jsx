@@ -1,5 +1,6 @@
 // src/layouts/ProtectedShell.jsx
 import React, { memo, useMemo } from "react";
+import ThemeToggle from "@/components/ThemeToggle";
 import ProtectedLayout from "./ProtectedLayout";
 import AppSidebar from "@/components/layout/AppSidebar";
 import AppTopbar from "@/components/layout/AppTopbar";
@@ -8,11 +9,8 @@ import { Outlet, useLocation } from "react-router-dom";
 function ProtectedShell() {
   const { pathname } = useLocation();
 
-  // Don’t remount heavy chrome on every minor re-render
   const sidebarEl = useMemo(() => <AppSidebar />, []);
   const topbarEl  = useMemo(() => <AppTopbar />, []);
-
-  // Only recreate Outlet element when the actual route path changes
   const outletEl  = useMemo(() => <Outlet />, [pathname]);
 
   return (
@@ -20,7 +18,14 @@ function ProtectedShell() {
       <div className="app-shell">
         {sidebarEl}
         <main className="app-main">
-          {topbarEl}
+          {/* Topbar + theme toggle */}
+          <div className="relative">
+            {topbarEl}
+            <div className="absolute right-4 top-2">
+              <ThemeToggle />
+            </div>
+          </div>
+
           <div className="app-content">
             {outletEl}
           </div>

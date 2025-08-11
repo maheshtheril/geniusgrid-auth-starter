@@ -212,165 +212,158 @@ export default function LeadsPage() {
   };
 
   return (
-    <div className="p-4 flex flex-col gap-4">
-      {/* Header — clean, aligned, dark theme */}
-      <div className="flex items-center justify-between p-4 rounded-2xl bg-base-200/70 border border-white/10 shadow">
-        <div className="flex items-center gap-3">
-          <h1 className="text-xl font-semibold text-white">Leads</h1>
-          <span className="text-sm text-gray-400">({count})</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="join">
+    <div className="min-h-[100dvh] bg-[#0B0D10] text-gray-200">
+      <div className="p-4 flex flex-col gap-4">
+
+        {/* Header — Tailwind only, no plugins */}
+        <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-900/80 border border-white/10 shadow-xl">
+          <div className="flex items-center gap-3">
+            <h1 className="text-xl font-semibold text-white">Leads</h1>
+            <span className="text-sm text-gray-400">({count})</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="inline-flex rounded-lg overflow-hidden border border-white/10">
+              <button
+                className={`px-3 py-1.5 text-sm ${view==='table' ? 'bg-indigo-600 text-white' : 'bg-transparent text-gray-300 hover:bg-white/10'}`}
+                onClick={() => setView('table')}
+              >Table</button>
+              <button
+                className={`px-3 py-1.5 text-sm ${view==='kanban' ? 'bg-indigo-600 text-white' : 'bg-transparent text-gray-300 hover:bg-white/10'}`}
+                onClick={() => setView('kanban')}
+              >Kanban</button>
+              <button
+                className={`px-3 py-1.5 text-sm ${view==='cards' ? 'bg-indigo-600 text-white' : 'bg-transparent text-gray-300 hover:bg-white/10'}`}
+                onClick={() => setView('cards')}
+              >Cards</button>
+            </div>
+
             <button
-              className={`join-item btn btn-sm ${view === "table" ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setView("table")}
+              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
+              onClick={() => setOpenAdd(true)}
             >
-              Table
-            </button>
-            <button
-              className={`join-item btn btn-sm ${view === "kanban" ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setView("kanban")}
-            >
-              Kanban
-            </button>
-            <button
-              className={`join-item btn btn-sm ${view === "cards" ? "btn-primary" : "btn-ghost"}`}
-              onClick={() => setView("cards")}
-            >
-              Cards
+              + Add Lead
             </button>
           </div>
-          <button
-            className="btn btn-sm btn-primary rounded-xl"
-            onClick={() => setOpenAdd(true)}
+        </div>
+
+        {/* Filters — Tailwind only */}
+        <div className="flex items-center gap-3 p-3 rounded-2xl bg-neutral-900/70 border border-white/10">
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+            placeholder="Search name, email, phone, company…"
+            className="px-3 py-2 rounded-md bg-neutral-800 text-gray-200 placeholder-gray-500 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 w-64"
+          />
+
+          <select
+            className="px-3 py-2 rounded-md bg-neutral-800 text-gray-200 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            value={filters.stage}
+            onChange={(e) => { setFilters(f => ({ ...f, stage: e.target.value || "" })); setPage(1); }}
           >
-            + Add Lead
+            <option value="">All Stages</option>
+            {stages?.map((s) => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+
+          <select
+            className="px-3 py-2 rounded-md bg-neutral-800 text-gray-200 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            value={filters.status}
+            onChange={(e) => { setFilters(f => ({ ...f, status: e.target.value || "" })); setPage(1); }}
+          >
+            <option value="">All Status</option>
+            <option value="new">New</option>
+            <option value="qualified">Qualified</option>
+            <option value="won">Won</option>
+            <option value="lost">Lost</option>
+          </select>
+
+          <button
+            className="ml-auto px-3 py-2 rounded-md bg-transparent text-gray-300 hover:bg-white/10 border border-white/10"
+            onClick={() => { setFilters({ owner_id: "", stage: "", status: "" }); setQuery(""); setPage(1); }}
+          >
+            Reset
           </button>
+
+          <div className="relative">
+            <details className="group">
+              <summary className="px-3 py-2 rounded-md bg-transparent text-gray-300 hover:bg-white/10 border border-white/10 cursor-pointer select-none">
+                Columns
+              </summary>
+              <ul className="absolute right-0 mt-2 w-56 rounded-2xl bg-neutral-900/95 border border-white/10 p-2 shadow-xl z-20">
+                {columns.map((c) => (
+                  <li key={c.key} className="px-2 py-1.5">
+                    <label className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={c.visible}
+                        onChange={() => toggleColumn(c.key)}
+                        className="accent-indigo-500"
+                      />
+                      <span className="text-sm text-gray-200">{c.label}</span>
+                    </label>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </div>
         </div>
-      </div>
 
-      {/* Filters */}
-      <div className="gg-filters">
-        <input
-          value={query}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setPage(1);
-          }}
-          placeholder="Search name, email, phone, company…"
-          className="input w-64"
-        />
-        <select
-          className="select"
-          value={filters.stage}
-          onChange={(e) => {
-            setFilters((f) => ({ ...f, stage: e.target.value || "" }));
-            setPage(1);
-          }}
-        >
-          <option value="">All Stages</option>
-          {stages?.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-        <select
-          className="select"
-          value={filters.status}
-          onChange={(e) => {
-            setFilters((f) => ({ ...f, status: e.target.value || "" }));
-            setPage(1);
-          }}
-        >
-          <option value="">All Status</option>
-          <option value="new">New</option>
-          <option value="qualified">Qualified</option>
-          <option value="won">Won</option>
-          <option value="lost">Lost</option>
-        </select>
-        <button
-          className="btn btn-ghost"
-          onClick={() => {
-            setFilters({ owner_id: "", stage: "", status: "" });
-            setQuery("");
-            setPage(1);
-          }}
-        >
-          Reset
-        </button>
-        <div className="ml-auto">
-          <details className="dropdown">
-            <summary className="btn btn-ghost">Columns</summary>
-            <ul className="menu dropdown-content p-2 shadow bg-base-100 rounded-box w-56">
-              {columns.map((c) => (
-                <li key={c.key}>
-                  <label className="flex items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={c.visible}
-                      onChange={() => toggleColumn(c.key)}
-                    />
-                    <span>{c.label}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </details>
+        {/* Content */}
+        <div className="min-h-[400px]">
+          {view === "table" && (
+            <LeadsTable
+              loading={loading}
+              rows={sortedRows}
+              columns={visibleColumns}
+              page={page}
+              pageSize={pageSize}
+              total={count}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              onSort={handleSort}
+              onPageChange={setPage}
+              onPageSizeChange={setPageSize}
+              onInlineUpdate={onInlineUpdate}
+              onOpenLead={onOpenLead}
+            />
+          )}
+
+          {view === "kanban" && (
+            <LeadsKanban
+              loading={loading}
+              rows={rows}
+              stages={stages}
+              onMoveStage={onMoveStage}
+              onOpenLead={onOpenLead}
+            />
+          )}
+
+          {view === "cards" && (
+            <LeadsCards
+              loading={loading}
+              rows={sortedRows}
+              onOpenLead={onOpenLead}
+            />
+          )}
         </div>
-      </div>
 
-      {/* Content */}
-      <div className="min-h-[400px]">
-        {view === "table" && (
-          <LeadsTable
-            loading={loading}
-            rows={sortedRows}
-            columns={visibleColumns}
-            page={page}
-            pageSize={pageSize}
-            total={count}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            onSort={handleSort}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-            onInlineUpdate={onInlineUpdate}
-            onOpenLead={onOpenLead}
+        {/* Drawers */}
+        {openDrawer && (
+          <LeadDrawer
+            id={selected}
+            onClose={() => setOpenDrawer(false)}
+            onUpdated={(patch) => onInlineUpdate(selected, patch)}
           />
         )}
-        {view === "kanban" && (
-          <LeadsKanban
-            loading={loading}
-            rows={rows}
-            stages={stages}
-            onMoveStage={onMoveStage}
-            onOpenLead={onOpenLead}
-          />
-        )}
-        {view === "cards" && (
-          <LeadsCards
-            loading={loading}
-            rows={sortedRows}
-            onOpenLead={onOpenLead}
+        {openAdd && (
+          <AddLeadDrawer
+            onClose={() => setOpenAdd(false)}
+            onSuccess={onAddSuccess}
           />
         )}
       </div>
-
-      {/* Drawers */}
-      {openDrawer && (
-        <LeadDrawer
-          id={selected}
-          onClose={() => setOpenDrawer(false)}
-          onUpdated={(patch) => onInlineUpdate(selected, patch)}
-        />
-      )}
-      {openAdd && (
-        <AddLeadDrawer
-          onClose={() => setOpenAdd(false)}
-          onSuccess={onAddSuccess}
-        />
-      )}
     </div>
   );
 }

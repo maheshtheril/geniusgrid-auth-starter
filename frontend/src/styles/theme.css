@@ -1,0 +1,29 @@
+/* Two dark palettes. Everything reads from these CSS variables */
+:root { color-scheme: dark; }
+
+/* Default: DARK */
+:root[data-theme="dark"]{
+  --bg:#0B0D10; --surface:#0F1318; --panel:#141922;
+  --text:#E5E7EB; --muted:#A3A3A3; --border:rgba(255,255,255,.08);
+  --primary:#6E8BFF; --ring:rgba(110,139,255,.35);
+}
+
+/* Alternate: NIGHT (deeper/colder) */
+:root[data-theme="night"]{
+  --bg:#05070B; --surface:#0A0D12; --panel:#0E1218;
+  --text:#E6F0FF; --muted:#90A0B3; --border:rgba(150,170,200,.12);
+  --primary:#64D2FF; --ring:rgba(100,210,255,.35);
+}
+
+/* Apply to page */
+html,body,#root{height:100%}
+body{background:var(--bg); color:var(--text)}
+
+/* Small helpers so you don’t rewrite components */
+.gg-surface { background:var(--surface); border:1px solid var(--border); }
+.gg-panel   { background:var(--panel);   border:1px solid var(--border); }
+.gg-muted   { color:var(--muted); }
+.gg-btn     { @apply inline-flex items-center px-3 py-1.5 rounded-lg text-sm transition-colors; }
+.gg-btn-primary { background:var(--primary); color:#fff; }
+.gg-btn-ghost   { background:transparent; color:var(--text); }
+.gg-input   { background:var(--surface); border:1px solid var(--border); color:var(--text); }

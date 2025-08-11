@@ -1,6 +1,8 @@
 import React from "react";
 import "./index.css";
 import "./styles.css";
+import "./styles/theme.css";
+
 import { Routes, Route, Navigate, Link } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage.jsx";
