@@ -1,111 +1,96 @@
 // src/lib/api.js
 import axios from "axios";
 
-/**
- * Single axios instance for the app
- */
 const api = axios.create({
-  baseURL:
-    import.meta.env.VITE_API_URL ||
-    "https://geniusgrid-auth-starter.onrender.com",
+  baseURL: import.meta.env.VITE_API_URL || "https://geniusgrid-auth-starter.onrender.com",
   withCredentials: true,
   timeout: 30000,
 });
 
-/**
- * Track identical in-flight GET requests so we can cancel the previous one.
- * Latest request wins; avoids bursts and accidental spamming.
- * Map key => AbortController
- */
-const inflight = new Map();
+// ---------- helpers ----------
+export default api;        // default export (unchanged)
+export { api };           // named export (for files using { api })
 
+// convenience helpers (so files can do { get, post, patch, del })
+const get  = (url, config)          => api.get(url, config);
+const post = (url, data, config)    => api.post(url, data, config);
+const patch= (url, data, config)    => api.patch(url, data, config);
+const del  = (url, config)          => api.delete(url, config);
+export { get, post, patch, del };
+
+// ---------- internals ----------
+const inflight = new Map(); // key -> AbortController (only when dedupe is enabled)
+
+function pathnameOf(url, base) {
+  try { return new URL(url, base).pathname; } catch { return String(url || ""); }
+}
+function isAuthRoute(url, base) {
+  const p = pathnameOf(url, base);
+  return /^\/?api\/auth(\/|$)/i.test(p);
+}
 function keyFor(config) {
-  const u = new URL((config.baseURL || "") + config.url);
-  const p = new URLSearchParams(config.params || {}).toString();
+  const path = pathnameOf(config.url, config.baseURL);
+  const qs = new URLSearchParams(config.params || {}).toString();
   const method = (config.method || "get").toLowerCase();
-  return `${method} ${u.pathname}?${p}`;
+  return `${method} ${path}?${qs}`;
 }
-
-function parseRetryAfter(headerValue) {
-  // Retry-After can be seconds or an HTTP-date
-  if (!headerValue) return null;
-  const n = Number(headerValue);
+function parseRetryAfter(v) {
+  if (!v) return null;
+  const n = Number(v);
   if (!Number.isNaN(n)) return n * 1000;
-  const d = new Date(headerValue).getTime();
-  if (!Number.isNaN(d)) {
-    const ms = d - Date.now();
-    return ms > 0 ? ms : 0;
-  }
-  return null;
+  const t = new Date(v).getTime();
+  return Number.isNaN(t) ? null : Math.max(0, t - Date.now());
 }
 
-/**
- * REQUEST interceptor
- * - Guard on required tenant/company context (if meta.requireContext is set)
- * - Deduplicate GETs by cancelling the previous identical one (latest-wins)
- */
+// ---------- interceptors ----------
 api.interceptors.request.use((config) => {
-  // Guard: require tenant/company context for certain calls
-  if (config.meta?.requireContext) {
-    if (!config.meta?.tenant_id || !config.meta?.company_id) {
-      const err = new axios.Cancel("Missing tenant/company context");
-      throw err;
+  // Never block auth routes
+  if (!isAuthRoute(config.url, config.baseURL)) {
+    // Optional context guard: ONLY if you set meta.requireContext on that call
+    if (config.meta?.requireContext) {
+      if (!config.meta?.tenant_id || !config.meta?.company_id) {
+        throw new axios.Cancel("Missing tenant/company context");
+      }
     }
-  }
 
-  // Cancel previous identical GET (latest-wins)
-  const method = (config.method || "get").toLowerCase();
-  if (method === "get") {
-    const key = keyFor(config);
-
-    const prev = inflight.get(key);
-    if (prev) prev.abort(); // cancel previous identical request
-
-    const controller = new AbortController();
-    inflight.set(key, controller);
-    config.signal = controller.signal;
-    config.__inflightKey = key; // for cleanup later
+    // Optional dedupe: ONLY if you set meta.dedupe === true on that call
+    const method = (config.method || "get").toLowerCase();
+    if (config.meta?.dedupe && method === "get") {
+      const key = keyFor(config);
+      const prev = inflight.get(key);
+      if (prev) prev.abort(); // latest wins
+      const controller = new AbortController();
+      inflight.set(key, controller);
+      config.signal = controller.signal;
+      config.__inflightKey = key;
+    }
   }
 
   return config;
 });
 
-/**
- * RESPONSE interceptor
- * - Clean up inflight map
- * - Gentle backoff on 429 with Retry-After support (max 2 retries)
- */
 api.interceptors.response.use(
-  (response) => {
-    const key = response.config?.__inflightKey;
+  (resp) => {
+    const key = resp.config?.__inflightKey;
     if (key) inflight.delete(key);
-    return response;
+    return resp;
   },
   async (error) => {
     const cfg = error?.config;
     const key = cfg?.__inflightKey;
     if (key) inflight.delete(key);
 
-    const status = error?.response?.status;
-
-    // Retry on 429 with small backoff
-    if (cfg && status === 429) {
+    // Gentle retry for 429 (never for /api/auth/*)
+    if (cfg && !isAuthRoute(cfg.url, cfg.baseURL) && error?.response?.status === 429) {
       cfg.__retryCount = (cfg.__retryCount || 0) + 1;
       if (cfg.__retryCount <= 2) {
-        const retryHeader = error.response.headers?.["retry-after"];
-        const fromHeader = parseRetryAfter(retryHeader);
-        const fallback = Math.min(1500 * cfg.__retryCount, 3000); // 1.5s, 3s
-        const wait = fromHeader ?? fallback;
-
-        await new Promise((res) => setTimeout(res, wait));
+        const ra = parseRetryAfter(error.response.headers?.["retry-after"]);
+        const fallback = Math.min(1500 * cfg.__retryCount, 3000);
+        await new Promise((r) => setTimeout(r, ra ?? fallback));
         return api(cfg);
       }
     }
 
-    // Pass other errors through
     throw error;
   }
 );
-
-export default api;
-export { api };
