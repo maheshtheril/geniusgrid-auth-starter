@@ -1,56 +1,87 @@
-// HTML5 drag-and-drop (no external libs)
 import { useMemo } from "react";
 
-export default function LeadsKanban({ loading, rows = [], stages = [], onMoveStage, onOpenLead }) {
-  const grouped = useMemo(() => {
-    const g = Object.fromEntries((stages || []).map(s => [s, []]));
-    for (const r of rows) {
-      const key = r.stage && g[r.stage] ? r.stage : (stages?.[0] || "new");
-      g[key].push(r);
-    }
-    return g;
+function KanbanSkeleton() {
+  return (
+    <div className="flex gap-4">
+      {[1,2,3].map((i) => (
+        <div key={i} className="flex-1 glass-panel rounded-2xl p-3">
+          <div className="h-5 w-24 mb-3 rounded bg-base-300/60 animate-pulse" />
+          {[1,2,3].map((k) => (
+            <div key={k} className="h-20 mb-3 rounded-xl bg-base-300/40 animate-pulse" />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function LeadsKanban({
+  loading,
+  rows = [],
+  stages = [],
+  total = 0,
+  onMoveStage,
+  onOpenLead,
+}) {
+  const cols = useMemo(() => {
+    const list = (stages?.length ? stages : Array.from(new Set(rows.map(r => r.stage).filter(Boolean)))).map(String);
+    const grouped = Object.fromEntries(list.map(s => [s, []]));
+    rows.forEach((r) => {
+      const s = r.stage || list[0] || "new";
+      (grouped[s] = grouped[s] || []).push(r);
+    });
+    return { order: list, grouped };
   }, [rows, stages]);
 
-  const onDragStart = (e, id) => {
-    e.dataTransfer.setData("text/plain", String(id));
-    e.dataTransfer.effectAllowed = "move";
-  };
+  if (loading) return <KanbanSkeleton />;
 
-  const onDrop = (e, stage) => {
+  const handleDrop = (e, stage) => {
     const id = e.dataTransfer.getData("text/plain");
-    if (!id) return;
-    onMoveStage({ id, toStage: stage });
+    if (id) onMoveStage({ id, toStage: stage });
   };
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-      {(stages?.length ? stages : ["new","qualified","proposal","negotiation","won","lost"]).map(stage => (
-        <div key={stage} className="panel min-h-[300px] flex flex-col"
-             onDragOver={(e)=>e.preventDefault()}
-             onDrop={(e)=>onDrop(e, stage)}>
+    <div className="grid md:grid-cols-3 gap-4">
+      {cols.order.map((stage) => (
+        <div
+          key={stage}
+          className="glass-panel rounded-2xl p-3"
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={(e) => handleDrop(e, stage)}
+        >
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold">{stage}</h3>
-            <span className="badge">{grouped[stage]?.length || 0}</span>
+            <h3 className="font-semibold tracking-wide capitalize">{stage}</h3>
+            <span className="badge badge-ghost">{cols.grouped[stage]?.length || 0}</span>
           </div>
-          <div className="flex-1 flex flex-col gap-2">
-            {loading && <div className="opacity-60 p-2">Loading…</div>}
-            {(grouped[stage] || []).map(card => (
-              <div key={card.id}
-                   draggable
-                   onDragStart={(e)=>onDragStart(e, card.id)}
-                   className="rounded border p-2 cursor-grab active:cursor-grabbing bg-base-100 hover:shadow">
-                <div className="font-medium">
-                  <button className="link" onClick={()=>onOpenLead(card.id)}>{card.name || "(untitled)"}</button>
-                </div>
-                <div className="text-sm opacity-70">{card.company_name || "-"}</div>
-                <div className="mt-1 flex items-center justify-between">
-                  <span className="badge">AI {card.score ?? "-"}</span>
-                  <span className="badge badge-outline">{card.status}</span>
+
+          <div className="space-y-3 min-h-[120px]">
+            {(cols.grouped[stage] || []).map((lead) => (
+              <div
+                key={lead.id}
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData("text/plain", lead.id)}
+                className="card bg-base-100/60 border border-base-300/50 rounded-xl shadow hover:shadow-lg transition-all hover:-translate-y-0.5"
+              >
+                <div className="card-body p-3">
+                  <div className="flex items-center justify-between">
+                    <button className="font-medium link link-hover" onClick={() => onOpenLead(lead.id)}>
+                      {lead.name || "(untitled)"}
+                    </button>
+                    <span className="badge badge-outline">{lead.status || "new"}</span>
+                  </div>
+                  <div className="text-xs opacity-70">{lead.company_name || "-"}</div>
+                  <div className="mt-2 flex items-center justify-between text-xs">
+                    <span>Owner: {lead.owner_name || "-"}</span>
+                    <span>Score: {lead.score ?? "-"}</span>
+                  </div>
                 </div>
               </div>
             ))}
-            {!loading && (grouped[stage]?.length === 0) && (
-              <div className="opacity-50 text-sm">Drop leads here</div>
+
+            {(!cols.grouped[stage] || cols.grouped[stage].length === 0) && (
+              <div className="p-4 rounded-xl border border-dashed border-base-300/60 text-xs opacity-60 text-center">
+                Drop here to move to <b className="capitalize">{stage}</b>
+              </div>
             )}
           </div>
         </div>
