@@ -1,150 +1,31 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
-import useLeadsApi from "@/hooks/useLeadsApi";
-import { useRealtime } from "@/hooks/useRealtime";
-import LeadsTable from "@/components/leads/LeadsTable";
-import LeadsKanban from "@/components/leads/LeadsKanban";
-import LeadsCards from "@/components/leads/LeadsCards";
-import LeadDrawer from "@/components/leads/LeadDrawer";
-import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
-
-const DEFAULT_COLUMNS = [
-  { key: "name", label: "Lead", visible: true },
-  { key: "company_name", label: "Company", visible: true },
-  { key: "status", label: "Status", visible: true },
-  { key: "stage", label: "Stage", visible: true },
-  { key: "owner_name", label: "Owner", visible: true },
-  { key: "score", label: "AI Score", visible: true },
-  { key: "priority", label: "Priority", visible: false },
-  { key: "created_at", label: "Created", visible: true },
-];
+// src/pages/LeadsPage.jsx
+// …imports stay the same
 
 export default function LeadsPage() {
-  const api = useLeadsApi();
-  const [view, setView] = useState("table");
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState({ owner_id: "", stage: "", status: "" });
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [total, setTotal] = useState(0);
-  const [rows, setRows] = useState([]);
-  const [stages, setStages] = useState([]);
-  const [columns, setColumns] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("leads.columns"));
-      return saved?.length ? saved : DEFAULT_COLUMNS;
-    } catch { return DEFAULT_COLUMNS; }
-  });
-
-  const [selected, setSelected] = useState(null);
-  const [openDrawer, setOpenDrawer] = useState(false);
-  const [openAdd, setOpenAdd] = useState(false);
-  const [loading, setLoading] = useState(false);
-
-  // tiny debounce to prevent "Loading…" flicker on sub-200ms requests
-  const [uiLoading, setUiLoading] = useState(false);
-  useEffect(() => {
-    let t;
-    if (loading) t = setTimeout(() => setUiLoading(true), 150);
-    else setUiLoading(false);
-    return () => t && clearTimeout(t);
-  }, [loading]);
-
-  useRealtime({
-    onLeadEvent: (evt) => {
-      if (evt?.lead) {
-        setRows(prev => {
-          const idx = prev.findIndex(r => r.id === evt.lead.id);
-          if (idx === -1) return [evt.lead, ...prev];
-          const next = prev.slice();
-          next[idx] = { ...prev[idx], ...evt.lead };
-          return next;
-        });
-      }
-    }
-  });
-
-  const visibleColumns = useMemo(
-    () => columns.filter(c => c.visible),
-    [columns]
-  );
-
-  const params = useMemo(() => ({
-    q: query || undefined,
-    ...filters,
-    page,
-    pageSize
-  }), [query, filters, page, pageSize]);
-
-  const fetchLeads = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await api.listLeads(params);
-      setRows(data.items || data.rows || []);
-      setTotal(data.total || 0);
-    } finally {
-      setLoading(false);
-    }
-  }, [api.listLeads, params]);
-
-  const fetchPipelines = useCallback(async () => {
-    try {
-      const data = await api.listPipelines();
-      setStages(data.stages || data || []);
-    } catch {}
-  }, [api.listPipelines]);
-
-  // run once on mount for pipelines
-  useEffect(() => { fetchPipelines(); }, [fetchPipelines]);
-
-  // only refetch when query/filters/page/pageSize actually change
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
-
-  const onInlineUpdate = async (id, patch) => {
-    await api.updateLead(id, patch);
-    setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
-  };
-
-  const onMoveStage = async ({ id, toStage }) => {
-    await api.updateLead(id, { stage: toStage });
-    setRows(prev => prev.map(r => (r.id === id ? { ...r, stage: toStage } : r)));
-  };
-
-  const onOpenLead = (id) => {
-    setSelected(id);
-    setOpenDrawer(true);
-  };
-
-  const onAddSuccess = (newLead) => {
-    setOpenAdd(false);
-    if (newLead?.id) setRows(prev => [newLead, ...prev]);
-  };
-
-  const toggleColumn = (key) => {
-    setColumns(prev => {
-      const next = prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c);
-      localStorage.setItem("leads.columns", JSON.stringify(next));
-      return next;
-    });
-  };
+  // …state & hooks remain the same
 
   return (
     <div className="p-4 flex flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h1 className="text-xl font-semibold">Leads</h1>
-          <span className="opacity-60">({total})</span>
+      <div className="gg-header">
+        <div className="gg-header-left">
+          <h1 className="gg-title">Leads</h1>
+          <span className="gg-subtle">({total})</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button className={`btn ${view==='table'?'btn-primary':'btn-ghost'}`} onClick={() => setView("table")}>Table</button>
-          <button className={`btn ${view==='kanban'?'btn-primary':'btn-ghost'}`} onClick={() => setView("kanban")}>Kanban</button>
-          <button className={`btn ${view==='cards'?'btn-primary':'btn-ghost'}`} onClick={() => setView("cards")}>Cards</button>
-          <button className="btn btn-primary" onClick={() => setOpenAdd(true)}>Add Lead</button>
+        <div className="gg-header-right">
+          <div className="btn-group">
+            <button className={`btn btn-sm ${view==='table'?'btn-active':''}`} onClick={() => setView("table")}>Table</button>
+            <button className={`btn btn-sm ${view==='kanban'?'btn-active':''}`} onClick={() => setView("kanban")}>Kanban</button>
+            <button className={`btn btn-sm ${view==='cards'?'btn-active':''}`} onClick={() => setView("cards")}>Cards</button>
+          </div>
+          <button className="btn btn-primary gg-add-btn" onClick={() => setOpenAdd(true)}>
+            + Add Lead
+          </button>
         </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="gg-filters">
         <input
           value={query}
           onChange={e => { setQuery(e.target.value); setPage(1); }}
@@ -165,9 +46,7 @@ export default function LeadsPage() {
         <button className="btn btn-ghost" onClick={() => { setFilters({ owner_id: "", stage: "", status: "" }); setQuery(""); setPage(1); }}>
           Reset
         </button>
-
-        {/* Column chooser */}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto">
           <details className="dropdown">
             <summary className="btn btn-ghost">Columns</summary>
             <ul className="menu dropdown-content p-2 shadow bg-base-100 rounded-box w-56">
@@ -188,7 +67,7 @@ export default function LeadsPage() {
       <div className="min-h-[400px]">
         {view === "table" && (
           <LeadsTable
-            loading={uiLoading}
+            loading={loading}
             rows={rows}
             columns={visibleColumns}
             page={page}
@@ -202,7 +81,7 @@ export default function LeadsPage() {
         )}
         {view === "kanban" && (
           <LeadsKanban
-            loading={uiLoading}
+            loading={loading}
             rows={rows}
             stages={stages}
             onMoveStage={onMoveStage}
@@ -210,11 +89,7 @@ export default function LeadsPage() {
           />
         )}
         {view === "cards" && (
-          <LeadsCards
-            loading={uiLoading}
-            rows={rows}
-            onOpenLead={onOpenLead}
-          />
+          <LeadsCards loading={loading} rows={rows} onOpenLead={onOpenLead} />
         )}
       </div>
 
