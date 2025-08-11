@@ -2,91 +2,100 @@
 import React from "react";
 import { Calendar, User, Building2, Brain, Phone, Mail, Edit3 } from "lucide-react";
 
-export default function LeadsCards({ leads = [], onOpenLead }) {
-  const count = Array.isArray(leads) ? leads.length : 0;
+// Accepts EITHER `rows` or `leads` + optional `loading`
+export default function LeadsCards({ rows, leads, loading = false, onOpenLead }) {
+  const items = Array.isArray(rows) ? rows : Array.isArray(leads) ? leads : [];
+
+  if (loading) return <SkeletonGrid />;
+
+  if (!items.length) {
+    return (
+      <div className="p-6 text-center text-gray-400">
+        No leads available. Try adding a new lead.
+      </div>
+    );
+  }
 
   return (
-    <div className="relative">
-      {/* 🔎 Dev chip – comment this out later */}
-      <div className="absolute -top-2 right-4 text-[10px] px-2 py-1 rounded-full bg-white/10 text-gray-300">
-        cards:{count}
-      </div>
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-4">
+      {items.map((r, i) => {
+        // Normalize your current API shape
+        const id = r.id ?? r.lead_id ?? `tmp-${i}`;
+        const name = r.name ?? r.title ?? "Unnamed Lead";
+        const company = r.company_name ?? r.company?.name ?? r.company ?? null;
+        const owner = r.owner_name ?? r.owner?.name ?? r.assigned_user_name ?? null;
+        const stage = (r.stage ?? "New") + "";
+        const status = r.status ?? null;
+        const aiScore = r.score ?? r.ai_score ?? null;
+        const created = r.created_at ?? r.createdAt ?? null;
 
-      {count === 0 ? (
-        <div className="p-6 text-center text-gray-400">
-          No leads available. Try adding a new lead.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-4">
-          {leads.map((raw, i) => {
-            const id = raw.id || raw.lead_id || `tmp-${i}`;
-            const name = raw.name || raw.title || "Unnamed Lead";
-            const stage = (raw.stage || "New") + "";
-            const company = raw.company?.name || raw.company_name || raw.company || null;
-            const owner =
-              raw.owner?.name ||
-              raw.assigned_user?.name ||
-              raw.owner_name ||
-              raw.assigned_user_name ||
-              null;
-            const aiScore = raw.ai_score ?? raw.aiScore ?? null;
-            const created = raw.created_at || raw.createdAt || null;
+        return (
+          <div
+            key={id}
+            onClick={() => onOpenLead && onOpenLead(r.id ?? r.lead_id ?? null)}
+            className="group cursor-pointer bg-gradient-to-br from-gray-900/80 to-gray-800/80 
+                       backdrop-blur-md border border-white/10 rounded-2xl shadow-lg 
+                       p-5 transition-all hover:scale-[1.02] hover:shadow-2xl"
+          >
+            {/* Top: Name + Stage */}
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-lg font-bold text-white truncate">{name}</h2>
+              <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStageColor(stage)}`}>
+                {stage}
+              </span>
+            </div>
 
-            return (
-              <div
-                key={id}
-                onClick={() => onOpenLead && onOpenLead(raw.id || raw.lead_id || null)}
-                className="group cursor-pointer bg-gradient-to-br from-gray-900/80 to-gray-800/80 
-                           backdrop-blur-md border border-white/10 rounded-2xl shadow-lg 
-                           p-5 transition-all hover:scale-[1.02] hover:shadow-2xl"
-              >
-                <div className="flex justify-between items-center mb-3">
-                  <h2 className="text-lg font-bold text-white truncate">{name}</h2>
-                  <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStageColor(stage)}`}>
-                    {stage}
-                  </span>
-                </div>
+            {/* Company */}
+            <div className="flex items-center gap-2 text-sm text-gray-300 mb-1">
+              <Building2 size={16} className="text-gray-400" />
+              <span className="truncate">{company || "No company"}</span>
+            </div>
 
-                <div className="flex items-center gap-2 text-sm text-gray-300 mb-1">
-                  <Building2 size={16} className="text-gray-400" />
-                  <span className="truncate">{company || "No company"}</span>
-                </div>
+            {/* Owner */}
+            <div className="flex items-center gap-2 text-sm text-gray-300 mb-3">
+              <User size={16} className="text-gray-400" />
+              <span>{owner || "Unassigned"}</span>
+            </div>
 
-                <div className="flex items-center gap-2 text-sm text-gray-300 mb-4">
-                  <User size={16} className="text-gray-400" />
-                  <span>{owner || "Unassigned"}</span>
-                </div>
-
-                <div className="flex items-center gap-2 mb-4">
-                  <Brain size={16} className="text-green-400" />
-                  <span className="text-sm text-gray-200">AI Score: {aiScore ?? "-"}</span>
-                </div>
-
-                <div className="flex justify-between items-center text-xs text-gray-400">
-                  <div className="flex items-center gap-1">
-                    <Calendar size={14} />
-                    {created ? new Date(created).toLocaleDateString() : "-"}
-                  </div>
-                  <div
-                    className="opacity-0 group-hover:opacity-100 flex gap-2 transition-all"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button className="p-1 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white">
-                      <Edit3 size={14} />
-                    </button>
-                    <button className="p-1 rounded-full bg-green-600 hover:bg-green-700 text-white">
-                      <Phone size={14} />
-                    </button>
-                    <button className="p-1 rounded-full bg-yellow-500 hover:bg-yellow-600 text-white">
-                      <Mail size={14} />
-                    </button>
-                  </div>
-                </div>
+            {/* Status (optional) */}
+            {status && (
+              <div className="mb-3">
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400">
+                  {status}
+                </span>
               </div>
-            );
-          })}
-        </div>
-      )}
+            )}
+
+            {/* AI Score */}
+            <div className="flex items-center gap-2 mb-4">
+              <Brain size={16} className="text-green-400" />
+              <span className="text-sm text-gray-200">AI Score: {aiScore ?? "-"}</span>
+            </div>
+
+            {/* Bottom: Date + Actions */}
+            <div className="flex justify-between items-center text-xs text-gray-400">
+              <div className="flex items-center gap-1">
+                <Calendar size={14} />
+                {created ? new Date(created).toLocaleDateString() : "-"}
+              </div>
+              <div
+                className="opacity-0 group-hover:opacity-100 flex gap-2 transition-all"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button className="p-1 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white">
+                  <Edit3 size={14} />
+                </button>
+                <button className="p-1 rounded-full bg-green-600 hover:bg-green-700 text-white">
+                  <Phone size={14} />
+                </button>
+                <button className="p-1 rounded-full bg-yellow-500 hover:bg-yellow-600 text-white">
+                  <Mail size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -99,7 +108,38 @@ function getStageColor(stage) {
     new: "bg-blue-500/20 text-blue-400",
     prospect: "bg-cyan-500/20 text-cyan-400",
     contacted: "bg-amber-500/20 text-amber-400",
+    won: "bg-emerald-500/20 text-emerald-400",
+    lost: "bg-rose-500/20 text-rose-400",
     closed: "bg-red-500/20 text-red-400",
   };
   return map[s] || "bg-gray-500/20 text-gray-400";
+}
+
+// Simple loading skeleton (premium look, dark theme)
+function SkeletonGrid() {
+  const cells = Array.from({ length: 8 });
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-4">
+      {cells.map((_, i) => (
+        <div
+          key={i}
+          className="animate-pulse bg-gradient-to-br from-gray-900/60 to-gray-800/60 
+                     border border-white/10 rounded-2xl shadow-lg p-5 space-y-3"
+        >
+          <div className="flex justify-between items-center">
+            <div className="h-4 w-40 bg-white/10 rounded" />
+            <div className="h-5 w-16 bg-white/10 rounded-full" />
+          </div>
+          <div className="h-3 w-32 bg-white/10 rounded" />
+          <div className="h-3 w-24 bg-white/10 rounded" />
+          <div className="h-3 w-20 bg-white/10 rounded" />
+          <div className="h-3 w-28 bg-white/10 rounded" />
+          <div className="flex justify-between">
+            <div className="h-3 w-24 bg-white/10 rounded" />
+            <div className="h-6 w-20 bg-white/10 rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
