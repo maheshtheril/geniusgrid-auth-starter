@@ -2,59 +2,64 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/* ---------- path helpers ---------- */
 function normPath(p) {
   if (!p) return null;
   const s = String(p).trim();
-  const withSlash = s.startsWith("/") ? s : "/" + s;
-  return withSlash.replace(/\/+$/, "");
+  if (!s.startsWith("/")) return "/" + s;
+  return s.replace(/\/+$/, "");
 }
+
 function pathParts(p) {
   return (normPath(p) || "").split("/").filter(Boolean);
 }
-function slugifyPath(p) {
-  return `group_${String(p || "").replace(/\//g, "_")}`;
+
+// Dynamically check if a path is a parent (has deeper children)
+function isParentPath(p, allItems) {
+  const parts = pathParts(p);
+  return allItems.some(
+    (r) =>
+      r.path &&
+      r.path.startsWith(p + "/") &&
+      pathParts(r.path).length > parts.length
+  );
 }
 
-/* ---------- build tree (robust) ---------- */
+// Build the tree with dynamic parents and proper roots (YOUR ORIGINAL LOGIC)
 function buildTreeByPath(items = []) {
-  // 1) normalize rows
-  const rows = (items || [])
-    .map((r) => ({ ...r, path: normPath(r.path), children: [] }))
-    .filter((r) => r.path);
+  const rows = items.map((r) => ({ ...r, path: normPath(r.path), children: [] }));
 
-  // 2) map path -> node
-  const map = new Map(rows.map((r) => [r.path, r]));
+  const parents = rows.filter((r) => r.path && isParentPath(r.path, rows));
 
-  // 3) attach to direct parent by trimming one segment
-  for (const r of rows) {
-    const segs = pathParts(r.path);
-    if (segs.length > 1) {
-      const parentPath = "/" + segs.slice(0, segs.length - 1).join("/");
-      const parent = map.get(parentPath);
-      if (parent) parent.children.push(r);
-    }
+  // Roots are those without any parent above them (works even if no single-seg base like "/app")
+  const roots = rows.filter(
+    (r) =>
+      !rows.some(
+        (other) =>
+          other.path &&
+          r.path?.startsWith(other.path + "/") &&
+          pathParts(other.path).length < pathParts(r.path).length
+      )
+  );
+
+  // Attach direct children to parents
+  for (const parent of parents) {
+    const pref = parent.path + "/";
+    const kids = rows.filter((r) => r !== parent && r.path && r.path.startsWith(pref));
+    const targetLen = pathParts(parent.path).length + 1;
+    parent.children = kids.filter((k) => pathParts(k.path).length === targetLen);
   }
 
-  // 4) sorting
+  // Sort the roots and children
   const cmp = (a, b) =>
     (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
     String(a.name).localeCompare(String(b.name));
-  for (const n of rows) n.children.sort(cmp);
 
-  // 5) roots are single-segment nodes
-  const roots = rows.filter((r) => pathParts(r.path).length === 1).sort(cmp);
+  roots.sort(cmp);
+  parents.forEach((p) => p.children.sort(cmp));
 
-  // 6) parents = nodes that have children
-  const parents = rows.filter((r) => r.children && r.children.length > 0);
-
-  // 7) byPath map for future features (kept for parity)
-  const byPath = new Map(rows.map((r) => [r.path, r]));
-
-  return { roots, parents, byPath };
+  return { roots, parents, byPath: new Map(rows.map((r) => [r.path, r])) };
 }
 
-/* ---------- tiny caret ---------- */
 function Caret({ open }) {
   return (
     <svg
@@ -76,7 +81,6 @@ function Caret({ open }) {
   );
 }
 
-/* ---------- animated collapse ---------- */
 function Collapse({ open, children, id }) {
   const ref = useRef(null);
   const [height, setHeight] = useState(open ? "auto" : 0);
@@ -87,8 +91,8 @@ function Collapse({ open, children, id }) {
 
     if (open) {
       setHeight(el.scrollHeight);
-      const t = setTimeout(() => setHeight("auto"), 200);
-      return () => clearTimeout(t);
+      const timeout = setTimeout(() => setHeight("auto"), 200);
+      return () => clearTimeout(timeout);
     } else {
       if (height === "auto") {
         setHeight(el.scrollHeight);
@@ -119,13 +123,12 @@ function Collapse({ open, children, id }) {
   );
 }
 
-/* ---------- main ---------- */
 export default function AppSidebar() {
   const { menus } = useEnv();
-  const { roots /*, parents, byPath */ } = useMemo(() => buildTreeByPath(menus), [menus]);
+  const { roots, parents /*, byPath */ } = useMemo(() => buildTreeByPath(menus), [menus]);
   const location = useLocation();
 
-  // Fully collapsed by default; persist toggles by path
+  // Start fully collapsed; persist toggles
   const [open, setOpen] = useState(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem("__gg_menu_open_paths") || "[]"));
@@ -133,9 +136,25 @@ export default function AppSidebar() {
       return new Set();
     }
   });
+
   useEffect(() => {
     localStorage.setItem("__gg_menu_open_paths", JSON.stringify(Array.from(open)));
   }, [open]);
+
+  // (Disabled) Auto-open-by-route — leave OFF so nothing re-opens behind your click
+  // useEffect(() => {
+  //   const cur = normPath(location.pathname);
+  //   if (!cur) return;
+  //   const parts = pathParts(cur);
+  //   if (parts.length >= 2) {
+  //     const parentPath = "/" + parts.slice(0, 2).join("/");
+  //     if (byPath.has(parentPath) && !open.has(parentPath)) {
+  //       const next = new Set(open);
+  //       next.add(parentPath);
+  //       setOpen(next);
+  //     }
+  //   }
+  // }, [location.pathname, byPath, open]);
 
   const toggle = (parentPath) =>
     setOpen((prev) => {
@@ -160,7 +179,9 @@ export default function AppSidebar() {
 
   const Group = ({ node, depth }) => {
     const parentPath = node.path;
-    const idSlug = slugifyPath(parentPath);
+    const idSlug = `group_${String(parentPath).replaceAll("/", "_")}`;
+
+    // 🔑 Fix: do NOT force depth 0 open. Only open when in `open` Set.
     const isOpen = open.has(parentPath);
 
     return (
@@ -194,7 +215,8 @@ export default function AppSidebar() {
 
         <Collapse open={isOpen} id={idSlug}>
           {node.children.map((ch) =>
-            ch.children && ch.children.length ? (
+            // keep your original parent detection so rendering matches old behavior
+            parents.find((p) => p.path === ch.path) ? (
               <Group key={ch.id || ch.path} node={ch} depth={depth + 1} />
             ) : (
               <Leaf key={ch.id || ch.path} node={ch} depth={depth + 1} />
@@ -211,7 +233,7 @@ export default function AppSidebar() {
       <nav className="nav-vertical">
         {roots.length ? (
           roots.map((n) =>
-            n.children && n.children.length ? (
+            n.children?.length ? (
               <Group key={n.id || n.path} node={n} depth={0} />
             ) : (
               <Leaf key={n.id || n.path} node={n} depth={0} />
