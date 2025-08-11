@@ -44,3 +44,9 @@ app.use("/api/admin", adminUsers);
 
 // (optional) quick health
 app.get("/api/health", (_,res)=>res.json({ok:true}));
+// --- start server (Render needs this) ---
+const PORT = process.env.PORT || 10000;
+const HOST = "0.0.0.0";
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 API listening on ${HOST}:${PORT}`);
+});
