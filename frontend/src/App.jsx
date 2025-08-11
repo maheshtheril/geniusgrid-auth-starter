@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import "./styles.css";
 import { Routes, Route, Navigate } from "react-router-dom";
 
@@ -15,7 +15,15 @@ import LeadsPage from "./pages/LeadsPage.jsx";
 import CompaniesPage from "./pages/CompaniesPage.jsx";
 import LeadCreate from "@/pages/LeadCreate.jsx";
 
+// warm up the API (handles Render cold start / 429 retries internally)
+import { bootstrap } from "./lib/bootstrap";
+
 export default function App() {
+  useEffect(() => {
+    // don’t await; this is just to wake the server and set cookies if needed
+    bootstrap();
+  }, []);
+
   return (
     <Routes>
       {/* ---------- Public Routes ---------- */}
