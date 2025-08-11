@@ -1,14 +1,18 @@
-// Stub for now; we’ll wire WebSocket next step
+// frontend/src/hooks/useRealtime.js
 import { useEffect, useRef } from "react";
 
+/** Stub: we’ll wire real sockets next. */
 export function useRealtime({ onLeadEvent } = {}) {
-  const readyRef = useRef(false);
+  const connectedRef = useRef(false);
 
   useEffect(() => {
-    // placeholder: swap with real socket client
-    readyRef.current = true;
-    return () => { readyRef.current = false; };
-  }, []);
+    // init socket here later and call onLeadEvent({...}) when events arrive
+    connectedRef.current = true;
+    return () => { connectedRef.current = false; };
+  }, [onLeadEvent]);
 
-  return { connected: readyRef.current };
+  return { connected: connectedRef.current };
 }
+
+// Export default too (in case any import expects default)
+export default useRealtime;
