@@ -1,5 +1,5 @@
 // frontend/src/hooks/useLeadsApi.js
-import { get, post, patch } from "@/utils/api"; // or "../utils/api" if no alias
+import { get, post, patch } from "@/lib/api"; // or "../lib/api" if no alias
 
 export default function useLeadsApi() {
   const listLeads   = (params)        => get("/leads", params);
