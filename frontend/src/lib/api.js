@@ -1,21 +1,46 @@
 // src/lib/api.js
 import axios from "axios";
 
+/**
+ * Ensure baseURL points at ".../api" (or same-origin "/api").
+ * - If VITE_API_URL is unset → "/api"
+ * - If VITE_API_URL is "https://host" → "https://host/api"
+ * - If VITE_API_URL already includes "/api" at the start of its path → keep as-is
+ */
+function normalizeBaseURL(raw) {
+  if (!raw) return "/api"; // same-origin default
+  try {
+    const origin = typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const u = new URL(raw, origin);
+    const path = u.pathname.replace(/\/+$/, ""); // trim trailing slashes
+    if (/^\/api(\/|$)/i.test(path)) {
+      return `${u.origin}${path}`;
+    }
+    return `${u.origin}${path}/api`;
+  } catch {
+    // relative like "/backend" or "http://host" string fallback
+    const trimmed = String(raw).replace(/\/+$/, "");
+    return trimmed.endsWith("/api") ? trimmed : `${trimmed}/api`;
+  }
+}
+
+const BASE = normalizeBaseURL(import.meta.env.VITE_API_URL);
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || "https://geniusgrid-auth-starter.onrender.com",
+  baseURL: BASE,
   withCredentials: true,
   timeout: 30000,
 });
 
 // ---------- helpers ----------
-export default api;        // default export (unchanged)
-export { api };           // named export (for files using { api })
+export default api; // default export
+export { api };    // named export
 
 // convenience helpers (so files can do { get, post, patch, del })
-const get  = (url, config)          => api.get(url, config);
-const post = (url, data, config)    => api.post(url, data, config);
-const patch= (url, data, config)    => api.patch(url, data, config);
-const del  = (url, config)          => api.delete(url, config);
+const get   = (url, config)           => api.get(url, config);
+const post  = (url, data, config)     => api.post(url, data, config);
+const patch = (url, data, config)     => api.patch(url, data, config);
+const del   = (url, config)           => api.delete(url, config);
 export { get, post, patch, del };
 
 // ---------- internals ----------
@@ -84,7 +109,7 @@ api.interceptors.response.use(
     if (cfg && !isAuthRoute(cfg.url, cfg.baseURL) && error?.response?.status === 429) {
       cfg.__retryCount = (cfg.__retryCount || 0) + 1;
       if (cfg.__retryCount <= 2) {
-        const ra = parseRetryAfter(error.response.headers?.["retry-after"]);
+        const ra = parseRetryAfter(error.response?.headers?.["retry-after"]);
         const fallback = Math.min(1500 * cfg.__retryCount, 3000);
         await new Promise((r) => setTimeout(r, ra ?? fallback));
         return api(cfg);
@@ -94,3 +119,9 @@ api.interceptors.response.use(
     throw error;
   }
 );
+
+// For visibility in console if needed
+if (typeof window !== "undefined") {
+  // eslint-disable-next-line no-console
+  console.debug("[api] baseURL =", BASE);
+}
