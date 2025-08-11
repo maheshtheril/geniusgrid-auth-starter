@@ -3,32 +3,9 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Panic Boot</title>
-    <style>
-      html,body,#root{height:100%}
-      body{background:#0B0D10;color:#e5e7eb;margin:0}
-      .boot{position:fixed;inset:0;display:grid;place-items:center;font:600 16px system-ui}
-      .overlay{position:fixed;left:0;right:0;bottom:0;background:#111827;border-top:1px solid #374151;max-height:40vh;overflow:auto;padding:12px;font:12px ui-monospace,monospace;white-space:pre-wrap}
-      .ok{color:#10b981}.err{color:#f43f5e}
-    </style>
-    <!-- ERROR OVERLAY before React -->
-    <script>
-      (function(){
-        const ol=document.createElement('div'); ol.className='overlay'; ol.id='panic-overlay';
-        ol.textContent='[overlay] waiting...'; document.addEventListener('DOMContentLoaded',()=>document.body.appendChild(ol));
-        function log(type,msg){
-          const el=document.getElementById('panic-overlay');
-          if(el) el.innerHTML += '\n' + (type==='ok'?'✅ ':'❌ ') + msg;
-        }
-        window.addEventListener('error',e=>log('err','error: '+(e.error?.stack||e.message)));
-        window.addEventListener('unhandledrejection',e=>log('err','unhandled: '+(e.reason?.stack||e.reason)));
-        window.__panicOk = (msg)=>log('ok',msg);
-      })();
-    </script>
+    <title>GeniusGrid</title>
   </head>
   <body>
-    <!-- If you don't see this text, you are not serving THIS index.html -->
-    <div class="boot">BOOT HTML ✅ — if you can read this, the server is serving the right file.</div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
