@@ -32,6 +32,15 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
+app.use((req, _res, next) => {
+  if (req.path.startsWith('/api')) {
+    console.log('> ', req.method, req.originalUrl);
+    console.log('  cookie header:', req.headers.cookie ? req.headers.cookie.slice(0, 160) : '(none)');
+    console.log('  sessionID:', req.sessionID);
+    console.log('  session keys:', Object.keys(req.session || {}));
+  }
+  next();
+});
 // ✅ CORS FIRST
 app.use(
   cors({

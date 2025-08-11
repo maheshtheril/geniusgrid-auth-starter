@@ -277,6 +277,15 @@ router.post("/login", loginLimiter, async (req, res) => {
         if (saveErr) return res.status(500).json({ message: "Session save error" });
         return res.json({ ok: true });
       });
+      app.use((req, _res, next) => {
+  if (req.path.startsWith('/api')) {
+    console.log('> ', req.method, req.originalUrl);
+    console.log('  cookie header:', req.headers.cookie ? req.headers.cookie.slice(0, 160) : '(none)');
+    console.log('  sessionID:', req.sessionID);
+    console.log('  session keys:', Object.keys(req.session || {}));
+  }
+  next();
+});
     });
   } catch (e) {
     console.error("LOGIN ERROR:", e);
