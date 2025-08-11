@@ -1,58 +1,229 @@
+import React, { useMemo, useState, useEffect } from "react";
 import { NavLink, useLocation } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { useEnv } from "@/store/useEnv";
 
-function normPath(p) {
+/**
+ * SidebarAccordion
+ * - Props: items = [{ id, name, path, sort_order? }]
+ * - Infers hierarchy from path ("/app", "/app/crm", "/app/crm/leads")
+ * - Fully collapsed by default. Persists toggles (optional).
+ * - No external state or stores. No Tailwind required (add your classes if you want).
+ */
+
+function norm(p) {
   if (!p) return null;
-  const s = String(p).trim();
-  if (!s.startsWith("/")) return "/" + s;
-  return s.replace(/\/+$/, "");
+  const s = ("" + p).trim();
+  return (s.startsWith("/") ? s : "/" + s).replace(/\/+$/, "");
 }
+const parts = (p) => (norm(p) || "").split("/").filter(Boolean);
 
-function pathParts(p) {
-  return (normPath(p) || "").split("/").filter(Boolean);
-}
+function buildTree(items = []) {
+  const rows = items
+    .map((r) => ({ ...r, path: norm(r.path), children: [] }))
+    .filter((r) => r.path);
 
-function isParentPath(p, allItems) {
-  const parts = pathParts(p);
-  return allItems.some(
-    (r) =>
-      r.path &&
-      r.path.startsWith(p + "/") &&
-      pathParts(r.path).length > parts.length
-  );
-}
-
-function buildTreeByPath(items = []) {
-  const rows = items.map((r) => ({ ...r, path: normPath(r.path), children: [] }));
-
-  const parents = rows.filter((r) => r.path && isParentPath(r.path, rows));
-
-  const roots = rows.filter(
-    (r) =>
-      !rows.some(
-        (other) =>
-          other.path &&
-          r.path?.startsWith(other.path + "/") &&
-          pathParts(other.path).length < pathParts(r.path).length
-      )
-  );
-
-  for (const parent of parents) {
-    const pref = parent.path + "/";
-    const kids = rows.filter((r) => r !== parent && r.path && r.path.startsWith(pref));
-    const targetLen = pathParts(parent.path).length + 1;
-    parent.children = kids.filter((k) => pathParts(k.path).length === targetLen);
+  const map = new Map(rows.map((r) => [r.path, r]));
+  // attach children to direct parent (by trimming one segment)
+  for (const r of rows) {
+    const segs = parts(r.path);
+    if (segs.length > 1) {
+      const parentPath = "/" + segs.slice(0, -1).join("/");
+      const parent = map.get(parentPath);
+      if (parent) parent.children.push(r);
+    }
   }
-
   const cmp = (a, b) =>
     (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
     String(a.name).localeCompare(String(b.name));
+  rows.forEach((r) => r.children.sort(cmp));
+  const roots = rows.filter((r) => parts(r.path).length === 1).sort(cmp);
 
-  roots.sort(cmp);
-  parents.forEach((p) => p.children.sort(cmp));
+  return roots;
+}
 
-  return { roots, parents, byPath: new Map(rows.map((r) => [r.path, r])) };
+export default function SidebarAccordion({
+  items = [],
+  persistKey = "__sidebar_open_paths",   // change or set to null to disable persistence
+  autoOpenActive = false,                // set true if you want to auto-open ancestors of current route
+  className = "",
+}) {
+  const location = useLocation();
+  const roots = useMemo(() => buildTree(items), [items]);
+
+  // open set stores currently-open group paths
+  const [open, setOpen] = useState(() => {
+    if (!persistKey) return new Set();
+    try {
+      return new Set(JSON.parse(localStorage.getItem(persistKey) || "[]"));
+    } catch {
+      return new Set();
+    }
+  });
+
+  // persist
+  useEffect(() => {
+    if (!persistKey) return;
+    localStorage.setItem(persistKey, JSON.stringify(Array.from(open)));
+  }, [open, persistKey]);
+
+  // optional: auto-open current route's ancestors (off by default)
+  useEffect(() => {
+    if (!autoOpenActive) return;
+    const p = norm(location.pathname);
+    if (!p) return;
+    const segs = parts(p);
+    if (segs.length < 2) return;
+    const ancestors = [];
+    for (let i = 1; i < segs.length; i++) {
+      ancestors.push("/" + segs.slice(0, i).join("/"));
+    }
+    setOpen((prev) => new Set([...prev, ...ancestors]));
+  }, [location.pathname, autoOpenActive]);
+
+  const toggle = (path, nextOpen) => {
+    setOpen((prev) => {
+      const n = new Set(prev);
+      nextOpen ? n.add(path) : n.delete(path);
+      return n;
+    });
+  };
+
+  const isActive = (current, nodePath) =>
+    current === nodePath || (nodePath && current.startsWith(nodePath + "/"));
+
+  return (
+    <aside className={className} style={{ width: 260, borderRight: "1px solid #e5e7eb" }}>
+      <div style={{ padding: "10px 12px", borderBottom: "1px solid #e5e7eb", fontSize: 12, color: "#6b7280", textTransform: "uppercase", letterSpacing: ".06em" }}>
+        Menu
+      </div>
+      <nav style={{ padding: 8, overflowY: "auto", height: "calc(100vh - 80px)" }}>
+        {roots.length ? (
+          roots.map((n) =>
+            n.children?.length ? (
+              <Group
+                key={n.id || n.path}
+                node={n}
+                open={open}
+                onToggle={toggle}
+                currentPath={location.pathname}
+              />
+            ) : (
+              <Leaf
+                key={n.id || n.path}
+                node={n}
+                currentPath={location.pathname}
+              />
+            )
+          )
+        ) : (
+          <div style={{ color: "#6b7280", fontSize: 14, padding: "6px 8px" }}>
+            No menus
+          </div>
+        )}
+      </nav>
+      <div style={{ padding: "10px 12px", borderTop: "1px solid #e5e7eb", fontSize: 12, color: "#6b7280" }}>
+        © GeniusGrid
+      </div>
+    </aside>
+  );
+}
+
+function Group({ node, open, onToggle, currentPath, depth = 0 }) {
+  const opened = open.has(node.path);
+  const id = "grp_" + node.path.replaceAll("/", "_");
+
+  return (
+    <details
+      open={opened}
+      onToggle={(e) => onToggle(node.path, e.currentTarget.open)}
+      style={{ margin: "2px 0" }}
+    >
+      <summary
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 10px",
+          paddingLeft: 10 + depth * 14,
+          borderRadius: 8,
+          cursor: "pointer",
+          userSelect: "none",
+        }}
+      >
+        <Caret open={opened} />
+        <span style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {node.name}
+        </span>
+        {/* Optional: quick link to the group's own path if it’s a route */}
+        {node.path && (
+          <NavLink
+            to={node.path}
+            onClick={(e) => e.stopPropagation()}
+            style={{ fontSize: 12, textDecoration: "underline", opacity: 0.7 }}
+          >
+            Open
+          </NavLink>
+        )}
+      </summary>
+
+      <div id={id} role="group" style={{ marginLeft: 10 }}>
+        {node.children.map((ch) =>
+          ch.children?.length ? (
+            <Group
+              key={ch.id || ch.path}
+              node={ch}
+              open={open}
+              onToggle={onToggle}
+              currentPath={currentPath}
+              depth={depth + 1}
+            />
+          ) : (
+            <Leaf
+              key={ch.id || ch.path}
+              node={ch}
+              currentPath={currentPath}
+              depth={depth + 1}
+            />
+          )
+        )}
+      </div>
+    </details>
+  );
+}
+
+function Leaf({ node, currentPath, depth = 0 }) {
+  const active =
+    currentPath === node.path ||
+    (node.path && currentPath.startsWith(node.path + "/"));
+  return (
+    <NavLink
+      to={node.path || "#"}
+      end
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 10px",
+        paddingLeft: 24 + depth * 14,
+        borderRadius: 8,
+        textDecoration: "none",
+        color: active ? "#4338ca" : "inherit",
+        background: active ? "rgba(99,102,241,.12)" : "transparent",
+      }}
+    >
+      <span
+        style={{
+          height: 6,
+          width: 6,
+          borderRadius: "9999px",
+          background: "currentColor",
+          opacity: 0.6,
+        }}
+      />
+      <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        {node.name}
+      </span>
+    </NavLink>
+  );
 }
 
 function Caret({ open }) {
@@ -73,168 +244,5 @@ function Caret({ open }) {
         strokeLinejoin="round"
       />
     </svg>
-  );
-}
-
-function Collapse({ open, children, id }) {
-  const ref = useRef(null);
-  const [height, setHeight] = useState(open ? "auto" : 0);
-
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-
-    if (open) {
-      setHeight(el.scrollHeight);
-      const timeout = setTimeout(() => setHeight("auto"), 200);
-      return () => clearTimeout(timeout);
-    } else {
-      if (height === "auto") {
-        setHeight(el.scrollHeight);
-        requestAnimationFrame(() => setHeight(0));
-      } else {
-        setHeight(0);
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-
-  return (
-    <div
-      id={id}
-      ref={ref}
-      style={{
-        maxHeight: typeof height === "number" ? height + "px" : height,
-        overflow: "hidden",
-        transition: "max-height 0.2s ease",
-        marginLeft: 10,
-        paddingLeft: 8,
-        borderLeft: "1px solid rgba(255,255,255,.08)",
-        willChange: "max-height",
-      }}
-    >
-      {children}
-    </div>
-  );
-}
-
-export default function AppSidebar() {
-  const { menus } = useEnv();
-  const { roots, parents /*, byPath */ } = useMemo(() => buildTreeByPath(menus), [menus]);
-  const location = useLocation();
-
-  // Start fully collapsed; persist toggles
-  const [open, setOpen] = useState(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem("__gg_menu_open_paths") || "[]"));
-    } catch {
-      return new Set();
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem("__gg_menu_open_paths", JSON.stringify(Array.from(open)));
-  }, [open]);
-
-  // (Disabled) Auto-open-by-route — uncomment if you want it
-  // useEffect(() => {
-  //   const cur = normPath(location.pathname);
-  //   if (!cur) return;
-  //   const parts = pathParts(cur);
-  //   if (parts.length >= 2) {
-  //     const parentPath = "/" + parts.slice(0, 2).join("/");
-  //     if (byPath.has(parentPath) && !open.has(parentPath)) {
-  //       const next = new Set(open);
-  //       next.add(parentPath);
-  //       setOpen(next);
-  //     }
-  //   }
-  // }, [location.pathname, byPath, open]);
-
-  const toggle = (parentPath) =>
-    setOpen((prev) => {
-      const n = new Set(prev);
-      n.has(parentPath) ? n.delete(parentPath) : n.add(parentPath);
-      return n;
-    });
-
-  const Leaf = ({ node, depth }) => (
-    <div className="nav-node">
-      <NavLink
-        to={node.path || "#"}
-        end
-        className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}
-        style={{ paddingLeft: 12 + depth * 14 }}
-      >
-        <span style={{ width: 12, display: "inline-block" }} />
-        <span className="nav-dot" /> <span>{node.name}</span>
-      </NavLink>
-    </div>
-  );
-
-  const Group = ({ node, depth }) => {
-    const parentPath = node.path;
-    const idSlug = `group_${String(parentPath).replaceAll("/", "_")}`;
-    const isOpen = open.has(parentPath);
-    return (
-      <div className="nav-node">
-        <button
-          type="button"
-          className="nav-item nav-toggle"
-          style={{ paddingLeft: 12 + depth * 14 }}
-          onClick={() => toggle(parentPath)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              toggle(parentPath);
-            }
-          }}
-          aria-expanded={isOpen}
-          aria-controls={idSlug}
-        >
-          <Caret open={isOpen} />
-          <span className="nav-label">{node.name}</span>
-          {node.path && (
-            <NavLink
-              to={node.path}
-              className="nav-mini-link"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Open
-            </NavLink>
-          )}
-        </button>
-
-        <Collapse open={isOpen} id={idSlug}>
-          {node.children.map((ch) =>
-            parents.find((p) => p.path === ch.path) ? (
-              <Group key={ch.id || ch.path} node={ch} depth={depth + 1} />
-            ) : (
-              <Leaf key={ch.id || ch.path} node={ch} depth={depth + 1} />
-            )
-          )}
-        </Collapse>
-      </div>
-    );
-  };
-
-  return (
-    <aside className="app-sidebar panel glass">
-      <div className="sidebar-head text-muted small">Menu</div>
-      <nav className="nav-vertical">
-        {roots.length ? (
-          roots.map((n) =>
-            n.children?.length ? (
-              <Group key={n.id || n.path} node={n} depth={0} />
-            ) : (
-              <Leaf key={n.id || n.path} node={n} depth={0} />
-            )
-          )
-        ) : (
-          <div className="text-muted">No menus</div>
-        )}
-      </nav>
-      <div className="sidebar-foot text-muted small">© GeniusGrid</div>
-    </aside>
   );
 }
