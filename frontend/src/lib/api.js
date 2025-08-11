@@ -4,7 +4,7 @@ import axios from "axios";
 const API_BASE = import.meta.env.VITE_API_URL || "https://geniusgrid-auth-starter.onrender.com";
 
 export const api = axios.create({
-  baseURL: `${API_BASE}/api`,
+  baseURL: "/api",
   withCredentials: true,
   timeout: 15000,
 });
