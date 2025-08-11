@@ -4,37 +4,37 @@ import { pool } from "../db/pool.js";
 
 const router = express.Router();
 
-/* ---------- helpers ---------- */
+/* ---------------- helpers ---------------- */
 function getTenantId(req) {
-  return (
-    req.session?.tenantId ||
-    req.session?.tenant_id ||
-    null
-  );
+  return req.session?.tenantId || req.session?.tenant_id || null;
 }
 function getCompanyId(req) {
   return (
     req.session?.companyId ||
     req.session?.company_id ||
     req.headers["x-company-id"] ||
+    req.headers["x-company-id".toLowerCase()] ||
     req.query.company_id ||
     null
   );
 }
 async function setTenant(client, tenantId) {
-  // NON-LOCAL so it persists on this PG connection (important for any RLS using current_setting)
+  // NON-LOCAL so it persists on the connection (needed if RLS/GUC is used)
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
-/* ---------- public probe (optional; server also exposes /api/leads/ping) ---------- */
-router.get("/ping", (_req, res) => res.status(200).json({ ok: true }));
+/* ---------------- probe ---------------- */
+router.get("/ping", (_req, res) => res.json({ ok: true }));
 
-/* ---------- GET /api/leads?page&pageSize&q&status&stage&owner_id ---------- */
+/* ---------------- GET /api/leads ----------------
+   Query: page, pageSize (or size), q, status, stage, owner_id
+   Returns: { items, total, page, size }
+-------------------------------------------------- */
 router.get("/", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-  const companyId = getCompanyId(req); // optional but used by your UI/DB
+  const companyId = getCompanyId(req);
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const size = Math.min(100, Math.max(1, parseInt(req.query.pageSize ?? req.query.size, 10) || 25));
   const q = (req.query.q || "").trim();
@@ -42,7 +42,6 @@ router.get("/", async (req, res) => {
   const stage = (req.query.stage || "").trim();
   const owner_id = (req.query.owner_id || "").trim();
 
-  // WHERE builder
   const params = [tenantId];
   let where = `WHERE tenant_id = $1`;
   let idx = params.length;
@@ -55,22 +54,13 @@ router.get("/", async (req, res) => {
     params.push(`%${q}%`); idx++;
     where += ` AND (name ILIKE $${idx} OR company ILIKE $${idx} OR email ILIKE $${idx} OR phone ILIKE $${idx})`;
   }
-  if (status) {
-    params.push(status); idx++;
-    where += ` AND status = $${idx}`;
-  }
-  if (stage) {
-    params.push(stage); idx++;
-    where += ` AND stage = $${idx}`;
-  }
-  if (owner_id) {
-    params.push(owner_id); idx++;
-    where += ` AND owner_id::text = $${idx}`;
-  }
+  if (status) { params.push(status); idx++; where += ` AND status = $${idx}`; }
+  if (stage)  { params.push(stage);  idx++; where += ` AND stage  = $${idx}`; }
+  if (owner_id) { params.push(owner_id); idx++; where += ` AND owner_id::text = $${idx}`; }
 
   const offset = (page - 1) * size;
 
-  // NOTE: alias fields to match your column keys (company_name, owner_name, created_at)
+  // IMPORTANT: alias fields to match your UI columns
   const listSQL = `
     SELECT
       id,
@@ -78,12 +68,12 @@ router.get("/", async (req, res) => {
       company_id,
       owner_id,
       name,
-      company        AS company_name,
+      company AS company_name,
       email,
       phone,
       status,
       stage,
-      owner          AS owner_name,
+      owner   AS owner_name,
       score,
       priority,
       created_at,
@@ -101,16 +91,15 @@ router.get("/", async (req, res) => {
 
   const client = await pool.connect();
   try {
-    await setTenant(client, tenantId); // ensure any RLS sees the tenant
+    await setTenant(client, tenantId);
 
     const [list, count] = await Promise.all([
       client.query(listSQL, params),
       client.query(countSQL, params),
     ]);
 
-    const items = (list.rows || []).map((r) => ({
+    const items = (list.rows || []).map(r => ({
       ...r,
-      // normalize json
       ai_next: Array.isArray(r.ai_next)
         ? r.ai_next
         : typeof r.ai_next === "string" && r.ai_next.startsWith("[")
@@ -120,14 +109,17 @@ router.get("/", async (req, res) => {
 
     res.json({ items, total: count.rows?.[0]?.total ?? 0, page, size });
   } catch (err) {
-    console.error("GET /api/leads error:", err);
+    console.error("GET /leads error:", err);
     res.status(500).json({ error: "Failed to load leads" });
   } finally {
     client.release();
   }
 });
 
-/* ---------- GET /api/leads/pipelines  -> array of strings (UI expects .map on it) ---------- */
+/* ---------------- GET /api/leads/pipelines ----------------
+   UI expects an ARRAY it can .map() over.
+   We return an array of distinct stage strings for the active tenant/company.
+------------------------------------------------------------ */
 router.get("/pipelines", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
@@ -148,16 +140,14 @@ router.get("/pipelines", async (req, res) => {
       params
     );
     const stages = rows.map(r => r.stage);
-    // return a plain array so your UI's stages.map(...) works
     res.json(stages.length ? stages : ["new", "qualified", "proposal", "won", "lost"]);
   } catch (err) {
     console.error("GET /leads/pipelines error:", err);
-    // fall back to a sensible default list
     res.json(["new", "qualified", "proposal", "won", "lost"]);
   }
 });
 
-/* ---------- PATCH /api/leads/:id  { status?, stage?, owner_id? ... } ---------- */
+/* ---------------- PATCH /api/leads/:id ---------------- */
 router.patch("/:id", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
@@ -165,12 +155,12 @@ router.patch("/:id", async (req, res) => {
   const companyId = getCompanyId(req);
   const { id } = req.params;
   const patch = req.body || {};
+
   const fields = [];
   const vals = [];
-  let idx = 1;
+  let i = 0;
 
-  // allow updating a few safe fields from your UI
-  for (const [key, col] of Object.entries({
+  const allow = {
     status: "status",
     stage: "stage",
     owner_id: "owner_id",
@@ -178,19 +168,21 @@ router.patch("/:id", async (req, res) => {
     score: "score",
     ai_summary: "ai_summary",
     ai_next: "ai_next",
-  })) {
-    if (patch[key] !== undefined) {
-      fields.push(`${col} = $${++idx}`);
-      vals.push(col === "ai_next" && Array.isArray(patch[key]) ? JSON.stringify(patch[key]) : patch[key]);
+  };
+
+  for (const [k, col] of Object.entries(allow)) {
+    if (patch[k] !== undefined) {
+      fields.push(`${col} = $${++i}`);
+      vals.push(col === "ai_next" && Array.isArray(patch[k]) ? JSON.stringify(patch[k]) : patch[k]);
     }
   }
-  if (fields.length === 0) return res.status(400).json({ error: "No updatable fields" });
+  if (!fields.length) return res.status(400).json({ error: "No updatable fields" });
 
   const whereVals = [id, tenantId];
-  let whereSQL = `WHERE id = $1 AND tenant_id = $2`;
+  let whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
   if (companyId) {
     whereVals.push(companyId);
-    whereSQL += ` AND company_id::text = $${whereVals.length}`;
+    whereSQL += ` AND company_id::text = $${++i}`;
   }
 
   const sql = `
