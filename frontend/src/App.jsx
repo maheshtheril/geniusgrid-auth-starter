@@ -14,6 +14,7 @@ import ProtectedShell from "./layouts/ProtectedShell.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import LeadsPage from "./pages/LeadsPage.jsx";
 import CompaniesPage from "./pages/CompaniesPage.jsx";
+import LeadCreate from "@/pages/LeadCreate.jsx";
 
 export default function App() {
   return (
@@ -27,7 +28,8 @@ export default function App() {
       {/* ---------- Protected Routes ---------- */}
       <Route path="/dashboard" element={<ProtectedShell />}>
         <Route index element={<DashboardPage />} />
-        <Route path="leads" element={<LeadsPage />} />
+       <Route path="/app/crm/leads" element={<LeadsPage />} />
+       <Route path="/app/crm/leads/new" element={<LeadCreate />} />
         <Route path="companies" element={<CompaniesPage />} />
         {/* add more protected routes here */}
       </Route>

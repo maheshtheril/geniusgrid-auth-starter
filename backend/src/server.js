@@ -14,6 +14,7 @@ import auth from "./routes/auth.js";
 import authMe from "./routes/auth.me.js";
 import adminUsers from "./routes/adminUsers.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
+import leadsRoutes from "./routes/leads.routes.js";
 
 const app = express();
 const PgStore = pgSimple(session);
@@ -29,7 +30,7 @@ const ORIGINS = [
 
 // Trust proxy (Render/Cloudflare) so secure cookies work
 app.set("trust proxy", 1);
-
+app.use("/api/leads", leadsRoutes);
 // Security headers
 app.use(
   helmet({
