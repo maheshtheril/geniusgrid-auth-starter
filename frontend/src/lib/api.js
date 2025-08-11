@@ -1,53 +1,64 @@
-// frontend/src/lib/api.js
+// src/lib/api.js
 import axios from "axios";
 
-const BASE =
-  window.__API_BASE__ ||
-  import.meta?.env?.VITE_API_URL ||
-  "https://geniusgrid-auth-starter.onrender.com/api";
-
-const http = axios.create({
-  baseURL: BASE,
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL || "https://geniusgrid-auth-starter.onrender.com",
   withCredentials: true,
-  timeout: 30000,
-  headers: {
-    "Content-Type": "application/json",
-    "X-Requested-With": "XMLHttpRequest",
-  },
 });
 
-http.interceptors.request.use((cfg) => {
-  const companyId =
-    window.BOOTSTRAP?.activeCompanyId ||
-    localStorage.getItem("activeCompanyId") ||
-    null;
-  if (companyId && !cfg.headers["X-Company-ID"]) {
-    cfg.headers["X-Company-ID"] = companyId;
-  }
-  return cfg;
-});
+// coalesce identical GETs to avoid bursts
+const inflight = new Map(); // key -> {promise, abort}
 
-http.interceptors.response.use(
-  (res) => res.data,
-  (err) => {
-    if (err.code === "ECONNABORTED") {
-      err.message = `Request timed out after ${err.config?.timeout}ms: ${err.config?.method?.toUpperCase()} ${err.config?.url}`;
+function keyFor(config) {
+  const u = new URL((config.baseURL || "") + config.url);
+  const p = new URLSearchParams(config.params || {}).toString();
+  return `${config.method || "get"} ${u.pathname}?${p}`;
+}
+
+api.interceptors.request.use((config) => {
+  // never fire when tenant/company unknown
+  if (config.meta?.requireContext) {
+    if (!config.meta?.tenant_id || !config.meta?.company_id) {
+      const err = new axios.Cancel("Missing tenant/company context");
+      return Promise.reject(err);
     }
-    console.error("[API ERROR]", {
-      url: err.config?.baseURL + err.config?.url,
-      method: err.config?.method,
-      status: err.response?.status,
-      data: err.response?.data,
-      code: err.code,
-      message: err.message,
-    });
-    throw err;
+  }
+
+  // coalesce identical GETs
+  if ((config.method || "get").toLowerCase() === "get") {
+    const key = keyFor(config);
+    if (inflight.has(key)) return inflight.get(key).promise;
+    const controller = new AbortController();
+    config.signal = controller.signal;
+    const wrapped = api.request(config); // note: will be replaced by adapter, safe
+    inflight.set(key, { promise: wrapped, abort: controller });
+    wrapped.finally(() => inflight.delete(key));
+    return wrapped;
+  }
+  return config;
+});
+
+// simple backoff for 429 respecting Retry-After
+api.interceptors.response.use(
+  (r) => r,
+  async (error) => {
+    const { config, response } = error || {};
+    if (!config || !response) throw error;
+
+    if (response.status === 429) {
+      config.__retryCount = (config.__retryCount || 0) + 1;
+      if (config.__retryCount > 2) throw error; // max 2 retries
+
+      const retryAfter =
+        Number(response.headers?.["retry-after"]) * 1000 ||
+        Math.min(1500 * config.__retryCount, 3000); // 1.5s, 3s
+
+      await new Promise((res) => setTimeout(res, retryAfter));
+      return api(config);
+    }
+
+    throw error;
   }
 );
 
-// 🔑 Exports
-export const api = http;                 // <-- named export for legacy imports
-export const get   = (url, params) => http.get(url, { params });
-export const post  = (url, data)   => http.post(url, data);
-export const patch = (url, data)   => http.patch(url, data);
-export default http;                     // default export also available
+export default api;
