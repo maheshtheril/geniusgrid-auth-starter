@@ -1,35 +1,41 @@
 // src/middleware/requireAuth.js
 export function requireAuth(req, res, next) {
-  // accept both camelCase and snake_case
+  const s = req.session || {};
+
+  // Read from ALL possible places (camelCase, snake_case, nested)
   const userId =
-    req.session?.userId ??
-    req.session?.user_id ??
-    req.session?.user?.id ??
+    s.userId ??
+    s.user_id ??
+    s.user?.id ??
     null;
 
   const tenantId =
-    req.session?.tenantId ??
-    req.session?.tenant_id ??
-    req.session?.user?.tenantId ??
+    s.tenantId ??
+    s.tenant_id ??
+    s.user?.tenantId ??
     null;
 
-  // helpful debug
-  console.log("AUTH CHECK", {
-    keys: Object.keys(req.session || {}),
-    userId, tenantId,
-    sid: req.sessionID
-  });
-
   if (!userId || !tenantId) {
+    // Helpful diagnostics in logs
+    console.log("AUTH CHECK FAIL", {
+      hasCookie: Boolean(req.headers.cookie),
+      cookieSample: (req.headers.cookie || '').slice(0, 80),
+      sessionID: req.sessionID,
+      sessionKeys: Object.keys(s || {}),
+      userId: s.userId, user_id: s.user_id, user: s.user,
+      tenantId: s.tenantId, tenant_id: s.tenant_id,
+    });
     return res.status(401).json({ message: "Unauthorized" });
   }
 
-  // normalize for downstream: write both shapes
-  req.session.userId = userId;
-  req.session.user_id = userId;
-  req.session.tenantId = tenantId;
-  req.session.tenant_id = tenantId;
+  // Normalize so downstream code can rely on both shapes
+  s.userId = userId;
+  s.user_id = userId;
+  s.tenantId = tenantId;
+  s.tenant_id = tenantId;
 
-  // optionally persist immediately
-  req.session.save(() => next());
+  // Also handy
+  req.user = { id: userId, tenantId };
+
+  next();
 }
