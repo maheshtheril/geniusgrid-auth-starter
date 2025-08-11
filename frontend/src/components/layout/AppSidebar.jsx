@@ -129,13 +129,7 @@ export default function AppSidebar() {
   const location = useLocation();
 
   // Start fully collapsed; persist toggles
-  const [open, setOpen] = useState(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem("__gg_menu_open_paths") || "[]"));
-    } catch {
-      return new Set();
-    }
-  });
+  const [open, setOpen] = useState(() => new Set());
 
   useEffect(() => {
     localStorage.setItem("__gg_menu_open_paths", JSON.stringify(Array.from(open)));
