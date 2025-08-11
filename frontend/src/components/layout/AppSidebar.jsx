@@ -6,14 +6,13 @@ function normPath(p) {
   if (!p) return null;
   const s = String(p).trim();
   if (!s.startsWith("/")) return "/" + s;
-  return s.replace(/\/+$/, ""); // no trailing slash
+  return s.replace(/\/+$/, "");
 }
 
 function pathParts(p) {
   return (normPath(p) || "").split("/").filter(Boolean);
 }
 
-// Dynamically check if a path is a parent (has deeper children)
 function isParentPath(p, allItems) {
   const parts = pathParts(p);
   return allItems.some(
@@ -24,13 +23,11 @@ function isParentPath(p, allItems) {
   );
 }
 
-// Build the tree with dynamic parents and proper roots
 function buildTreeByPath(items = []) {
   const rows = items.map((r) => ({ ...r, path: normPath(r.path), children: [] }));
 
   const parents = rows.filter((r) => r.path && isParentPath(r.path, rows));
 
-  // Roots are those without any parent above them
   const roots = rows.filter(
     (r) =>
       !rows.some(
@@ -41,7 +38,6 @@ function buildTreeByPath(items = []) {
       )
   );
 
-  // Attach direct children to parents
   for (const parent of parents) {
     const pref = parent.path + "/";
     const kids = rows.filter((r) => r !== parent && r.path && r.path.startsWith(pref));
@@ -49,9 +45,9 @@ function buildTreeByPath(items = []) {
     parent.children = kids.filter((k) => pathParts(k.path).length === targetLen);
   }
 
-  // Sort the roots and children
   const cmp = (a, b) =>
-    (a.sort_order ?? 0) - (b.sort_order ?? 0) || String(a.name).localeCompare(String(b.name));
+    (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+    String(a.name).localeCompare(String(b.name));
 
   roots.sort(cmp);
   parents.forEach((p) => p.children.sort(cmp));
@@ -100,6 +96,7 @@ function Collapse({ open, children, id }) {
         setHeight(0);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   return (
@@ -123,10 +120,10 @@ function Collapse({ open, children, id }) {
 
 export default function AppSidebar() {
   const { menus } = useEnv();
-  const { roots, parents, byPath } = useMemo(() => buildTreeByPath(menus), [menus]);
+  const { roots, parents /*, byPath */ } = useMemo(() => buildTreeByPath(menus), [menus]);
   const location = useLocation();
 
-  // Persist open state by parent path
+  // Start fully collapsed; persist toggles
   const [open, setOpen] = useState(() => {
     try {
       return new Set(JSON.parse(localStorage.getItem("__gg_menu_open_paths") || "[]"));
@@ -139,20 +136,20 @@ export default function AppSidebar() {
     localStorage.setItem("__gg_menu_open_paths", JSON.stringify(Array.from(open)));
   }, [open]);
 
-  // Auto-open the parent of the current route
-  useEffect(() => {
-    const cur = normPath(location.pathname);
-    if (!cur) return;
-    const parts = pathParts(cur);
-    if (parts.length >= 2) {
-      const parentPath = "/" + parts.slice(0, 2).join("/");
-      if (byPath.has(parentPath) && !open.has(parentPath)) {
-        const next = new Set(open);
-        next.add(parentPath);
-        setOpen(next);
-      }
-    }
-  }, [location.pathname, byPath, open]);
+  // (Disabled) Auto-open-by-route — uncomment if you want it
+  // useEffect(() => {
+  //   const cur = normPath(location.pathname);
+  //   if (!cur) return;
+  //   const parts = pathParts(cur);
+  //   if (parts.length >= 2) {
+  //     const parentPath = "/" + parts.slice(0, 2).join("/");
+  //     if (byPath.has(parentPath) && !open.has(parentPath)) {
+  //       const next = new Set(open);
+  //       next.add(parentPath);
+  //       setOpen(next);
+  //     }
+  //   }
+  // }, [location.pathname, byPath, open]);
 
   const toggle = (parentPath) =>
     setOpen((prev) => {
@@ -177,7 +174,8 @@ export default function AppSidebar() {
 
   const Group = ({ node, depth }) => {
     const parentPath = node.path;
-    const isOpen = open.has(parentPath) || depth === 0;
+    const idSlug = `group_${String(parentPath).replaceAll("/", "_")}`;
+    const isOpen = open.has(parentPath);
     return (
       <div className="nav-node">
         <button
@@ -192,7 +190,7 @@ export default function AppSidebar() {
             }
           }}
           aria-expanded={isOpen}
-          aria-controls={`group-${parentPath}`}
+          aria-controls={idSlug}
         >
           <Caret open={isOpen} />
           <span className="nav-label">{node.name}</span>
@@ -207,12 +205,12 @@ export default function AppSidebar() {
           )}
         </button>
 
-        <Collapse open={isOpen} id={`group-${parentPath}`}>
+        <Collapse open={isOpen} id={idSlug}>
           {node.children.map((ch) =>
             parents.find((p) => p.path === ch.path) ? (
-              <Group key={ch.id} node={ch} depth={depth + 1} />
+              <Group key={ch.id || ch.path} node={ch} depth={depth + 1} />
             ) : (
-              <Leaf key={ch.id} node={ch} depth={depth + 1} />
+              <Leaf key={ch.id || ch.path} node={ch} depth={depth + 1} />
             )
           )}
         </Collapse>
@@ -224,15 +222,17 @@ export default function AppSidebar() {
     <aside className="app-sidebar panel glass">
       <div className="sidebar-head text-muted small">Menu</div>
       <nav className="nav-vertical">
-        {roots.length
-          ? roots.map((n) =>
-              n.children?.length ? (
-                <Group key={n.id} node={n} depth={0} />
-              ) : (
-                <Leaf key={n.id} node={n} depth={0} />
-              )
+        {roots.length ? (
+          roots.map((n) =>
+            n.children?.length ? (
+              <Group key={n.id || n.path} node={n} depth={0} />
+            ) : (
+              <Leaf key={n.id || n.path} node={n} depth={0} />
             )
-          : <div className="text-muted">No menus</div>}
+          )
+        ) : (
+          <div className="text-muted">No menus</div>
+        )}
       </nav>
       <div className="sidebar-foot text-muted small">© GeniusGrid</div>
     </aside>
