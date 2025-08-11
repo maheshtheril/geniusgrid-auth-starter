@@ -1,14 +1,11 @@
 // frontend/src/hooks/useLeadsApi.js
-import { get, post, patch } from "@/lib/api"; // or "../lib/api" if no alias
+import api from "@/lib/api"; // NOTE: default import, not { get, post, patch }
 
-const unwrap = (x) => (x && typeof x === "object" && "data" in x ? x.data : x);
+const unwrap = (r) => (r && r.data !== undefined ? r.data : r);
 
 export default function useLeadsApi() {
-  // pipelines → MUST return string[]
   const listPipelines = async () => {
-    const raw = await get("leads/pipelines", { meta: { dedupe: true } });
-    const data = unwrap(raw);
-
+    const data = unwrap(await api.get("/leads/pipelines"));
     const arr = Array.isArray(data)
       ? data
       : Array.isArray(data?.stages)
@@ -16,18 +13,13 @@ export default function useLeadsApi() {
       : Array.isArray(data?.items)
       ? data.items
       : [];
-
-    // normalize to strings
     return arr
       .map((s) => (typeof s === "string" ? s : s?.name || s?.key || ""))
       .filter(Boolean);
   };
 
-  // list → always { items, total, page, size }
   const listLeads = async (params) => {
-    const raw = await get("leads", { params, meta: { dedupe: true } });
-    const data = unwrap(raw);
-
+    const data = unwrap(await api.get("/leads", { params }));
     const items = Array.isArray(data?.items)
       ? data.items
       : Array.isArray(data?.rows)
@@ -35,7 +27,6 @@ export default function useLeadsApi() {
       : Array.isArray(data)
       ? data
       : [];
-
     return {
       items,
       total: Number(data?.total ?? items.length ?? 0),
@@ -44,24 +35,18 @@ export default function useLeadsApi() {
     };
   };
 
-  const getLead    = async (id)    => unwrap(await get(`leads/${id}`, { meta: { dedupe: true } }));
-  const createLead = async (body)  => unwrap(await post("leads", body));
-  const updateLead = async (id, body) => unwrap(await patch(`leads/${id}`, body));
-
-  // backend path is /leads/:id/ai-refresh (not /ai/refresh)
-  const aiRefresh = async (id) => {
-    try {
-      return unwrap(await post(`leads/${id}/ai-refresh`, {}));
-    } catch (e) {
-      // fallback to old path if your FE was using it
-      return unwrap(await post(`leads/${id}/ai/refresh`, {}));
-    }
+  const getLead     = async (id)      => unwrap(await api.get(`/leads/${id}`));
+  const createLead  = async (body)    => unwrap(await api.post("/leads", body));
+  const updateLead  = async (id, body)=> unwrap(await api.patch(`/leads/${id}`, body));
+  const aiRefresh   = async (id) => {
+    try { return unwrap(await api.post(`/leads/${id}/ai-refresh`)); }
+    catch { return unwrap(await api.post(`/leads/${id}/ai/refresh`)); }
   };
 
-  const listNotes   = async (leadId, p) => unwrap(await get(`leads/${leadId}/notes`,   { params: p, meta: { dedupe: true } }));
-  const addNote     = async (leadId, b) => unwrap(await post(`leads/${leadId}/notes`,  b));
-  const listHistory = async (leadId, p) => unwrap(await get(`leads/${leadId}/history`, { params: p, meta: { dedupe: true } }));
-  const bulkUpdate  = async (payload)   => unwrap(await patch(`leads/bulk`, payload));
+  const listNotes   = async (leadId, p) => unwrap(await api.get(`/leads/${leadId}/notes`,   { params: p }));
+  const addNote     = async (leadId, b) => unwrap(await api.post(`/leads/${leadId}/notes`,  b));
+  const listHistory = async (leadId, p) => unwrap(await api.get(`/leads/${leadId}/history`, { params: p }));
+  const bulkUpdate  = async (payload)   => unwrap(await api.patch(`/leads/bulk`,            payload));
 
   return {
     listLeads,
