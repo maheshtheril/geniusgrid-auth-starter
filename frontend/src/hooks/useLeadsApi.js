@@ -1,72 +1,48 @@
 // src/hooks/useLeadsApi.js
+import { useCallback, useMemo } from "react";
 import { get, post, patch } from "@/lib/api";
 
-// ---------- tiny utils ----------
+// double-unwrap for payloads like { data: { data: {...} } }
 const unwrap = (x) => {
   let d = x && typeof x === "object" && "data" in x ? x.data : x;
   if (d && typeof d === "object" && "data" in d) d = d.data;
   return d;
 };
 
+// pick first array under common keys (or the value itself if already an array)
 const pickArray = (obj, keys) => {
   for (const k of keys) if (Array.isArray(obj?.[k])) return obj[k];
   return Array.isArray(obj) ? obj : [];
 };
 
+// strip empty query params
 const clean = (o = {}) =>
-  Object.fromEntries(
-    Object.entries(o).filter(([, v]) => v !== "" && v !== null && v !== undefined)
-  );
-
-// ---------- in-memory cache (cuts Render 429s) ----------
-let pipelinesCache = null;
-let pipelinesFetchedAt = 0;
-const PIPELINES_TTL_MS = 2 * 60 * 1000; // 2 minutes
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v !== null && v !== undefined));
 
 export default function useLeadsApi() {
   // pipelines → MUST return string[]
-  const listPipelines = async ({ force = false } = {}) => {
-    const now = Date.now();
-    if (!force && pipelinesCache && now - pipelinesFetchedAt < PIPELINES_TTL_MS) {
-      return pipelinesCache;
-    }
-
+  const listPipelines = useCallback(async () => {
     let raw;
-    try {
-      // preferred endpoint
-      raw = await get("/leads/pipelines", { meta: { dedupe: true } });
-    } catch {
-      // fallback for older backends
-      raw = await get("/pipelines", { meta: { dedupe: true } });
-    }
+    try { raw = await get("/leads/pipelines", { meta: { dedupe: true } }); }
+    catch { raw = await get("/pipelines", { meta: { dedupe: true } }); }
 
     const data = unwrap(raw);
     const arr = pickArray(data, ["stages", "pipelines", "items", "data", "results"]);
-
-    const stages = arr
-      .map((s) => (typeof s === "string" ? s : s?.name || s?.key || s?.id || ""))
+    return arr
+      .map((s) => (typeof s === "string" ? s : s?.name || s?.key || ""))
       .filter(Boolean);
-
-    const safe = stages.length ? stages : ["New", "Qualified", "Proposal", "Won", "Lost"];
-    pipelinesCache = safe;
-    pipelinesFetchedAt = now;
-    return safe;
-  };
+  }, []);
 
   // list → always { items, total, page, size }
-  const listLeads = async (params = {}) => {
+  const listLeads = useCallback(async (params) => {
     const p = clean({
       ...params,
-      size: params?.size ?? params?.pageSize, // normalize pageSize → size
+      size: params?.size ?? params?.pageSize, // normalize "pageSize" → "size"
     });
 
-    // opt-in GET dedupe; canceled duplicates are ignored in the page (see LeadsPage)
     const raw = await get("/leads", { params: p, meta: { dedupe: true } });
     const data = unwrap(raw);
-
-    const items = pickArray(data, [
-      "items", "results", "data", "rows", "records", "leads", "nodes",
-    ]);
+    const items = pickArray(data, ["items", "results", "data", "rows", "records", "leads", "nodes"]);
 
     return {
       items,
@@ -74,32 +50,27 @@ export default function useLeadsApi() {
       page: Number(data?.page ?? p?.page ?? 1),
       size: Number(data?.size ?? p?.size ?? 25),
     };
-  };
+  }, []);
 
-  const getLead     = async (id)    => unwrap(await get(`/leads/${id}`));
-  const createLead  = async (body)  => unwrap(await post("/leads", body));
-  const updateLead  = async (id, b) => unwrap(await patch(`/leads/${id}`, b));
-
-  const aiRefresh = async (id) => {
+  const getLead     = useCallback(async (id)      => unwrap(await get(`/leads/${id}`)), []);
+  const createLead  = useCallback(async (body)    => unwrap(await post("/leads", body)), []);
+  const updateLead  = useCallback(async (id, b)   => unwrap(await patch(`/leads/${id}`, b)), []);
+  const aiRefresh   = useCallback(async (id) => {
     try { return unwrap(await post(`/leads/${id}/ai-refresh`, {})); }
     catch { return unwrap(await post(`/leads/${id}/ai/refresh`, {})); }
-  };
+  }, []);
 
-  const listNotes   = async (leadId, p) => unwrap(await get(`/leads/${leadId}/notes`,   { params: clean(p) }));
-  const addNote     = async (leadId, b) => unwrap(await post(`/leads/${leadId}/notes`,  b));
-  const listHistory = async (leadId, p) => unwrap(await get(`/leads/${leadId}/history`, { params: clean(p) }));
-  const bulkUpdate  = async (payload)   => unwrap(await patch(`/leads/bulk`, payload));
+  const listNotes   = useCallback(async (leadId, p) => unwrap(await get(`/leads/${leadId}/notes`, { params: clean(p) })), []);
+  const addNote     = useCallback(async (leadId, b) => unwrap(await post(`/leads/${leadId}/notes`, b)), []);
+  const listHistory = useCallback(async (leadId, p) => unwrap(await get(`/leads/${leadId}/history`, { params: clean(p) })), []);
+  const bulkUpdate  = useCallback(async (payload)   => unwrap(await patch(`/leads/bulk`, payload)), []);
 
-  return {
-    listLeads,
-    getLead,
-    createLead,
-    updateLead,
-    aiRefresh,
-    listNotes,
-    addNote,
-    listHistory,
-    listPipelines,
-    bulkUpdate,
-  };
+  // return a stable object so dependents don't re-run every render
+  return useMemo(() => ({
+    listLeads, getLead, createLead, updateLead, aiRefresh,
+    listNotes, addNote, listHistory, listPipelines, bulkUpdate
+  }), [
+    listLeads, getLead, createLead, updateLead, aiRefresh,
+    listNotes, addNote, listHistory, listPipelines, bulkUpdate
+  ]);
 }
