@@ -202,15 +202,7 @@ export default function AppSidebar() {
         >
           <Caret open={isOpen} />
           <span className="nav-label">{node.name}</span>
-          {node.path && (
-            <NavLink
-              to={node.path}
-              className="nav-mini-link"
-              onClick={(e) => e.stopPropagation()}
-            >
-              Open
-            </NavLink>
-          )}
+         
         </button>
 
         <Collapse open={isOpen} id={idSlug}>
