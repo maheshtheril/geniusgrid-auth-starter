@@ -13,13 +13,13 @@ function getCompanyId(req) {
     req.session?.companyId ||
     req.session?.company_id ||
     req.headers["x-company-id"] ||
-    req.headers["x-company-id".toLowerCase()] ||
+    req.headers["X-Company-ID"] ||
     req.query.company_id ||
     null
   );
 }
 async function setTenant(client, tenantId) {
-  // NON-LOCAL so it persists on the connection (needed if RLS/GUC is used)
+  // NON-LOCAL so it persists on this connection (important for RLS/GUC)
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
@@ -44,23 +44,17 @@ router.get("/", async (req, res) => {
 
   const params = [tenantId];
   let where = `WHERE tenant_id = $1`;
-  let idx = params.length;
+  let i = params.length;
 
-  if (companyId) {
-    params.push(companyId); idx++;
-    where += ` AND company_id::text = $${idx}`;
-  }
-  if (q) {
-    params.push(`%${q}%`); idx++;
-    where += ` AND (name ILIKE $${idx} OR company ILIKE $${idx} OR email ILIKE $${idx} OR phone ILIKE $${idx})`;
-  }
-  if (status) { params.push(status); idx++; where += ` AND status = $${idx}`; }
-  if (stage)  { params.push(stage);  idx++; where += ` AND stage  = $${idx}`; }
-  if (owner_id) { params.push(owner_id); idx++; where += ` AND owner_id::text = $${idx}`; }
+  if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++i}`; }
+  if (q)         { params.push(`%${q}%`);  where += ` AND (name ILIKE $${++i} OR company ILIKE $${i} OR email ILIKE $${i} OR phone ILIKE $${i})`; }
+  if (status)    { params.push(status);    where += ` AND status = $${++i}`; }
+  if (stage)     { params.push(stage);     where += ` AND stage  = $${++i}`; }
+  if (owner_id)  { params.push(owner_id);  where += ` AND owner_id::text = $${++i}`; }
 
   const offset = (page - 1) * size;
 
-  // IMPORTANT: alias fields to match your UI columns
+  // Alias to match your columns in the React table (company_name, owner_name, created_at)
   const listSQL = `
     SELECT
       id,
@@ -117,32 +111,50 @@ router.get("/", async (req, res) => {
 });
 
 /* ---------------- GET /api/leads/pipelines ----------------
-   UI expects an ARRAY it can .map() over.
-   We return an array of distinct stage strings for the active tenant/company.
+   MUST return an ARRAY so your UI's `stages.map(...)` works.
+   We compute distinct stage strings for this tenant/company.
 ------------------------------------------------------------ */
+async function loadStageList(tenantId, companyId) {
+  const params = [tenantId];
+  let where = `WHERE tenant_id = $1 AND stage IS NOT NULL AND stage <> ''`;
+  let j = params.length;
+
+  if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++j}`; }
+
+  const { rows } = await pool.query(
+    `SELECT DISTINCT stage FROM public.leads ${where} ORDER BY stage ASC`,
+    params
+  );
+  const stages = rows.map(r => r.stage).filter(Boolean);
+  return stages.length ? stages : ["new", "qualified", "proposal", "won", "lost"];
+}
+
 router.get("/pipelines", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-  const companyId = getCompanyId(req);
-  const params = [tenantId];
-  let where = `WHERE tenant_id = $1 AND stage IS NOT NULL AND stage <> ''`;
-  let idx = params.length;
-
-  if (companyId) {
-    params.push(companyId); idx++;
-    where += ` AND company_id::text = $${idx}`;
-  }
-
   try {
-    const { rows } = await pool.query(
-      `SELECT DISTINCT stage FROM public.leads ${where} ORDER BY stage ASC`,
-      params
-    );
-    const stages = rows.map(r => r.stage);
-    res.json(stages.length ? stages : ["new", "qualified", "proposal", "won", "lost"]);
+    const stages = await loadStageList(tenantId, getCompanyId(req));
+    // Return a plain array (critical for the UI)
+    res.json(stages);
   } catch (err) {
     console.error("GET /leads/pipelines error:", err);
+    res.json(["new", "qualified", "proposal", "won", "lost"]);
+  }
+});
+
+/* ---------------- GET /api/leads/stages ----------------
+   Alias to pipelines; also returns a plain array of strings.
+--------------------------------------------------------- */
+router.get("/stages", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  try {
+    const stages = await loadStageList(tenantId, getCompanyId(req));
+    res.json(stages);
+  } catch (err) {
+    console.error("GET /leads/stages error:", err);
     res.json(["new", "qualified", "proposal", "won", "lost"]);
   }
 });
@@ -180,10 +192,7 @@ router.patch("/:id", async (req, res) => {
 
   const whereVals = [id, tenantId];
   let whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
-  if (companyId) {
-    whereVals.push(companyId);
-    whereSQL += ` AND company_id::text = $${++i}`;
-  }
+  if (companyId) { whereVals.push(companyId); whereSQL += ` AND company_id::text = $${++i}`; }
 
   const sql = `
     UPDATE public.leads
