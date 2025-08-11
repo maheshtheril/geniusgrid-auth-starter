@@ -65,23 +65,57 @@ export default function AppSidebar() {
   const tree = useMemo(() => buildTreeByPath(menus), [menus]);
 
   // keep your fetching logic
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // ⬇⬇⬇ YOUR ORIGINAL FETCH HERE (unchanged) ⬇⬇⬇
-        // const res = await fetch(`${env.API_BASE}/api/tenant/menus`, { credentials: "include" });
-        // const data = await res.json();
-        // if (!cancelled) setMenus(data?.menus || []);
-        if (!cancelled) setMenus((m) => m);
-      } catch (e) {
-        console.error("menus load error:", e);
-      } finally {
-        if (!cancelled) setLoading(false);
+ useEffect(() => {
+  let cancelled = false;
+
+  async function fetchMenus() {
+    setLoading(true);
+    try {
+      const res = await fetch(`${env.API_BASE || ""}/api/tenant/menus`, {
+        method: "GET",
+        credentials: "include", // keep session cookie
+        headers: { "Accept": "application/json" },
+      });
+
+      if (!res.ok) {
+        console.error("menus HTTP", res.status, res.statusText);
+        if (!cancelled) setMenus([]); // show "No menus."
+        return;
       }
-    })();
-    return () => { cancelled = true; };
-  }, [env]);
+
+      const json = await res.json();
+
+      // accept a few common shapes: array, {menus:[]}, {items:[]}
+      const raw =
+        Array.isArray(json) ? json :
+        Array.isArray(json?.menus) ? json.menus :
+        Array.isArray(json?.items) ? json.items :
+        [];
+
+      // normalize minimal fields used by your LOGIC (id,name,path,sort_order,children?)
+      const normalized = raw.map((r) => ({
+        ...r,
+        id: r.id ?? r.menu_id ?? r.uuid ?? r.code ?? r.path,
+        name: r.name ?? r.title ?? r.label ?? r.code ?? "Untitled",
+        path: r.path ?? r.url ?? r.href ?? null,
+        sort_order: r.sort_order ?? r.order ?? r.position ?? 0,
+        // keep any provided children if your API sends nested trees
+        children: Array.isArray(r.children) ? r.children : undefined,
+      }));
+
+      if (!cancelled) setMenus(normalized);
+    } catch (e) {
+      console.error("menus load error:", e);
+      if (!cancelled) setMenus([]);
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
+  }
+
+  fetchMenus();
+  return () => { cancelled = true; };
+}, [env]);
+
 
   // auto-expand ancestry when not collapsed
   useEffect(() => {
