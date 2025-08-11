@@ -22,14 +22,17 @@ const DEFAULT_COLUMNS = [
 
 export default function LeadsPage() {
   const api = useLeadsApi();
-  const [view, setView] = useState("table"); // "table" | "kanban" | "cards"
+
+  const [view, setView] = useState("table");
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState({ owner_id: "", stage: "", status: "" });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+
   const [total, setTotal] = useState(0);
   const [rows, setRows] = useState([]);
   const [stages, setStages] = useState([]);
+
   const [columns, setColumns] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("leads.columns"));
@@ -37,26 +40,39 @@ export default function LeadsPage() {
     } catch { return DEFAULT_COLUMNS; }
   });
 
-  const [selected, setSelected] = useState(null); // lead id
+  const [selected, setSelected] = useState(null);
   const [openDrawer, setOpenDrawer] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [backingOff, setBackingOff] = useState(false); // shown if 429 bubbles up
 
-  // small debounce for q/filters (further reduces 429s)
+  // split the spinner: initial blocking vs soft refresh
+  const [initialLoading, setInitialLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // show a gentle banner only when server really rate-limits
+  const [backingOff, setBackingOff] = useState(false);
+
+  // ---- debounce helper (for search/filters) ----
   const debounceRef = useRef();
-  const debounced = (fn, ms = 200) => (...args) => {
+  const debounced = (fn, ms = 350) => (...args) => {
     clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => fn(...args), ms);
   };
 
-  // realtime updates
+  // ---- guard: ignore stale responses & StrictMode double-run ----
+  const reqSeq = useRef(0);
+  const mountedOnce = useRef(false);
+  const hasLoadedOnce = useRef(false);
+
+  // realtime updates (lightweight)
   useRealtime({
     onLeadEvent: (evt) => {
       if (evt?.lead) {
         setRows(prev => {
           const idx = prev.findIndex(r => r.id === evt.lead.id);
           if (idx === -1) return [evt.lead, ...prev];
+          const changed =
+            JSON.stringify(prev[idx]) !== JSON.stringify({ ...prev[idx], ...evt.lead });
+        if (!changed) return prev;
           const next = prev.slice();
           next[idx] = { ...prev[idx], ...evt.lead };
           return next;
@@ -77,43 +93,63 @@ export default function LeadsPage() {
     pageSize
   }), [query, filters, page, pageSize]);
 
+  // ---- data loaders with guards ----
   const fetchLeads = useCallback(async () => {
-    setLoading(true);
+    const seq = ++reqSeq.current;
+    const firstLoad = !hasLoadedOnce.current && rows.length === 0;
+
+    if (firstLoad) setInitialLoading(true);
+    else setRefreshing(true);
+
     try {
       const data = await api.listLeads(params);
+      if (reqSeq.current !== seq) return; // stale response, ignore
+
       setRows(data.items || data.rows || []);
       setTotal(data.total || 0);
       setBackingOff(false);
+      hasLoadedOnce.current = true;
     } catch (e) {
       if (!isCanceled(e)) {
-        // If 429 slipped past interceptor, show gentle banner
         if (e?.response?.status === 429) setBackingOff(true);
-        // else you could toast/log e.message
+        // else: optional toast/log
       }
     } finally {
-      setLoading(false);
+      if (reqSeq.current === seq) {
+        if (firstLoad) setInitialLoading(false);
+        else setRefreshing(false);
+      }
     }
-  }, [api, params]);
+  }, [api, params, rows.length]);
 
   const fetchPipelines = useCallback(async () => {
     try {
       const data = await api.listPipelines();
       setStages(data || []);
     } catch (e) {
-      // ignore canceled; show fallback stages if needed
-      if (!isCanceled(e)) setStages((s) => s?.length ? s : ["New", "Qualified", "Proposal", "Won", "Lost"]);
+      if (!isCanceled(e)) {
+        setStages(s => s?.length ? s : ["New", "Qualified", "Proposal", "Won", "Lost"]);
+      }
     }
   }, [api]);
 
-  useEffect(() => { fetchPipelines(); }, [fetchPipelines]);
-
-  // debounced fetch for q/filters/page changes
+  // ---- run once on mount (even in StrictMode) ----
   useEffect(() => {
-    const run = debounced(fetchLeads, 200);
+    if (mountedOnce.current) return;
+    mountedOnce.current = true;
+    fetchPipelines();
+    fetchLeads();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ---- re-fetch when params change (debounced) ----
+  useEffect(() => {
+    const run = debounced(fetchLeads, 350);
     run();
     return () => clearTimeout(debounceRef.current);
   }, [fetchLeads]);
 
+  // ---- actions ----
   const onInlineUpdate = async (id, patch) => {
     await api.updateLead(id, patch);
     setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
@@ -147,7 +183,7 @@ export default function LeadsPage() {
       {/* Backoff hint */}
       {backingOff && (
         <div className="alert alert-warning">
-          We’re rate-limited for a moment. Retrying automatically—this should clear shortly.
+          We’re rate-limited briefly. Retrying in the background.
         </div>
       )}
 
@@ -207,35 +243,41 @@ export default function LeadsPage() {
 
       {/* Content */}
       <div className="min-h-[400px]">
-        {view === "table" && (
-          <LeadsTable
-            loading={loading}
-            rows={rows}
-            columns={visibleColumns}
-            page={page}
-            pageSize={pageSize}
-            total={total}
-            onPageChange={setPage}
-            onPageSizeChange={setPageSize}
-            onInlineUpdate={onInlineUpdate}
-            onOpenLead={onOpenLead}
-          />
-        )}
-        {view === "kanban" && (
-          <LeadsKanban
-            loading={loading}
-            rows={rows}
-            stages={stages}
-            onMoveStage={onMoveStage}
-            onOpenLead={onOpenLead}
-          />
-        )}
-        {view === "cards" && (
-          <LeadsCards
-            loading={loading}
-            rows={rows}
-            onOpenLead={onOpenLead}
-          />
+        {initialLoading ? (
+          <div className="flex items-center justify-center h-64 opacity-80">Loading…</div>
+        ) : (
+          <>
+            {view === "table" && (
+              <LeadsTable
+                loading={refreshing}
+                rows={rows}
+                columns={visibleColumns}
+                page={page}
+                pageSize={pageSize}
+                total={total}
+                onPageChange={setPage}
+                onPageSizeChange={setPageSize}
+                onInlineUpdate={onInlineUpdate}
+                onOpenLead={onOpenLead}
+              />
+            )}
+            {view === "kanban" && (
+              <LeadsKanban
+                loading={refreshing}
+                rows={rows}
+                stages={stages}
+                onMoveStage={onMoveStage}
+                onOpenLead={onOpenLead}
+              />
+            )}
+            {view === "cards" && (
+              <LeadsCards
+                loading={refreshing}
+                rows={rows}
+                onOpenLead={onOpenLead}
+              />
+            )}
+          </>
         )}
       </div>
 
@@ -247,7 +289,6 @@ export default function LeadsPage() {
           onUpdated={(patch) => onInlineUpdate(selected, patch)}
         />
       )}
-
       {openAdd && (
         <AddLeadDrawer
           onClose={() => setOpenAdd(false)}
