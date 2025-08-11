@@ -1,12 +1,19 @@
-// tiny wrapper that strips leading slashes so you never get /api/api again
-import { http } from "./http";
+// src/lib/api.js
+import axios from "axios";
 
-function clean(p) { return String(p || "").replace(/^\/+/, ""); }
+const API_BASE = import.meta.env.VITE_API_URL || "https://geniusgrid-auth-starter.onrender.com";
 
-export const api = {
-  get:  (p, config)          => http.get(clean(p), config),
-  post: (p, data, config)    => http.post(clean(p), data, config),
-  put:  (p, data, config)    => http.put(clean(p), data, config),
-  patch:(p, data, config)    => http.patch(clean(p), data, config),
-  delete:(p, config)         => http.delete(clean(p), config),
-};
+export const api = axios.create({
+  baseURL: `${API_BASE}/api`,
+  withCredentials: true,
+  timeout: 15000
+});
+
+export function cleanParams(obj = {}) {
+  const out = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === null || v === "" || Number.isNaN(v)) continue;
+    out[k] = v;
+  }
+  return out;
+}
