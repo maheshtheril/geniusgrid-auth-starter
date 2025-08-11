@@ -1,5 +1,6 @@
 import React from "react";
 import "./styles.css";
+import "./styles/gg-theme.css";
 import { Routes, Route, Navigate } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage.jsx";

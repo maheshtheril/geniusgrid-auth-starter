@@ -213,35 +213,35 @@ export default function LeadsPage() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
-      {/* Header */}
-      <div className="gg-header">
-        <div className="gg-header-left">
-          <h1 className="gg-title">Leads</h1>
-          <span className="gg-subtle">({count})</span>
+      {/* Header — clean, aligned, dark theme */}
+      <div className="flex items-center justify-between p-4 rounded-2xl bg-base-200/70 border border-white/10 shadow">
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold text-white">Leads</h1>
+          <span className="text-sm text-gray-400">({count})</span>
         </div>
-        <div className="gg-header-right">
-          <div className="btn-group">
+        <div className="flex items-center gap-2">
+          <div className="join">
             <button
-              className={`btn btn-sm ${view === "table" ? "btn-active" : ""}`}
+              className={`join-item btn btn-sm ${view === "table" ? "btn-primary" : "btn-ghost"}`}
               onClick={() => setView("table")}
             >
               Table
             </button>
             <button
-              className={`btn btn-sm ${view === "kanban" ? "btn-active" : ""}`}
+              className={`join-item btn btn-sm ${view === "kanban" ? "btn-primary" : "btn-ghost"}`}
               onClick={() => setView("kanban")}
             >
               Kanban
             </button>
             <button
-              className={`btn btn-sm ${view === "cards" ? "btn-active" : ""}`}
+              className={`join-item btn btn-sm ${view === "cards" ? "btn-primary" : "btn-ghost"}`}
               onClick={() => setView("cards")}
             >
               Cards
             </button>
           </div>
           <button
-            className="btn btn-primary gg-add-btn"
+            className="btn btn-sm btn-primary rounded-xl"
             onClick={() => setOpenAdd(true)}
           >
             + Add Lead
