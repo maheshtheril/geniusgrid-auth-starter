@@ -91,6 +91,18 @@ async function setTenant(client, tenantId) {
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
+// Promise helpers for session ops
+function sessionRegenerate(req) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((err) => (err ? reject(err) : resolve()));
+  });
+}
+function sessionSave(req) {
+  return new Promise((resolve, reject) => {
+    req.session.save((err) => (err ? reject(err) : resolve()));
+  });
+}
+
 /* =========================
    Auth: Change password
 ========================= */
@@ -153,15 +165,14 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
     );
 
     // Rotate the session id (mitigate fixation)
-    await new Promise((resolve, reject) => {
-      req.session.regenerate((err) => (err ? reject(err) : resolve()));
-    });
+    await sessionRegenerate(req);
     // Re-seed normalized session (set both shapes)
     req.session.userId = userId;
     req.session.user_id = userId;
     req.session.tenantId = tenantId;
     req.session.tenant_id = tenantId;
     req.session.user = { id: userId, tenantId };
+    await sessionSave(req);
 
     await logApi(client, {
       tenantId,
@@ -263,30 +274,16 @@ router.post("/login", loginLimiter, async (req, res) => {
       [user.id]
     );
 
-    // Regenerate then set both camelCase and snake_case keys
-    req.session.regenerate((err) => {
-      if (err) return res.status(500).json({ message: "Session error" });
+    // Regenerate, seed session (both shapes), and save
+    await sessionRegenerate(req);
+    req.session.userId = user.id;
+    req.session.user_id = user.id;
+    req.session.tenantId = tenantId;
+    req.session.tenant_id = tenantId;
+    req.session.user = { id: user.id, tenantId };
+    await sessionSave(req);
 
-      req.session.userId = user.id;
-      req.session.user_id = user.id;
-      req.session.tenantId = tenantId;
-      req.session.tenant_id = tenantId;
-      req.session.user = { id: user.id, tenantId };
-
-      req.session.save((saveErr) => {
-        if (saveErr) return res.status(500).json({ message: "Session save error" });
-        return res.json({ ok: true });
-      });
-      app.use((req, _res, next) => {
-  if (req.path.startsWith('/api')) {
-    console.log('> ', req.method, req.originalUrl);
-    console.log('  cookie header:', req.headers.cookie ? req.headers.cookie.slice(0, 160) : '(none)');
-    console.log('  sessionID:', req.sessionID);
-    console.log('  session keys:', Object.keys(req.session || {}));
-  }
-  next();
-});
-    });
+    return res.json({ ok: true });
   } catch (e) {
     console.error("LOGIN ERROR:", e);
     res.status(500).json({ message: "Login error" });
@@ -547,18 +544,15 @@ router.post("/dev/seed-admin", async (req, res) => {
     await client.query("COMMIT");
 
     // seed session (both shapes)
-    req.session.regenerate((err) => {
-      if (err) return res.status(500).json({ message: "Session error" });
-      req.session.userId = userId;
-      req.session.user_id = userId;
-      req.session.tenantId = tenantId;
-      req.session.tenant_id = tenantId;
-      req.session.user = { id: userId, tenantId };
-      req.session.save((saveErr) => {
-        if (saveErr) return res.status(500).json({ message: "Session save error" });
-        return res.json({ ok: true, tenantId, userId });
-      });
-    });
+    await sessionRegenerate(req);
+    req.session.userId = userId;
+    req.session.user_id = userId;
+    req.session.tenantId = tenantId;
+    req.session.tenant_id = tenantId;
+    req.session.user = { id: userId, tenantId };
+    await sessionSave(req);
+
+    return res.json({ ok: true, tenantId, userId });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("[dev/seed-admin]", e);
@@ -567,6 +561,7 @@ router.post("/dev/seed-admin", async (req, res) => {
     client.release();
   }
 });
+
 // DEV: diagnose login RLS scope
 router.post("/dev/diag-login", async (req, res) => {
   const { tenant = "demo", email = "admin@demo.local", password = "admin" } = req.body || {};
