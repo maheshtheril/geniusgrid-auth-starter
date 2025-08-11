@@ -1,8 +1,136 @@
-// src/pages/LeadsPage.jsx
-// …imports stay the same
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import useLeadsApi from "@/hooks/useLeadsApi";
+import { useRealtime } from "@/hooks/useRealtime";
+import LeadsTable from "@/components/leads/LeadsTable";
+import LeadsKanban from "@/components/leads/LeadsKanban";
+import LeadsCards from "@/components/leads/LeadsCards";
+import LeadDrawer from "@/components/leads/LeadDrawer";
+import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
+
+const DEFAULT_COLUMNS = [
+  { key: "name", label: "Lead", visible: true },
+  { key: "company_name", label: "Company", visible: true },
+  { key: "status", label: "Status", visible: true },
+  { key: "stage", label: "Stage", visible: true },
+  { key: "owner_name", label: "Owner", visible: true },
+  { key: "score", label: "AI Score", visible: true },
+  { key: "priority", label: "Priority", visible: false },
+  { key: "created_at", label: "Created", visible: true },
+];
 
 export default function LeadsPage() {
-  // …state & hooks remain the same
+  const api = useLeadsApi();
+
+  const [view, setView] = useState("table"); // "table" | "kanban" | "cards"
+  const [query, setQuery] = useState("");
+  const [filters, setFilters] = useState({ owner_id: "", stage: "", status: "" });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  // use "count" instead of "total" to avoid scoping mixups
+  const [count, setCount] = useState(0);
+
+  const [rows, setRows] = useState([]);
+  const [stages, setStages] = useState([]);
+  const [columns, setColumns] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("leads.columns"));
+      return saved?.length ? saved : DEFAULT_COLUMNS;
+    } catch { return DEFAULT_COLUMNS; }
+  });
+
+  const [selected, setSelected] = useState(null); // lead id
+  const [openDrawer, setOpenDrawer] = useState(false);
+  const [openAdd, setOpenAdd] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  // mounted guard to prevent blinking/flicker from stale updates
+  const mountedRef = useRef(false);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // realtime
+  useRealtime({
+    onLeadEvent: (evt) => {
+      if (!evt?.lead) return;
+      setRows(prev => {
+        const idx = prev.findIndex(r => r.id === evt.lead.id);
+        if (idx === -1) return [evt.lead, ...prev];
+        const next = prev.slice();
+        next[idx] = { ...prev[idx], ...evt.lead };
+        return next;
+      });
+    }
+  });
+
+  const visibleColumns = useMemo(
+    () => columns.filter(c => c.visible),
+    [columns]
+  );
+
+  const params = useMemo(() => ({
+    q: query || undefined,
+    ...filters,
+    page,
+    pageSize
+  }), [query, filters, page, pageSize]);
+
+  const fetchLeads = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api.listLeads(params);
+      if (!mountedRef.current) return;
+      const items = data.items || data.rows || [];
+      setRows(items);
+      setCount(Number(data.total ?? items.length ?? 0));
+    } finally {
+      if (mountedRef.current) setLoading(false);
+    }
+  }, [api, params]);
+
+  const fetchPipelines = useCallback(async () => {
+    try {
+      const data = await api.listPipelines();
+      if (!mountedRef.current) return;
+      setStages(data.stages || data || []);
+    } catch {}
+  }, [api]);
+
+  useEffect(() => { fetchPipelines(); }, [fetchPipelines]);
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+
+  const onInlineUpdate = async (id, patch) => {
+    await api.updateLead(id, patch);
+    setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
+  };
+
+  const onMoveStage = async ({ id, toStage }) => {
+    await api.updateLead(id, { stage: toStage });
+    setRows(prev => prev.map(r => (r.id === id ? { ...r, stage: toStage } : r)));
+  };
+
+  const onOpenLead = (id) => {
+    setSelected(id);
+    setOpenDrawer(true);
+  };
+
+  const onAddSuccess = (newLead) => {
+    setOpenAdd(false);
+    if (newLead?.id) {
+      setRows(prev => [newLead, ...prev]);
+      setCount(c => c + 1);
+    }
+  };
+
+  const toggleColumn = (key) => {
+    setColumns(prev => {
+      const next = prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c);
+      localStorage.setItem("leads.columns", JSON.stringify(next));
+      return next;
+    });
+  };
 
   return (
     <div className="p-4 flex flex-col gap-4">
@@ -10,7 +138,7 @@ export default function LeadsPage() {
       <div className="gg-header">
         <div className="gg-header-left">
           <h1 className="gg-title">Leads</h1>
-          <span className="gg-subtle">({total})</span>
+          <span className="gg-subtle">({count})</span>
         </div>
         <div className="gg-header-right">
           <div className="btn-group">
@@ -72,7 +200,7 @@ export default function LeadsPage() {
             columns={visibleColumns}
             page={page}
             pageSize={pageSize}
-            total={total}
+            total={count}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
             onInlineUpdate={onInlineUpdate}
@@ -101,7 +229,6 @@ export default function LeadsPage() {
           onUpdated={(patch) => onInlineUpdate(selected, patch)}
         />
       )}
-
       {openAdd && (
         <AddLeadDrawer
           onClose={() => setOpenAdd(false)}
