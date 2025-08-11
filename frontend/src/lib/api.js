@@ -1,9 +1,8 @@
 // src/lib/api.js
 import axios from "axios";
 
-/** Ensure baseURL is set and ends with /api exactly once */
+/** Normalize baseURL so it ends with /api exactly once */
 function normalizeBaseURL(raw) {
-  // default to your Render service with /api
   let s = (raw || "https://geniusgrid-auth-starter.onrender.com").trim();
   if (s.endsWith("/")) s = s.slice(0, -1);
   if (!/\/api$/i.test(s)) s = s + "/api";
@@ -20,22 +19,32 @@ const api = axios.create({
 });
 
 api.defaults.headers.common["X-Requested-With"] = "XMLHttpRequest";
+api.defaults.headers.common["Accept"] = "application/json";
+
+// Dev hint (shows once)
+if (import.meta?.env?.DEV) {
+  // eslint-disable-next-line no-console
+  console.info("[HTTP] baseURL =", baseURL);
+}
 
 // Export both styles
 export default api;
 export { api };
 
-// Convenience helpers: GET auto-dedupes by default
-const get   = (url, config = {})       => api.get(url, { ...config, meta: { ...(config.meta || {}), dedupe: true } });
+// Convenience helpers (no auto-dedupe by default to avoid CanceledError noise)
+const get   = (url, config = {})       => api.get(url, config);
 const post  = (url, data, config = {}) => api.post(url, data, config);
 const patch = (url, data, config = {}) => api.patch(url, data, config);
 const del   = (url, config = {})       => api.delete(url, config);
 export { get, post, patch, del };
 
-// ---------- request de-dupe & throttle ----------
-const inflight = new Map();  // key -> AbortController
-const lastStart = new Map(); // key -> timestamp
-const THROTTLE_MS = 350;
+// Handy predicates for callers
+export const isCanceled = (e) => axios.isCancel?.(e) || e?.code === "ERR_CANCELED";
+
+// ---------- request throttle + optional dedupe ----------
+const inflight = new Map();   // key -> AbortController
+const lastStart = new Map();  // key -> timestamp
+const THROTTLE_MS = 300;
 
 function pathnameOf(url, base) {
   try { return new URL(url, base).pathname; } catch { return String(url || ""); }
@@ -59,10 +68,11 @@ function parseRetryAfter(v) {
 }
 
 api.interceptors.request.use(async (config) => {
-  // Only throttle/dedupe non-auth GETs
   const method = (config.method || "get").toLowerCase();
+
+  // Only affect non-auth GETs
   if (!isAuthRoute(config.url, config.baseURL) && method === "get") {
-    // Soft throttle identical GETs to prevent render loops from spamming
+    // Soft throttle identical GETs to reduce Render 429s
     const key = keyFor(config);
     const now = Date.now();
     const prev = lastStart.get(key);
@@ -71,10 +81,10 @@ api.interceptors.request.use(async (config) => {
     }
     lastStart.set(key, Date.now());
 
-    // If dedupe enabled (defaulted on our get helper), abort the previous identical GET
+    // Optional dedupe: opt-in per request via meta.dedupe === true
     if (config.meta?.dedupe) {
       const prevCtrl = inflight.get(key);
-      if (prevCtrl) prevCtrl.abort();
+      if (prevCtrl) prevCtrl.abort(); // latest-wins
       const controller = new AbortController();
       inflight.set(key, controller);
       config.signal = controller.signal;
@@ -96,12 +106,19 @@ api.interceptors.response.use(
     const key = cfg?.__inflightKey;
     if (key) inflight.delete(key);
 
+    // Swallow quick duplicates cleanly at callsites (we still reject, but mark it)
+    if (isCanceled(error)) {
+      error.__canceled = true;
+      return Promise.reject(error);
+    }
+
     // Gentle retry for 429 (never for /api/auth/*)
     if (cfg && !isAuthRoute(cfg.url, cfg.baseURL) && error?.response?.status === 429) {
       cfg.__retryCount = (cfg.__retryCount || 0) + 1;
       if (cfg.__retryCount <= 2) {
         const ra = parseRetryAfter(error.response.headers?.["retry-after"]);
-        const fallback = Math.min(1500 * cfg.__retryCount, 3000);
+        // backoff with small jitter
+        const fallback = Math.min(1500 * cfg.__retryCount, 3000) + Math.floor(Math.random() * 300);
         await new Promise((r) => setTimeout(r, ra ?? fallback));
         return api(cfg);
       }

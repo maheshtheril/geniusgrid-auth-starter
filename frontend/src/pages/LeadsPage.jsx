@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+// src/pages/LeadsPage.jsx
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import useLeadsApi from "@/hooks/useLeadsApi";
+import { isCanceled } from "@/lib/api";
 import { useRealtime } from "@/hooks/useRealtime";
 import LeadsTable from "@/components/leads/LeadsTable";
 import LeadsKanban from "@/components/leads/LeadsKanban";
@@ -39,11 +41,18 @@ export default function LeadsPage() {
   const [openDrawer, setOpenDrawer] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [backingOff, setBackingOff] = useState(false); // shown if 429 bubbles up
 
-  // realtime (hooked up next)
+  // small debounce for q/filters (further reduces 429s)
+  const debounceRef = useRef();
+  const debounced = (fn, ms = 200) => (...args) => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fn(...args), ms);
+  };
+
+  // realtime updates
   useRealtime({
     onLeadEvent: (evt) => {
-      // evt = { type: 'created|updated|moved', lead }
       if (evt?.lead) {
         setRows(prev => {
           const idx = prev.findIndex(r => r.id === evt.lead.id);
@@ -74,6 +83,13 @@ export default function LeadsPage() {
       const data = await api.listLeads(params);
       setRows(data.items || data.rows || []);
       setTotal(data.total || 0);
+      setBackingOff(false);
+    } catch (e) {
+      if (!isCanceled(e)) {
+        // If 429 slipped past interceptor, show gentle banner
+        if (e?.response?.status === 429) setBackingOff(true);
+        // else you could toast/log e.message
+      }
     } finally {
       setLoading(false);
     }
@@ -82,12 +98,21 @@ export default function LeadsPage() {
   const fetchPipelines = useCallback(async () => {
     try {
       const data = await api.listPipelines();
-      setStages(data.stages || data || []);
-    } catch {}
+      setStages(data || []);
+    } catch (e) {
+      // ignore canceled; show fallback stages if needed
+      if (!isCanceled(e)) setStages((s) => s?.length ? s : ["New", "Qualified", "Proposal", "Won", "Lost"]);
+    }
   }, [api]);
 
   useEffect(() => { fetchPipelines(); }, [fetchPipelines]);
-  useEffect(() => { fetchLeads(); }, [fetchLeads]);
+
+  // debounced fetch for q/filters/page changes
+  useEffect(() => {
+    const run = debounced(fetchLeads, 200);
+    run();
+    return () => clearTimeout(debounceRef.current);
+  }, [fetchLeads]);
 
   const onInlineUpdate = async (id, patch) => {
     await api.updateLead(id, patch);
@@ -119,6 +144,13 @@ export default function LeadsPage() {
 
   return (
     <div className="p-4 flex flex-col gap-4">
+      {/* Backoff hint */}
+      {backingOff && (
+        <div className="alert alert-warning">
+          We’re rate-limited for a moment. Retrying automatically—this should clear shortly.
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
