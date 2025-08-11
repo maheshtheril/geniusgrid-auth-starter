@@ -6,7 +6,6 @@ const router = express.Router();
 
 // ---- tenant helper ----
 function getTenantId(req) {
-  // prefer what your auth sets on the session; fall back to header
   return (
     req.session?.tenantId ||
     req.session?.tenant_id ||
@@ -15,7 +14,12 @@ function getTenantId(req) {
   );
 }
 
-// Quick probe: GET /api/leads/ping
+async function setTenant(client, tenantId) {
+  // NON-LOCAL so it persists for the session/connection
+  await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
+}
+
+// Quick probe: GET /api/leads/ping (public in server.js)
 router.get("/ping", (_req, res) => res.status(200).json({ ok: true }));
 
 // GET /api/leads?page&size&q&status&owner
@@ -34,8 +38,7 @@ router.get("/", async (req, res) => {
   let idx = params.length;
 
   if (q) {
-    params.push(`%${q}%`);
-    idx++;
+    params.push(`%${q}%`); idx++;
     where += ` AND (
       name ILIKE $${idx} OR
       company ILIKE $${idx} OR
@@ -44,13 +47,11 @@ router.get("/", async (req, res) => {
     )`;
   }
   if (status) {
-    params.push(status);
-    idx++;
+    params.push(status); idx++;
     where += ` AND status = $${idx}`;
   }
   if (owner) {
-    params.push(owner);
-    idx++;
+    params.push(owner); idx++;
     where += ` AND (owner = $${idx} OR owner_id::text = $${idx})`;
   }
 
@@ -66,10 +67,14 @@ router.get("/", async (req, res) => {
   `;
   const countSQL = `SELECT COUNT(*)::int AS total FROM leads ${where};`;
 
+  const client = await pool.connect();
   try {
+    // ensure the same connection sees the tenant scope (for RLS)
+    await setTenant(client, tenantId);
+
     const [list, count] = await Promise.all([
-      pool.query(listSQL, params),
-      pool.query(countSQL, params),
+      client.query(listSQL, params),
+      client.query(countSQL, params),
     ]);
 
     const items = list.rows.map((r) => ({
@@ -85,15 +90,15 @@ router.get("/", async (req, res) => {
   } catch (err) {
     console.error("GET /leads error:", err);
     res.status(500).json({ error: "Failed to load leads" });
+  } finally {
+    client.release();
   }
 });
 
-// GET /api/leads/pipelines  (stub so the UI has something to render)
+// GET /api/leads/pipelines (stub)
 router.get("/pipelines", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  // Replace with real data if you have a pipelines table
   res.json([
     { id: "default", name: "Default Pipeline" },
     { id: "inbound", name: "Inbound" },
@@ -110,30 +115,37 @@ router.patch("/:id", async (req, res) => {
   const { status } = req.body || {};
   if (!status) return res.status(400).json({ error: "status required" });
 
+  const client = await pool.connect();
   try {
+    await setTenant(client, tenantId);
     const q = `
       UPDATE leads
       SET status = $1, updated_at = NOW()
       WHERE id = $2 AND tenant_id = $3
       RETURNING id, status, updated_at;
     `;
-    const r = await pool.query(q, [status, id, tenantId]);
+    const r = await client.query(q, [status, id, tenantId]);
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
     res.json(r.rows[0]);
   } catch (err) {
     console.error("PATCH /leads/:id error:", err);
     res.status(500).json({ error: "Failed to update status" });
+  } finally {
+    client.release();
   }
 });
 
-// POST /api/leads/:id/ai-refresh  (mock AI refresh)
+// POST /api/leads/:id/ai-refresh (mock AI refresh)
 router.post("/:id/ai-refresh", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const { id } = req.params;
 
+  const client = await pool.connect();
   try {
+    await setTenant(client, tenantId);
+
     const score = Math.floor(50 + Math.random() * 50);
     const ai_summary =
       "Prospect shows moderate intent. Prior interactions indicate interest in a demo within 7 days.";
@@ -152,7 +164,7 @@ router.post("/:id/ai-refresh", async (req, res) => {
       WHERE id = $4 AND tenant_id = $5
       RETURNING id, score, ai_summary, ai_next, updated_at;
     `;
-    const r = await pool.query(q, [
+    const r = await client.query(q, [
       score,
       ai_summary,
       JSON.stringify(ai_next),
@@ -162,14 +174,13 @@ router.post("/:id/ai-refresh", async (req, res) => {
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
 
     const row = r.rows[0];
-    row.ai_next = Array.isArray(row.ai_next)
-      ? row.ai_next
-      : JSON.parse(row.ai_next || "[]");
-
+    row.ai_next = Array.isArray(row.ai_next) ? row.ai_next : JSON.parse(row.ai_next || "[]");
     res.json(row);
   } catch (err) {
     console.error("POST /leads/:id/ai-refresh error:", err);
     res.status(500).json({ error: "AI refresh failed" });
+  } finally {
+    client.release();
   }
 });
 
