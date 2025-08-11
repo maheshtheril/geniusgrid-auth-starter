@@ -1,6 +1,5 @@
 // src/layouts/ProtectedShell.jsx
 import React, { memo, useMemo } from "react";
-import ThemeToggle from "@/components/ThemeToggle";
 import ProtectedLayout from "./ProtectedLayout";
 import AppSidebar from "@/components/layout/AppSidebar";
 import AppTopbar from "@/components/layout/AppTopbar";
@@ -18,14 +17,7 @@ function ProtectedShell() {
       <div className="app-shell">
         {sidebarEl}
         <main className="app-main">
-          {/* Topbar + theme toggle */}
-          <div className="relative">
-            {topbarEl}
-            <div className="absolute right-4 top-2">
-              <ThemeToggle />
-            </div>
-          </div>
-
+          {topbarEl}
           <div className="app-content">
             {outletEl}
           </div>
