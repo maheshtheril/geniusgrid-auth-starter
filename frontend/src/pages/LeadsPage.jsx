@@ -21,17 +21,24 @@ const DEFAULT_COLUMNS = [
 export default function LeadsPage() {
   const api = useLeadsApi();
 
+  // View + filters
   const [view, setView] = useState("table"); // "table" | "kanban" | "cards"
   const [query, setQuery] = useState("");
   const [filters, setFilters] = useState({ owner_id: "", stage: "", status: "" });
+
+  // Pagination
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-
-  // use "count" instead of "total" to avoid scoping mixups
   const [count, setCount] = useState(0);
 
+  // Sorting (new)
+  const [sortKey, setSortKey] = useState(null);     // e.g., "created_at"
+  const [sortDir, setSortDir] = useState("asc");    // "asc" | "desc"
+
+  // Data
   const [rows, setRows] = useState([]);
   const [stages, setStages] = useState([]);
+
   const [columns, setColumns] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("leads.columns"));
@@ -39,12 +46,13 @@ export default function LeadsPage() {
     } catch { return DEFAULT_COLUMNS; }
   });
 
-  const [selected, setSelected] = useState(null); // lead id
+  // UI state
+  const [selected, setSelected] = useState(null);
   const [openDrawer, setOpenDrawer] = useState(false);
   const [openAdd, setOpenAdd] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // mounted guard to prevent blinking/flicker from stale updates
+  // mounted guard
   const mountedRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
@@ -70,12 +78,53 @@ export default function LeadsPage() {
     [columns]
   );
 
-  const params = useMemo(() => ({
-    q: query || undefined,
-    ...filters,
-    page,
-    pageSize
-  }), [query, filters, page, pageSize]);
+  // 🌍 World-class request params (send BOTH: legacy + premium keys)
+  const params = useMemo(() => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    const premium = {
+      // Search
+      search_query: query?.trim() || undefined,
+
+      // Filters
+      filter_stage: filters.stage || undefined,
+      filter_status: filters.status || undefined,
+      filter_owner_id: filters.owner_id || undefined,
+
+      // Pagination
+      page_number: page,
+      page_size: pageSize,
+
+      // Sorting
+      sort_by: sortKey || undefined,
+      sort_direction: sortDir || undefined,
+
+      // View context + preferences
+      view_type: view, // "table" | "kanban" | "cards"
+      visible_columns: visibleColumns.map(c => c.key),
+      timezone,
+
+      // Future flags
+      include_ai_insights: true,
+      include_related_entities: ["company", "owner"],
+    };
+
+    const legacy = {
+      q: query || undefined,
+      stage: filters.stage || undefined,
+      status: filters.status || undefined,
+      owner_id: filters.owner_id || undefined,
+      page,
+      pageSize,
+      sort: sortKey || undefined,
+      dir: sortDir || undefined,
+      view, // harmless to keep
+    };
+
+    // Merge while removing undefineds
+    const merged = { ...legacy, ...premium };
+    return Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== undefined));
+  }, [query, filters, page, pageSize, sortKey, sortDir, view, visibleColumns]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
@@ -101,6 +150,33 @@ export default function LeadsPage() {
   useEffect(() => { fetchPipelines(); }, [fetchPipelines]);
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
+  // ✅ Client-side sorting (works even if API ignores sort)
+  const sortedRows = useMemo(() => {
+    if (!sortKey) return rows;
+
+    const normalize = (v) => {
+      if (v == null) return "";
+      if (typeof v === "number") return v;
+      // date-ish
+      if (sortKey.includes("date") || sortKey.includes("created")) {
+        const t = new Date(v).getTime();
+        return Number.isNaN(t) ? 0 : t;
+      }
+      return String(v).toLowerCase();
+    };
+
+    const arr = [...rows];
+    arr.sort((a, b) => {
+      const va = normalize(a[sortKey]);
+      const vb = normalize(b[sortKey]);
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      return 0;
+    });
+    return arr;
+  }, [rows, sortKey, sortDir]);
+
+  // Actions
   const onInlineUpdate = async (id, patch) => {
     await api.updateLead(id, patch);
     setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
@@ -130,6 +206,18 @@ export default function LeadsPage() {
       localStorage.setItem("leads.columns", JSON.stringify(next));
       return next;
     });
+  };
+
+  // Sorting handler (hook this to table header if/when you enable clickable headers)
+  const handleSort = (key) => {
+    if (!key) return;
+    if (sortKey === key) {
+      setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+    setPage(1); // reset to first page on new sort
   };
 
   return (
@@ -196,28 +284,37 @@ export default function LeadsPage() {
         {view === "table" && (
           <LeadsTable
             loading={loading}
-            rows={rows}
+            rows={sortedRows}              {/* ✅ client-side sorted */}
             columns={visibleColumns}
             page={page}
             pageSize={pageSize}
             total={count}
+            sortKey={sortKey}             {/* pass to table (optional) */}
+            sortDir={sortDir}
+            onSort={handleSort}           {/* table can call this on header click */}
             onPageChange={setPage}
             onPageSizeChange={setPageSize}
             onInlineUpdate={onInlineUpdate}
             onOpenLead={onOpenLead}
           />
         )}
+
         {view === "kanban" && (
           <LeadsKanban
             loading={loading}
-            rows={rows}
+            rows={rows}                    {/* kanban doesn’t need sorting */}
             stages={stages}
             onMoveStage={onMoveStage}
             onOpenLead={onOpenLead}
           />
         )}
+
         {view === "cards" && (
-          <LeadsCards loading={loading} rows={rows} onOpenLead={onOpenLead} />
+          <LeadsCards
+            loading={loading}
+            rows={sortedRows}              {/* sorted cards look consistent with table */}
+            onOpenLead={onOpenLead}
+          />
         )}
       </div>
 
