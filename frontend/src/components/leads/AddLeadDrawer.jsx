@@ -8,6 +8,20 @@ import useCountriesApi from "@/hooks/useCountriesApi";
 const flagFromIso2 = (iso2 = "") =>
   iso2.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
 
+/** Robustly normalize "maybe-array" into a real array */
+function normalizeToArray(maybe) {
+  if (Array.isArray(maybe)) return maybe;
+  if (Array.isArray(maybe?.data)) return maybe.data;
+  if (Array.isArray(maybe?.rows)) return maybe.rows;
+  if (Array.isArray(maybe?.results)) return maybe.results;
+  if (maybe && typeof maybe === "object") {
+    const vals = Object.values(maybe);
+    // if it looks like a homogeneous array of objects (common API quirks)
+    if (vals.length && vals.every(v => typeof v === "object")) return vals;
+  }
+  return [];
+}
+
 /** Custom fields shape:
  *  [{ id,key,label,type,required,options?, group: 'general'|'advance' }, ...]
  */
@@ -44,15 +58,17 @@ export default function AddLeadDrawer({
 }) {
   const api = useLeadsApi();
 
-  // countries from DB
-  const { countries, loading: countriesLoading } = useCountriesApi("en");
+  // countries from DB (may not be a clean array -> normalize)
+  const { countries: countriesRaw, loading: countriesLoading } = useCountriesApi("en");
+  const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
+
   const countryOpts = useMemo(() => {
-    if (!countries?.length) return [];
+    if (!countries.length) return [];
     return countries.map((c) => ({
-      cc: c.iso2,
-      code: c.default_dial,
-      label: `${c.emoji_flag || flagFromIso2(c.iso2)} ${c.iso2}`,
-    }));
+      cc: c.iso2 || c.cc || c.code || "",
+      code: c.default_dial || c.dial || c.phone_code || "",
+      label: `${c.emoji_flag || c.flag || flagFromIso2(c.iso2 || c.cc || "")} ${(c.iso2 || c.cc || "").toUpperCase()}`,
+    })).filter(o => o.cc && o.code);
   }, [countries]);
 
   // form state
@@ -62,7 +78,7 @@ export default function AddLeadDrawer({
   const [error, setError] = useState("");
   const [dupMobile, setDupMobile] = useState(null);
 
-  // local custom fields (so "Add" works instantly even without backend)
+  // local custom fields
   const [cfList, setCfList] = useState([]);
   const [showCFModal, setShowCFModal] = useState(false);
 
@@ -72,7 +88,7 @@ export default function AddLeadDrawer({
 
   // dial code map from DB
   const codeByCc = useMemo(
-    () => Object.fromEntries(countryOpts.map((c) => [c.cc, c.code])),
+    () => Object.fromEntries(countryOpts.map((c) => [String(c.cc).toUpperCase(), c.code])),
     [countryOpts]
   );
 
@@ -91,9 +107,12 @@ export default function AddLeadDrawer({
 
   // sync dial code once countries arrive
   useEffect(() => {
-    if (countriesLoading || !countryOpts.length) return;
+    if (countriesLoading) return;
+    const hasOpts = countryOpts.length > 0;
     setForm((f) => {
-      const cc = f.mobile_country && codeByCc[f.mobile_country] ? f.mobile_country : countryOpts[0].cc;
+      let cc = (f.mobile_country || "").toUpperCase();
+      if (!hasOpts) return f;
+      if (!cc || !codeByCc[cc]) cc = countryOpts[0].cc.toUpperCase();
       const code = codeByCc[cc] || "";
       if (f.mobile_country === cc && f.mobile_code === code) return f;
       return { ...f, mobile_country: cc, mobile_code: code };
@@ -122,7 +141,7 @@ export default function AddLeadDrawer({
     setForm((f) => ({ ...f, [k]: e.target.files?.[0] || null }));
 
   const onCountryChange = (e) => {
-    const cc = e.target.value;
+    const cc = (e.target.value || "").toUpperCase();
     setForm((f) => ({
       ...f,
       mobile_country: cc,
