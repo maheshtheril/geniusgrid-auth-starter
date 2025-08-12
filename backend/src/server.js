@@ -10,13 +10,12 @@ import pgSimple from "connect-pg-simple";
 import pino from "pino";
 import pinoHttp from "pino-http";
 import { randomUUID } from "crypto";
+
 import { pool } from "./db/pool.js";
 import { requireAuth } from "./middleware/requireAuth.js";
-// src/server.js
+
 import metaRoutes from "./routes/meta.routes.js";
 import countriesRouter from "./routes/countries.js";
-
-// --- Routes ---
 import healthRoutes from "./routes/health.routes.js";
 import csrfRoutes from "./routes/csrf.routes.js";
 import bootstrapRoutes from "./routes/bootstrap.routes.js";
@@ -63,12 +62,6 @@ app.use(
   })
 );
 
-app.use("/api/meta", metaRoutes);
-
-app.use("/api/countries", countriesRouter);
-
-
-
 // Trust proxy (Render/Cloudflare) so secure cookies work
 app.set("trust proxy", 1);
 
@@ -83,16 +76,15 @@ app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
 // ---------------- PUBLIC HEALTH FIRST (no auth, no rate-limit) ----------------
+app.get("/healthz", (_req, res) => res.status(200).send("ok"));
 app.get("/api/health", (_req, res) => {
   res.status(200).json({ ok: true, ts: new Date().toISOString() });
 });
 app.head("/api/health", (_req, res) => res.sendStatus(200)); // Render sometimes probes HEAD
-
-// Public root ping (optional)
 app.head("/", (_req, res) => res.sendStatus(200));
 app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
 
-// ---------------- CORS ----------------
+// ---------------- CORS (MUST be before any routes that need it) ----------------
 app.use(
   cors({
     origin: ORIGINS,
@@ -111,6 +103,11 @@ app.use(
     exposedHeaders: ["X-Request-Id", "X-Version"],
   })
 );
+// helps caches/proxies return the right variant
+app.use((req, res, next) => {
+  res.header("Vary", "Origin");
+  next();
+});
 app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
 // Attach response headers (versioning & request id surfaced)
@@ -161,7 +158,9 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
-// ---------------- Other PUBLIC routes ----------------
+// ---------------- PUBLIC routes ----------------
+app.use("/api/meta", metaRoutes);
+app.use("/api/countries", countriesRouter); // now after CORS ✅
 app.use("/api/ready", async (_req, res) => {
   try {
     await pool.query("select 1");
@@ -174,8 +173,6 @@ app.use("/api/csrf", csrfRoutes);
 app.use("/api/bootstrap", bootstrapRoutes);
 app.use("/api/auth", auth);
 app.use("/api/auth", authMe); // /api/auth/me (reads session if exists)
-
-// Public leads ping so you can verify router exists without a cookie
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 
 // ---------------- PROTECTED routes ----------------
