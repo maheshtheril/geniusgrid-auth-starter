@@ -17,14 +17,19 @@ const pickArray = (obj, keys) => {
 
 // strip empty query params
 const clean = (o = {}) =>
-  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== "" && v !== null && v !== undefined));
+  Object.fromEntries(
+    Object.entries(o).filter(([, v]) => v !== "" && v !== null && v !== undefined)
+  );
 
 export default function useLeadsApi() {
-  // pipelines → MUST return string[]
+  // -------- Pipelines (must return string[]) --------
   const listPipelines = useCallback(async () => {
     let raw;
-    try { raw = await get("/leads/pipelines", { meta: { dedupe: true } }); }
-    catch { raw = await get("/pipelines", { meta: { dedupe: true } }); }
+    try {
+      raw = await get("/leads/pipelines", { meta: { dedupe: true } });
+    } catch {
+      raw = await get("/pipelines", { meta: { dedupe: true } });
+    }
 
     const data = unwrap(raw);
     const arr = pickArray(data, ["stages", "pipelines", "items", "data", "results"]);
@@ -33,7 +38,7 @@ export default function useLeadsApi() {
       .filter(Boolean);
   }, []);
 
-  // list → always { items, total, page, size }
+  // -------- List (normalized shape) --------
   const listLeads = useCallback(async (params) => {
     const p = clean({
       ...params,
@@ -42,7 +47,15 @@ export default function useLeadsApi() {
 
     const raw = await get("/leads", { params: p, meta: { dedupe: true } });
     const data = unwrap(raw);
-    const items = pickArray(data, ["items", "results", "data", "rows", "records", "leads", "nodes"]);
+    const items = pickArray(data, [
+      "items",
+      "results",
+      "data",
+      "rows",
+      "records",
+      "leads",
+      "nodes",
+    ]);
 
     return {
       items,
@@ -52,25 +65,120 @@ export default function useLeadsApi() {
     };
   }, []);
 
-  const getLead     = useCallback(async (id)      => unwrap(await get(`/leads/${id}`)), []);
-  const createLead  = useCallback(async (body)    => unwrap(await post("/leads", body)), []);
-  const updateLead  = useCallback(async (id, b)   => unwrap(await patch(`/leads/${id}`, b)), []);
-  const aiRefresh   = useCallback(async (id) => {
-    try { return unwrap(await post(`/leads/${id}/ai-refresh`, {})); }
-    catch { return unwrap(await post(`/leads/${id}/ai/refresh`, {})); }
+  // -------- CRUD --------
+  const getLead = useCallback(async (id) => unwrap(await get(`/leads/${id}`)), []);
+  const createLead = useCallback(async (body) => unwrap(await post("/leads", body)), []);
+  // Supports FormData for file custom fields (browser will set boundary)
+  const createLeadMultipart = useCallback(
+    async (formData) => unwrap(await post("/leads", formData)),
+    []
+  );
+  const updateLead = useCallback(async (id, b) => unwrap(await patch(`/leads/${id}`, b)), []);
+
+  // -------- AI endpoints --------
+  const aiRefresh = useCallback(async (id) => {
+    try {
+      // preferred route
+      return unwrap(await post(`/leads/${id}/ai-refresh`, {}));
+    } catch {
+      // legacy alias if present
+      return unwrap(await post(`/leads/${id}/ai/refresh`, {}));
+    }
   }, []);
 
-  const listNotes   = useCallback(async (leadId, p) => unwrap(await get(`/leads/${leadId}/notes`, { params: clean(p) })), []);
-  const addNote     = useCallback(async (leadId, b) => unwrap(await post(`/leads/${leadId}/notes`, b)), []);
-  const listHistory = useCallback(async (leadId, p) => unwrap(await get(`/leads/${leadId}/history`, { params: clean(p) })), []);
-  const bulkUpdate  = useCallback(async (payload)   => unwrap(await patch(`/leads/bulk`, payload)), []);
+  const aiScore = useCallback(async (id) => {
+    try {
+      return unwrap(await post(`/leads/${id}/ai-score`, {}));
+    } catch (e) {
+      // optional/ignore if backend route not present
+      return { ok: false, error: e?.message || "ai-score failed" };
+    }
+  }, []);
 
-  // return a stable object so dependents don't re-run every render
-  return useMemo(() => ({
-    listLeads, getLead, createLead, updateLead, aiRefresh,
-    listNotes, addNote, listHistory, listPipelines, bulkUpdate
-  }), [
-    listLeads, getLead, createLead, updateLead, aiRefresh,
-    listNotes, addNote, listHistory, listPipelines, bulkUpdate
-  ]);
+  const aiArtifacts = useCallback(async (id) => {
+    try {
+      const raw = await get(`/leads/${id}/ai`, { meta: { dedupe: true } });
+      return unwrap(raw);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // -------- Notes / History --------
+  const listNotes = useCallback(
+    async (leadId, p) =>
+      unwrap(await get(`/leads/${leadId}/notes`, { params: clean(p) })),
+    []
+  );
+  const addNote = useCallback(
+    async (leadId, b) => unwrap(await post(`/leads/${leadId}/notes`, b)),
+    []
+  );
+  const listHistory = useCallback(
+    async (leadId, p) =>
+      unwrap(await get(`/leads/${leadId}/history`, { params: clean(p) })),
+    []
+  );
+
+  // -------- Bulk --------
+  const bulkUpdate = useCallback(
+    async (payload) => unwrap(await patch(`/leads/bulk`, payload)),
+    []
+  );
+
+  // -------- Utilities --------
+  // GET /leads/check-mobile?phone=+91%209876543210 → { exists: boolean }
+  const checkMobile = useCallback(
+    async ({ mobile }) =>
+      unwrap(
+        await get(`/leads/check-mobile`, {
+          params: { phone: mobile },
+          meta: { dedupe: true },
+        })
+      ),
+    []
+  );
+
+  // stable return so consumers don't re-render unnecessarily
+  return useMemo(
+    () => ({
+      // lists
+      listLeads,
+      listPipelines,
+      listHistory,
+      listNotes,
+
+      // crud
+      getLead,
+      createLead,
+      createLeadMultipart,
+      updateLead,
+      bulkUpdate,
+
+      // ai
+      aiRefresh,
+      aiScore,
+      aiArtifacts,
+
+      // utils
+      addNote,
+      checkMobile,
+    }),
+    [
+      listLeads,
+      listPipelines,
+      listHistory,
+      listNotes,
+      getLead,
+      createLead,
+      createLeadMultipart,
+      updateLead,
+      bulkUpdate,
+      aiRefresh,
+      aiScore,
+      aiArtifacts,
+      addNote,
+      checkMobile,
+    ]
+  );
 }

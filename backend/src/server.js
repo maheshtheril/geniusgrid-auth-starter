@@ -27,6 +27,17 @@ import leadsRoutes from "./routes/leads.routes.js";
 import leadsModule from "./routes/leadsModule.routes.js";
 import rateLimit from "express-rate-limit";
 import customFieldsRoutes from "./routes/customFields.routes.js";
+import aiLeadsRoutes from "./routes/aiLeads.routes.js";
+import leadsCheckMobile from "./routes/leads.checkMobile.js";
+import leadsImportRoutes from "./routes/leadsImport.routes.js";
+
+import leadsAiRoutes from "./routes/leads.ai.routes.js";
+import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
+import leadsAssignRoutes from "./routes/leads.assign.routes.js"
+import leadsMergeRoutes from "./routes/leads.merge.routes.js";
+import adminCronRoutes from "./routes/admin.cron.routes.js";
+import leadsImportRoutes from "./routes/leads.import.routes.js";
+import leadsAiRoutes from "./routes/leads.ai.routes.js";
 
 // --- Config ---
 const app = express();
@@ -75,7 +86,7 @@ app.use(compression());
 // Parsers
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
-
+app.use("/api", leadsCheckMobile);
 // ---------------- CORS (MUST be before any routes that need it) ----------------
 app.use(
   cors({
@@ -169,12 +180,21 @@ app.use("/api/auth", auth);
 app.use("/api/auth", authMe);                 // /api/auth/me (reads session if exists)
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 app.use("/api/crm", /* requireAuth, */ customFieldsRoutes); // CORS applies ✅
+app.use("/api", requireAuth, leadsAiRoutes);
 
 // ---------------- PROTECTED routes ----------------
 app.use("/api/admin", requireAuth, adminUsers);
 app.use("/api", requireAuth, dashboardRoutes);
 app.use("/api/leads", requireAuth, leadsRoutes);
+app.use("/api/leads", requireAuth, leadsAiRoutes);  
+app.use("/api/leads", requireAuth, leadsDupRoutes);
+app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api", requireAuth, leadsModule);
+app.use("/api", aiLeadsRoutes);
+app.use("/api/leads", requireAuth, leadsMergeRoutes);
+app.use("/api/admin/cron", adminCronRoutes);
+app.use("/api/leads", requireAuth, leadsImportRoutes);
+app.use("/api", requireAuth, leadsImportRoutes);
 
 // ---------------- 404 & Errors ----------------
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));

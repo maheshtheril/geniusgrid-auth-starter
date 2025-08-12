@@ -16,11 +16,21 @@ export default function LeadsTable({
   onPageSizeChange,
   onInlineUpdate,
   onOpenLead,
+
+  // NEW (optional): per-row AI refresh
+  onAiRefreshRow,           // (id) => Promise<void>
+  aiRefreshingIds,          // Set<string> | string[]
 }) {
   const visible = useMemo(() => columns.filter((c) => c.visible), [columns]);
   const totalPages = Math.max(1, Math.ceil((total || rows.length || 0) / pageSize));
 
-  if (loading) return <SkeletonTable columns={visible} />;
+  // normalize busy ids to a Set for O(1) lookup
+  const busySet = useMemo(() => {
+    if (!aiRefreshingIds) return new Set();
+    return aiRefreshingIds instanceof Set ? aiRefreshingIds : new Set(aiRefreshingIds);
+  }, [aiRefreshingIds]);
+
+  if (loading) return <SkeletonTable columns={visible} showActions={!!onAiRefreshRow} />;
 
   return (
     <div className="rounded-2xl gg-panel shadow-xl overflow-hidden">
@@ -36,7 +46,7 @@ export default function LeadsTable({
                   <th
                     key={col.key}
                     onClick={() => onSort?.(col.key)}
-                    title="Click to sort"
+                    title={onSort ? "Click to sort" : undefined}
                     className={`select-none px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide
                                 ${onSort ? "cursor-pointer hover:bg-[color:var(--border)]/20" : ""}`}
                   >
@@ -47,6 +57,11 @@ export default function LeadsTable({
                   </th>
                 );
               })}
+              {onAiRefreshRow && (
+                <th className="px-3 py-3 text-right text-xs font-semibold uppercase tracking-wide text-[color:var(--muted)]">
+                  AI
+                </th>
+              )}
             </tr>
           </thead>
 
@@ -62,13 +77,26 @@ export default function LeadsTable({
                     {renderCell(col.key, r, onInlineUpdate)}
                   </td>
                 ))}
+
+                {onAiRefreshRow && (
+                  <td className="px-3 py-3 text-right">
+                    <AiRefreshButton
+                      busy={busySet.has(r.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        onAiRefreshRow?.(r.id);
+                      }}
+                    />
+                  </td>
+                )}
               </tr>
             ))}
 
             {!rows.length && (
               <tr>
                 <td
-                  colSpan={visible.length}
+                  colSpan={visible.length + (onAiRefreshRow ? 1 : 0)}
                   className="px-4 py-10 text-center text-[color:var(--muted)]"
                 >
                   No leads found.
@@ -242,10 +270,44 @@ function ScoreBar({ value = 0 }) {
   );
 }
 
+function AiRefreshButton({ busy, onClick }) {
+  return (
+    <button
+      className={`gg-btn gg-btn-ghost text-xs px-2 py-1 ${busy ? "opacity-60 cursor-not-allowed" : ""}`}
+      disabled={busy}
+      onClick={onClick}
+      title="AI refresh this lead"
+      aria-busy={busy}
+    >
+      {busy ? (
+        <span className="inline-flex items-center gap-1">
+          <Spinner /> <span>AI…</span>
+        </span>
+      ) : (
+        <span className="inline-flex items-center gap-1">↻ AI</span>
+      )}
+    </button>
+  );
+}
+
+function Spinner() {
+  return (
+    <span
+      className="inline-block align-[-1px]"
+      style={{
+        width: 12, height: 12, borderRadius: "50%",
+        border: "2px solid var(--border)",
+        borderTopColor: "var(--text)",
+        animation: "gg-spin 0.6s linear infinite"
+      }}
+    />
+  );
+}
+
 /* ---------- Loading skeleton ---------- */
 
-function SkeletonTable({ columns }) {
-  const cols = columns?.length || 6;
+function SkeletonTable({ columns, showActions }) {
+  const cols = (columns?.length || 6) + (showActions ? 1 : 0);
   const rows = 6;
   return (
     <div className="rounded-2xl gg-panel shadow-xl overflow-hidden">
@@ -274,6 +336,9 @@ function SkeletonTable({ columns }) {
         </table>
       </div>
       <div className="border-t border-[color:var(--border)] bg-[color:var(--panel)]/70 px-4 py-3" />
+      <style>{`
+        @keyframes gg-spin { from { transform: rotate(0deg) } to { transform: rotate(360deg) } }
+      `}</style>
     </div>
   );
 }

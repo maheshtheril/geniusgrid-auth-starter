@@ -218,4 +218,101 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
+// GET /api/leads/check-mobile?phone=+91%209876543210
+router.get("/check-mobile", async (req, res, next) => {
+  try {
+    const { phone } = req.query;
+    if (!phone || String(phone).trim() === "") {
+      return res.json({ exists: false });
+    }
+
+    // Use DB function phone_to_norm() and tenant scope
+    const { rows } = await pool.query(
+      `
+      SELECT EXISTS (
+        SELECT 1
+        FROM public.leads
+        WHERE tenant_id = ensure_tenant_scope()
+          AND phone_norm = phone_to_norm($1)
+      ) AS exists
+      `,
+      [String(phone)]
+    );
+
+    res.json({ exists: rows?.[0]?.exists === true });
+  } catch (err) {
+    next(err);
+  }
+});
+// --- ADD THIS HANDLER (near other /leads routes) ---
+router.get("/check-mobile", async (req, res) => {
+  try {
+    const raw = String(req.query.phone || "").trim();
+    if (!raw) return res.json({ exists: false });
+
+    // normalize using DB function to match how leads are stored
+    const normRes = await pool.query(
+      "SELECT public.phone_to_norm($1) AS pn",
+      [raw]
+    );
+    const pn = normRes.rows?.[0]?.pn || null;
+    if (!pn) return res.json({ exists: false });
+
+    const q = `
+      SELECT id, name
+      FROM public.leads
+      WHERE tenant_id = ensure_tenant_scope()
+        AND phone_norm = $1
+      LIMIT 1
+    `;
+    const { rows } = await pool.query(q, [pn]);
+
+    return res.json({
+      exists: rows.length > 0,
+      lead: rows[0] || null,
+      phone_norm: pn, // handy for debugging
+    });
+  } catch (err) {
+    req.log?.error({ err }, "check-mobile failed");
+    return res.status(500).json({ exists: false, error: "server_error" });
+  }
+});
+
+// --- Check duplicate mobile (normalized & tenant-scoped) ---
+router.get("/check-mobile", async (req, res) => {
+  try {
+    const raw = String(req.query.phone ?? req.query.mobile ?? "").trim();
+    if (!raw) return res.json({ exists: false, reason: "empty" });
+
+    // Normalize like we store it
+    const { rows: nrows } = await pool.query(
+      "SELECT public.phone_to_norm($1) AS pn",
+      [raw]
+    );
+    const pn = nrows[0]?.pn || null;
+    if (!pn) return res.json({ exists: false, reason: "invalid" });
+    if (pn.length < 6) return res.json({ exists: false, reason: "too_short", phone_norm: pn });
+
+    // Look up within tenant
+    const { rows } = await pool.query(
+      `SELECT id, name
+         FROM public.leads
+        WHERE tenant_id = ensure_tenant_scope()
+          AND phone_norm = $1
+        LIMIT 1`,
+      [pn]
+    );
+
+    return res.json({
+      exists: rows.length > 0,
+      lead: rows[0] || null,
+      phone_norm: pn,
+    });
+  } catch (err) {
+    req.log?.error({ err }, "leads.check-mobile failed");
+    return res.status(500).json({ exists: false, error: "server_error" });
+  }
+});
+
+
 export default router;

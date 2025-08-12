@@ -23,10 +23,7 @@ const DEFAULT_COLUMNS = [
 
 export default function LeadsPage() {
   const api = useLeadsApi();
-  const {
-    leadCustomFields = [],
-    setLeadCustomFields,
-  } = useEnv();
+  const { leadCustomFields = [], setLeadCustomFields } = useEnv();
 
   // View, filters, pagination
   const [view, setView]         = useState("table");
@@ -58,6 +55,13 @@ export default function LeadsPage() {
   const [addKey, setAddKey]         = useState(0);
 
   const [loading, setLoading]       = useState(false);
+
+  // AI refresh state (page-scope)
+  const [aiRefreshing, setAiRefreshing] = useState(false);
+  const [aiProgress, setAiProgress] = useState({ done: 0, total: 0 });
+
+  // NEW: per-row busy ids for inline AI refresh button
+  const [aiBusyIds, setAiBusyIds] = useState(() => new Set());
 
   // Mounted guard
   const mountedRef = useRef(false);
@@ -232,6 +236,73 @@ export default function LeadsPage() {
     setPage(1);
   };
 
+  // ---- Per-row AI refresh (used by table's inline button) ----
+  const onAiRefreshRow = useCallback(async (id) => {
+    setAiBusyIds(prev => {
+      const s = new Set(prev);
+      s.add(id);
+      return s;
+    });
+    try {
+      await api.aiRefresh(id);
+      // fetch the freshly-updated lead so table shows newest ai_summary/ai_score/etc.
+      const full = await api.getLead(id).catch(() => null);
+      if (mountedRef.current && full) {
+        setRows(prev => prev.map(r => (r.id === id ? { ...r, ...full } : r)));
+      }
+    } finally {
+      if (mountedRef.current) {
+        setAiBusyIds(prev => {
+          const s = new Set(prev);
+          s.delete(id);
+          return s;
+        });
+      }
+    }
+  }, [api]);
+
+  // ---- AI Refresh (current page) ----
+  const refreshAIForVisible = useCallback(async () => {
+    const ids = (rows || []).map(r => r.id).filter(Boolean);
+    if (!ids.length) return;
+    setAiRefreshing(true);
+    setAiProgress({ done: 0, total: ids.length });
+    // mark all busy
+    setAiBusyIds(new Set(ids));
+
+    const concurrency = 3;
+    const queue = [...ids];
+    let done = 0;
+
+    const worker = async () => {
+      while (queue.length) {
+        const id = queue.shift();
+        try {
+          await api.aiRefresh(id);
+          const full = await api.getLead(id).catch(() => null);
+          if (mountedRef.current && full) {
+            setRows(prev => prev.map(r => (r.id === id ? { ...r, ...full } : r)));
+          }
+        } catch {
+          // ignore individual errors
+        } finally {
+          done += 1;
+          if (mountedRef.current) {
+            setAiProgress({ done, total: ids.length });
+            setAiBusyIds(prev => {
+              const s = new Set(prev);
+              s.delete(id);
+              return s;
+            });
+          }
+        }
+      }
+    };
+
+    await Promise.all(new Array(concurrency).fill(0).map(worker));
+    if (mountedRef.current) setAiRefreshing(false);
+  }, [api, rows]);
+
   // Compact view selector for small screens
   const viewSelect = (
     <select
@@ -266,6 +337,17 @@ export default function LeadsPage() {
                 <button className={`gg-btn ${view==='kanban' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('kanban')} aria-pressed={view==='kanban'}>Kanban</button>
                 <button className={`gg-btn ${view==='cards' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('cards')} aria-pressed={view==='cards'}>Cards</button>
               </div>
+
+              <button
+                className="gg-btn"
+                disabled={aiRefreshing || rows.length === 0}
+                onClick={refreshAIForVisible}
+                title="Run AI summary/next actions for all leads on this page"
+              >
+                {aiRefreshing
+                  ? `AI Refresh… (${aiProgress.done}/${aiProgress.total})`
+                  : "AI Refresh (Page)"}
+              </button>
 
               <button className="gg-btn gg-btn-primary" onClick={openAddDrawer}>
                 + Add Lead
@@ -357,6 +439,10 @@ export default function LeadsPage() {
               onPageSizeChange={setPageSize}
               onInlineUpdate={onInlineUpdate}
               onOpenLead={onOpenLead}
+
+              // NEW: wire per-row AI refresh controls
+              onAiRefreshRow={onAiRefreshRow}
+              aiRefreshingIds={aiBusyIds}
             />
           )}
 

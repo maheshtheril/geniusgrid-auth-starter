@@ -11,6 +11,7 @@
     "seed\\:countries": "node scripts/seed-countries.cjs"
   },
   "dependencies": {
+    "@fast-csv/parse": "^5.0.5",
     "argon2": "^0.41.1",
     "bcryptjs": "^3.0.2",
     "compression": "^1.8.1",
@@ -24,7 +25,9 @@
     "express-session": "^1.18.2",
     "helmet": "^7.2.0",
     "morgan": "^1.10.0",
+    "multer": "^2.0.2",
     "nodemailer": "^6.9.12",
+    "openai": "^5.12.2",
     "pg": "^8.16.3",
     "pino": "^9.8.0",
     "pino-http": "^10.5.0"
