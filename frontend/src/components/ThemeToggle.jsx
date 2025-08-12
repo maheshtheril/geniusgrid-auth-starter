@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { applyTheme, nextMode as libNextMode } from "@/theme/applyTheme";
 import { uiApi } from "@/api/ui";
 
-// Fallback tokens if server theme not reachable
 const FALLBACK_THEME = {
   modes: {
     light: {
@@ -26,15 +25,12 @@ const FALLBACK_THEME = {
 
 function safeNextMode(theme, current) {
   if (typeof libNextMode === "function") return libNextMode(theme, current);
-  const order = Object.keys(theme?.modes || {}).length
-    ? Object.keys(theme.modes)
-    : ["light","dark","night"];
+  const order = Object.keys(theme?.modes || {}).length ? Object.keys(theme.modes) : ["light","dark","night"];
   const idx = Math.max(0, order.indexOf(current));
   return order[(idx + 1) % order.length];
 }
 
 export default function ThemeToggle() {
-  // initial mode from LS → DOM → default
   const initial =
     localStorage.getItem("theme") ||
     document.documentElement.getAttribute("data-theme") ||
@@ -56,8 +52,6 @@ export default function ThemeToggle() {
         setTheme(FALLBACK_THEME);
         applyTheme(FALLBACK_THEME, mode);
       }
-      document.documentElement.setAttribute("data-theme", mode);
-      document.body.setAttribute("data-theme", mode);
       localStorage.setItem("theme", mode);
     })();
     return () => { alive = false; };
@@ -69,12 +63,8 @@ export default function ThemeToggle() {
     const next = safeNextMode(cfg, mode);
     setMode(next);
     applyTheme(cfg, next);
-    document.documentElement.setAttribute("data-theme", next);
-    document.body.setAttribute("data-theme", next);
     localStorage.setItem("theme", next);
-
-    // best-effort server persist (non-blocking)
-    uiApi?.setTheme?.({ theme: next });
+    uiApi?.setTheme?.({ theme: next }); // fire-and-forget
   };
 
   const label = mode === "light" ? "☀️ Light" : mode === "dark" ? "🌙 Dark" : "🌌 Night";
