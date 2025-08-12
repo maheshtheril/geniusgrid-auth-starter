@@ -36,7 +36,7 @@ import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js"
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 import adminCronRoutes from "./routes/admin.cron.routes.js";
-import leadsImportRoutes from "./routes/leads.import.routes.js";
+
 import leadsAiRoutes from "./routes/leads.ai.routes.js";
 
 // --- Config ---
