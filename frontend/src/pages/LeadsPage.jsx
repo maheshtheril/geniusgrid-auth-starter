@@ -77,7 +77,7 @@ export default function LeadsPage() {
     [columns]
   );
 
-  // World-class params object
+  // Params (legacy + premium)
   const params = useMemo(() => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -212,34 +212,52 @@ export default function LeadsPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[#0B0D10] text-gray-200">
+    <div className="min-h-[100dvh] bg-[var(--bg)] text-[color:var(--text)]">
       <div className="p-4 flex flex-col gap-4">
 
-        {/* Header — Tailwind only, no plugins */}
-        <div className="flex items-center justify-between p-4 rounded-2xl bg-neutral-900/80 border border-white/10 shadow-xl">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 rounded-2xl gg-panel shadow-xl">
           <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-white">Leads</h1>
-            <span className="text-sm text-gray-400">({count})</span>
+            <h1 className="text-xl font-semibold text-[color:var(--text)]">Leads</h1>
+            <span className="text-sm text-[color:var(--muted)]">({count})</span>
           </div>
 
           <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-lg overflow-hidden border border-white/10">
+            <div className="inline-flex rounded-lg overflow-hidden border border-[color:var(--border)]">
               <button
-                className={`px-3 py-1.5 text-sm ${view==='table' ? 'bg-indigo-600 text-white' : 'bg-transparent text-gray-300 hover:bg-white/10'}`}
-                onClick={() => setView('table')}
-              >Table</button>
+                className={`px-3 py-1.5 text-sm ${
+                  view === "table"
+                    ? "bg-[color:var(--primary)] text-white"
+                    : "bg-transparent text-[color:var(--text)] hover:bg-white/10"
+                }`}
+                onClick={() => setView("table")}
+              >
+                Table
+              </button>
               <button
-                className={`px-3 py-1.5 text-sm ${view==='kanban' ? 'bg-indigo-600 text-white' : 'bg-transparent text-gray-300 hover:bg-white/10'}`}
-                onClick={() => setView('kanban')}
-              >Kanban</button>
+                className={`px-3 py-1.5 text-sm ${
+                  view === "kanban"
+                    ? "bg-[color:var(--primary)] text-white"
+                    : "bg-transparent text-[color:var(--text)] hover:bg-white/10"
+                }`}
+                onClick={() => setView("kanban")}
+              >
+                Kanban
+              </button>
               <button
-                className={`px-3 py-1.5 text-sm ${view==='cards' ? 'bg-indigo-600 text-white' : 'bg-transparent text-gray-300 hover:bg-white/10'}`}
-                onClick={() => setView('cards')}
-              >Cards</button>
+                className={`px-3 py-1.5 text-sm ${
+                  view === "cards"
+                    ? "bg-[color:var(--primary)] text-white"
+                    : "bg-transparent text-[color:var(--text)] hover:bg-white/10"
+                }`}
+                onClick={() => setView("cards")}
+              >
+                Cards
+              </button>
             </div>
 
             <button
-              className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm"
+              className="px-3 py-1.5 rounded-lg bg-[color:var(--primary)] hover:opacity-90 text-white text-sm"
               onClick={() => setOpenAdd(true)}
             >
               + Add Lead
@@ -247,19 +265,20 @@ export default function LeadsPage() {
           </div>
         </div>
 
-        {/* Filters — Tailwind only */}
-        <div className="flex items-center gap-3 p-3 rounded-2xl bg-neutral-900/70 border border-white/10">
+        {/* Filters */}
+        <div className="flex items-center gap-3 p-3 rounded-2xl gg-surface">
           <input
             value={query}
             onChange={(e) => { setQuery(e.target.value); setPage(1); }}
             placeholder="Search name, email, phone, company…"
-            className="px-3 py-2 rounded-md bg-neutral-800 text-gray-200 placeholder-gray-500 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/40 w-64"
+            className="gg-input px-3 py-2 rounded-md w-64 placeholder-[color:var(--muted)]"
           />
 
           <select
-            className="px-3 py-2 rounded-md bg-neutral-800 text-gray-200 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            className="gg-input px-3 py-2 rounded-md"
             value={filters.stage}
             onChange={(e) => { setFilters(f => ({ ...f, stage: e.target.value || "" })); setPage(1); }}
+            aria-label="Stage"
           >
             <option value="">All Stages</option>
             {stages?.map((s) => (
@@ -268,9 +287,10 @@ export default function LeadsPage() {
           </select>
 
           <select
-            className="px-3 py-2 rounded-md bg-neutral-800 text-gray-200 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+            className="gg-input px-3 py-2 rounded-md"
             value={filters.status}
             onChange={(e) => { setFilters(f => ({ ...f, status: e.target.value || "" })); setPage(1); }}
+            aria-label="Status"
           >
             <option value="">All Status</option>
             <option value="new">New</option>
@@ -280,7 +300,7 @@ export default function LeadsPage() {
           </select>
 
           <button
-            className="ml-auto px-3 py-2 rounded-md bg-transparent text-gray-300 hover:bg-white/10 border border-white/10"
+            className="ml-auto gg-btn gg-btn-ghost border border-[color:var(--border)]"
             onClick={() => { setFilters({ owner_id: "", stage: "", status: "" }); setQuery(""); setPage(1); }}
           >
             Reset
@@ -288,10 +308,10 @@ export default function LeadsPage() {
 
           <div className="relative">
             <details className="group">
-              <summary className="px-3 py-2 rounded-md bg-transparent text-gray-300 hover:bg-white/10 border border-white/10 cursor-pointer select-none">
+              <summary className="gg-btn gg-btn-ghost border border-[color:var(--border)] cursor-pointer select-none">
                 Columns
               </summary>
-              <ul className="absolute right-0 mt-2 w-56 rounded-2xl bg-neutral-900/95 border border-white/10 p-2 shadow-xl z-20">
+              <ul className="absolute right-0 mt-2 w-56 rounded-2xl gg-panel p-2 shadow-xl z-20">
                 {columns.map((c) => (
                   <li key={c.key} className="px-2 py-1.5">
                     <label className="flex items-center gap-2">
@@ -299,9 +319,9 @@ export default function LeadsPage() {
                         type="checkbox"
                         checked={c.visible}
                         onChange={() => toggleColumn(c.key)}
-                        className="accent-indigo-500"
+                        className="accent-[var(--primary)]"
                       />
-                      <span className="text-sm text-gray-200">{c.label}</span>
+                      <span className="text-sm text-[color:var(--text)]">{c.label}</span>
                     </label>
                   </li>
                 ))}

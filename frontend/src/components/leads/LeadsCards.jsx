@@ -10,21 +10,20 @@ export default function LeadsCards({ rows, leads, loading = false, onOpenLead })
 
   if (!items.length) {
     return (
-      <div className="p-6 text-center text-gray-400">
+      <div className="p-6 text-center text-[color:var(--muted)]">
         No leads available. Try adding a new lead.
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-4">
+    <div className="grid grid-cols-1 gap-6 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {items.map((r, i) => {
-        // Normalize your current API shape
         const id = r.id ?? r.lead_id ?? `tmp-${i}`;
         const name = r.name ?? r.title ?? "Unnamed Lead";
         const company = r.company_name ?? r.company?.name ?? r.company ?? null;
         const owner = r.owner_name ?? r.owner?.name ?? r.assigned_user_name ?? null;
-        const stage = (r.stage ?? "New") + "";
+        const stage = String(r.stage ?? "New");
         const status = r.status ?? null;
         const aiScore = r.score ?? r.ai_score ?? null;
         const created = r.created_at ?? r.createdAt ?? null;
@@ -32,63 +31,72 @@ export default function LeadsCards({ rows, leads, loading = false, onOpenLead })
         return (
           <div
             key={id}
-            onClick={() => onOpenLead && onOpenLead(r.id ?? r.lead_id ?? null)}
-            className="group cursor-pointer bg-gradient-to-br from-gray-900/80 to-gray-800/80 
-                       backdrop-blur-md border border-white/10 rounded-2xl shadow-lg 
-                       p-5 transition-all hover:scale-[1.02] hover:shadow-2xl"
+            onClick={() => onOpenLead && onOpenLead(id)}
+            className="group cursor-pointer rounded-2xl gg-panel p-5 shadow-lg transition-transform duration-150 hover:scale-[1.02] hover:shadow-2xl"
           >
             {/* Top: Name + Stage */}
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-lg font-bold text-white truncate">{name}</h2>
-              <span className={`px-3 py-1 text-xs font-semibold rounded-full ${getStageColor(stage)}`}>
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="truncate text-lg font-bold text-[color:var(--text)]">{name}</h2>
+              <span className={`rounded-full px-3 py-1 text-xs font-semibold ${getStageColor(stage)}`}>
                 {stage}
               </span>
             </div>
 
             {/* Company */}
-            <div className="flex items-center gap-2 text-sm text-gray-300 mb-1">
-              <Building2 size={16} className="text-gray-400" />
+            <div className="mb-1 flex items-center gap-2 text-sm text-[color:var(--muted)]">
+              <Building2 size={16} className="text-[color:var(--muted)]" />
               <span className="truncate">{company || "No company"}</span>
             </div>
 
             {/* Owner */}
-            <div className="flex items-center gap-2 text-sm text-gray-300 mb-3">
-              <User size={16} className="text-gray-400" />
+            <div className="mb-3 flex items-center gap-2 text-sm text-[color:var(--muted)]">
+              <User size={16} className="text-[color:var(--muted)]" />
               <span>{owner || "Unassigned"}</span>
             </div>
 
             {/* Status (optional) */}
             {status && (
               <div className="mb-3">
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400">
+                <span className="rounded-full bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-400">
                   {status}
                 </span>
               </div>
             )}
 
             {/* AI Score */}
-            <div className="flex items-center gap-2 mb-4">
-              <Brain size={16} className="text-green-400" />
-              <span className="text-sm text-gray-200">AI Score: {aiScore ?? "-"}</span>
+            <div className="mb-4 flex items-center gap-2">
+              <Brain size={16} className="text-emerald-400" />
+              <span className="text-sm text-[color:var(--text)]">AI Score: {aiScore ?? "-"}</span>
             </div>
 
             {/* Bottom: Date + Actions */}
-            <div className="flex justify-between items-center text-xs text-gray-400">
+            <div className="flex items-center justify-between text-xs text-[color:var(--muted)]">
               <div className="flex items-center gap-1">
                 <Calendar size={14} />
                 {created ? new Date(created).toLocaleDateString() : "-"}
               </div>
+
               <div
-                className="opacity-0 group-hover:opacity-100 flex gap-2 transition-all"
+                className="flex gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100"
                 onClick={(e) => e.stopPropagation()}
               >
-                <button className="p-1 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white">
+                <button
+                  className="rounded-full p-1.5 text-white"
+                  style={{ background: "color-mix(in oklab, var(--primary) 92%, black 8%)" }}
+                  title="Edit"
+                >
                   <Edit3 size={14} />
                 </button>
-                <button className="p-1 rounded-full bg-green-600 hover:bg-green-700 text-white">
+                <button
+                  className="rounded-full border border-[color:var(--border)] bg-transparent p-1.5 text-[color:var(--text)] hover:bg-white/10"
+                  title="Call"
+                >
                   <Phone size={14} />
                 </button>
-                <button className="p-1 rounded-full bg-yellow-500 hover:bg-yellow-600 text-white">
+                <button
+                  className="rounded-full border border-[color:var(--border)] bg-transparent p-1.5 text-[color:var(--text)] hover:bg-white/10"
+                  title="Email"
+                >
                   <Mail size={14} />
                 </button>
               </div>
@@ -115,28 +123,24 @@ function getStageColor(stage) {
   return map[s] || "bg-gray-500/20 text-gray-400";
 }
 
-// Simple loading skeleton (premium look, dark theme)
+// Loading skeleton (uses theme tokens)
 function SkeletonGrid() {
   const cells = Array.from({ length: 8 });
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 p-4">
+    <div className="grid grid-cols-1 gap-6 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {cells.map((_, i) => (
-        <div
-          key={i}
-          className="animate-pulse bg-gradient-to-br from-gray-900/60 to-gray-800/60 
-                     border border-white/10 rounded-2xl shadow-lg p-5 space-y-3"
-        >
-          <div className="flex justify-between items-center">
-            <div className="h-4 w-40 bg-white/10 rounded" />
-            <div className="h-5 w-16 bg-white/10 rounded-full" />
+        <div key={i} className="gg-panel animate-pulse rounded-2xl p-5 shadow-lg space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="h-4 w-40 rounded bg-[color:var(--border)]/25" />
+            <div className="h-5 w-16 rounded-full bg-[color:var(--border)]/25" />
           </div>
-          <div className="h-3 w-32 bg-white/10 rounded" />
-          <div className="h-3 w-24 bg-white/10 rounded" />
-          <div className="h-3 w-20 bg-white/10 rounded" />
-          <div className="h-3 w-28 bg-white/10 rounded" />
+          <div className="h-3 w-32 rounded bg-[color:var(--border)]/25" />
+          <div className="h-3 w-24 rounded bg-[color:var(--border)]/25" />
+          <div className="h-3 w-20 rounded bg-[color:var(--border)]/25" />
+          <div className="h-3 w-28 rounded bg-[color:var(--border)]/25" />
           <div className="flex justify-between">
-            <div className="h-3 w-24 bg-white/10 rounded" />
-            <div className="h-6 w-20 bg-white/10 rounded-full" />
+            <div className="h-3 w-24 rounded bg-[color:var(--border)]/25" />
+            <div className="h-6 w-20 rounded-full bg-[color:var(--border)]/25" />
           </div>
         </div>
       ))}
