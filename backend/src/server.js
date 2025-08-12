@@ -27,7 +27,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import leadsRoutes from "./routes/leads.routes.js";
 import leadsModule from "./routes/leadsModule.routes.js";
 import rateLimit from "express-rate-limit";
-import crmCustomFieldsRoutes from "./routes/customFields.routes.js";
+import customFieldsRoutes from "./routes/customFields.routes.js";
 
 // --- Config ---
 const app = express();
