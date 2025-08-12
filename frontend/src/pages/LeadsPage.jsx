@@ -1,4 +1,6 @@
+// src/pages/leads/LeadsPage.jsx
 import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import axios from "axios";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import { useRealtime } from "@/hooks/useRealtime";
 import LeadsTable from "@/components/leads/LeadsTable";
@@ -6,37 +8,42 @@ import LeadsKanban from "@/components/leads/LeadsKanban";
 import LeadsCards from "@/components/leads/LeadsCards";
 import LeadDrawer from "@/components/leads/LeadDrawer";
 import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
+import { useEnv } from "@/store/useEnv";
 
 const DEFAULT_COLUMNS = [
-  { key: "name",        label: "Lead",     visible: true  },
-  { key: "company_name",label: "Company",  visible: true  },
-  { key: "status",      label: "Status",   visible: true  },
-  { key: "stage",       label: "Stage",    visible: true  },
-  { key: "owner_name",  label: "Owner",    visible: true  },
-  { key: "score",       label: "AI Score", visible: true  },
-  { key: "priority",    label: "Priority", visible: false },
-  { key: "created_at",  label: "Created",  visible: true  },
+  { key: "name",         label: "Lead",     visible: true  },
+  { key: "company_name", label: "Company",  visible: true  },
+  { key: "status",       label: "Status",   visible: true  },
+  { key: "stage",        label: "Stage",    visible: true  },
+  { key: "owner_name",   label: "Owner",    visible: true  },
+  { key: "score",        label: "AI Score", visible: true  },
+  { key: "priority",     label: "Priority", visible: false },
+  { key: "created_at",   label: "Created",  visible: true  },
 ];
 
 export default function LeadsPage() {
   const api = useLeadsApi();
+  const {
+    leadCustomFields = [],            // ✅ safe default so UI never crashes
+    setLeadCustomFields,              // ensure this exists in your store
+  } = useEnv();
 
   // View, filters, pagination
-  const [view, setView]             = useState("table");
-  const [query, setQuery]           = useState("");
-  const [filters, setFilters]       = useState({ owner_id: "", stage: "", status: "" });
-  const [page, setPage]             = useState(1);
-  const [pageSize, setPageSize]     = useState(25);
-  const [count, setCount]           = useState(0);
+  const [view, setView]         = useState("table");
+  const [query, setQuery]       = useState("");
+  const [filters, setFilters]   = useState({ owner_id: "", stage: "", status: "" });
+  const [page, setPage]         = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+  const [count, setCount]       = useState(0);
 
   // Sorting
-  const [sortKey, setSortKey]       = useState(null);
-  const [sortDir, setSortDir]       = useState("asc");
+  const [sortKey, setSortKey]   = useState(null);
+  const [sortDir, setSortDir]   = useState("asc");
 
   // Data + UI state
-  const [rows, setRows]             = useState([]);
-  const [stages, setStages]         = useState([]);
-  const [columns, setColumns]       = useState(() => {
+  const [rows, setRows]         = useState([]);
+  const [stages, setStages]     = useState([]);
+  const [columns, setColumns]   = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("leads.columns"));
       return saved?.length ? saved : DEFAULT_COLUMNS;
@@ -110,6 +117,7 @@ export default function LeadsPage() {
     return Object.fromEntries(Object.entries(merged).filter(([,v]) => v !== undefined));
   }, [query, filters, page, pageSize, sortKey, sortDir, view, visibleColumns]);
 
+  // Fetchers
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
@@ -117,7 +125,7 @@ export default function LeadsPage() {
       if (!mountedRef.current) return;
       const items = data.items || data.rows || [];
       setRows(items);
-      setCount(Number(data.total ?? items.length ?? 0));
+      setCount(Number(data.total ?? data.totalCount ?? items.length ?? 0));
     } finally {
       mountedRef.current && setLoading(false);
     }
@@ -131,8 +139,23 @@ export default function LeadsPage() {
     } catch {/* swallow */}
   }, [api]);
 
+  // ✅ Fetch lead custom fields once (prevents undefined reference)
+  const fetchLeadCustomFields = useCallback(async () => {
+    try {
+      const res = await axios.get("/api/crm/custom-fields", {
+        params: { entity: "lead" },
+        withCredentials: true,
+      });
+      const items = Array.isArray(res?.data?.items) ? res.data.items : (Array.isArray(res?.data) ? res.data : []);
+      setLeadCustomFields?.(items);
+    } catch {
+      setLeadCustomFields?.([]);
+    }
+  }, [setLeadCustomFields]);
+
   useEffect(() => { fetchPipelines(); }, [fetchPipelines]);
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
+  useEffect(() => { fetchLeadCustomFields(); }, [fetchLeadCustomFields]);
 
   // Client-side sorting (stable)
   const sortedRows = useMemo(() => {
@@ -173,15 +196,12 @@ export default function LeadsPage() {
     if (newLead?.id) {
       setRows(prev => [newLead, ...prev]);
       setCount(c => c + 1);
-      // Snap to Table view to make the new row obvious (optional)
       setView("table");
-      // Scroll to top to show the new item
       try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {}
     }
   };
 
   const openAddDrawer = () => {
-    // Increase key so the drawer remounts clean each time (prevents stale state)
     setAddKey(k => k + 1);
     setOpenAdd(true);
   };
@@ -360,16 +380,16 @@ export default function LeadsPage() {
           />
         )}
 
-       {openAdd && (
-  <AddLeadDrawer
-    key={addKey}
-    stages={stages}                    // already fetched from API
-    sources={["Website","Referral","Ads","Outbound","Event"]} // or from API
-    customFields={myCustomFields}      // ← array from your settings API
-    onClose={() => setOpenAdd(false)}
-    onSuccess={onAddSuccess}
-  />
-)}
+        {openAdd && (
+          <AddLeadDrawer
+            key={addKey}
+            stages={stages} // already fetched from API
+            sources={["Website","Referral","Ads","Outbound","Event"]}
+            customFields={leadCustomFields}  {/* ✅ fixed: was myCustomFields */}
+            onClose={() => setOpenAdd(false)}
+            onSuccess={onAddSuccess}
+          />
+        )}
       </div>
     </div>
   );
