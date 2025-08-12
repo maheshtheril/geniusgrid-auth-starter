@@ -1,21 +1,44 @@
 import { useEffect, useState } from "react";
 
-const THEMES = ["dark","night"];
+const THEMES = ["light", "dark", "night"];
 
-export default function ThemeToggle() {
-  const [theme, setTheme] = useState(() => localStorage.getItem("theme") || "dark");
+function systemPrefersDark() {
+  return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+}
 
-  useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem("theme", theme);
-  }, [theme]);
+function applyTheme(t) {
+  const html = document.documentElement;
+  html.setAttribute("data-theme", t);       // DaisyUI + your CSS vars
+  document.body.setAttribute("data-theme", t); // if some parts read from body
+  html.classList.toggle("dark", t !== "light"); // Tailwind dark: variants
+  localStorage.setItem("theme", t);
+}
 
-  const next = () => setTheme(t => (t === "dark" ? "night" : "dark"));
+export default function ThemeToggle({ compact=false }) {
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem("theme");
+    return saved || (systemPrefersDark() ? "dark" : "light");
+  });
+
+  useEffect(() => { applyTheme(theme); }, [theme]);
+
+  const cycle = () => {
+    const i = THEMES.indexOf(theme);
+    setTheme(THEMES[(i + 1) % THEMES.length]);
+  };
+
+  const label =
+    theme === "light" ? "🌞 Light" :
+    theme === "dark"  ? "🌓 Dark"  :
+                        "🌙 Night";
 
   return (
-    <button onClick={next} title={`Switch to ${theme==='dark'?'night':'dark'} theme`}
-      className="gg-btn gg-btn-ghost border border-[color:var(--border)]">
-      {theme === "dark" ? "🌙 Night" : "🌓 Dark"}
+    <button
+      onClick={cycle}
+      className="gg-btn gg-btn-ghost border border-[color:var(--border)]"
+      title={`Theme: ${theme}`}
+    >
+      {compact ? label.split(" ")[0] : label}
     </button>
   );
 }
