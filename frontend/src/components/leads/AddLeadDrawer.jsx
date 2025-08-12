@@ -832,7 +832,7 @@ function CFModal({ onClose, onSave }) {
               </label>
             </div>
           </div>
-
+    
           {f.type === "select" && (
             <div>
               <label className="gg-label">Options (comma separated)</label>
