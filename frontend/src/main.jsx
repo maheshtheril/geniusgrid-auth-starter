@@ -9,6 +9,8 @@ import App from "./App.jsx";
 
 import { uiApi } from "@/api/ui";
 import { applyTheme } from "@/theme/applyTheme";
+import "flag-icons/css/flag-icons.min.css";
+
 
 const root = document.getElementById("root");
 

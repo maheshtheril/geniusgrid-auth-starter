@@ -3,8 +3,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
+import "flag-icons/css/flag-icons.min.css"; // SVG flags
 
-/** Turn "IN" -> 🇮🇳 (emoji flag fallback if DB doesn’t provide one) */
+/** Turn "IN" -> 🇮🇳 (emoji fallback if DB doesn’t provide one) */
 const flagFromIso2 = (iso2 = "") =>
   iso2.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
 
@@ -37,6 +38,141 @@ const INIT = {
   details: "",
 };
 
+/* ------------ CountrySelect (custom, with SVG flags) ------------ */
+function CountrySelect({ options, value, onChange, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [hi, setHi] = useState(0);
+  const boxRef = useRef(null);
+  const btnRef = useRef(null);
+
+  const lower = (s) => String(s || "").toLowerCase();
+
+  const selected = useMemo(
+    () => options.find(o => lower(o.cc) === lower(value)) || null,
+    [options, value]
+  );
+
+  const filtered = useMemo(() => {
+    const q = lower(query).trim();
+    if (!q) return options;
+    return options.filter(o =>
+      lower(o.name).includes(q) ||
+      lower(o.cc).includes(q) ||
+      String(o.code).replace("+","").includes(q.replace("+",""))
+    );
+  }, [options, query]);
+
+  // close on outside click
+  useEffect(() => {
+    function onDoc(e) {
+      if (!open) return;
+      if (!boxRef.current) return;
+      if (!boxRef.current.contains(e.target)) setOpen(false);
+    }
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  useEffect(() => { setHi(0); }, [query, open]);
+
+  const choose = (cc) => {
+    onChange?.(cc);
+    setOpen(false);
+    setQuery("");
+    btnRef.current?.focus();
+  };
+
+  const onKeyDown = (e) => {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        setOpen(true);
+        setTimeout(() => {
+          const input = boxRef.current?.querySelector("input[type='text']");
+          input?.focus();
+        }, 0);
+      }
+      return;
+    }
+    if (e.key === "Escape") { setOpen(false); btnRef.current?.focus(); }
+  };
+
+  const onListKey = (e) => {
+    if (!open) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); const o = filtered[hi]; if (o) choose(o.cc); }
+  };
+
+  return (
+    <div className="relative" ref={boxRef} onKeyDown={onKeyDown}>
+      <button
+        type="button"
+        ref={btnRef}
+        disabled={disabled}
+        className={`gg-input w-44 flex items-center gap-2 justify-between ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => !disabled && setOpen(o => !o)}
+      >
+        <span className="flex items-center gap-2 overflow-hidden">
+          {selected ? (
+            <>
+              <span className={`fi fi-${selected.cc.toLowerCase()}`} aria-hidden />
+              <span className="truncate">{selected.cc}</span>
+            </>
+          ) : (
+            <span className="opacity-60">Country</span>
+          )}
+        </span>
+        <span className="opacity-60">▾</span>
+      </button>
+
+      {open && (
+        <div
+          className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)]
+                     bg-[var(--surface)] border border-[color:var(--border)]
+                     rounded-xl shadow-xl p-2"
+          role="dialog"
+        >
+          <input
+            type="text"
+            className="gg-input w-full mb-2"
+            placeholder="Search country or code"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={onListKey}
+          />
+          <ul role="listbox" className="max-h-64 overflow-auto" tabIndex={-1} onKeyDown={onListKey}>
+            {filtered.map((o, idx) => (
+              <li
+                key={o.cc}
+                role="option"
+                aria-selected={o.cc === value}
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer
+                           ${idx === hi ? "bg-[color:var(--hover)]" : ""}`}
+                onMouseEnter={() => setHi(idx)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => choose(o.cc)}
+              >
+                <span className={`fi fi-${o.cc.toLowerCase()}`} aria-hidden />
+                <span className="truncate">{o.name}</span>
+                <span className="ml-2 text-xs opacity-70">{o.cc}</span>
+                <span className="ml-auto text-sm font-medium">{o.code}</span>
+              </li>
+            ))}
+            {filtered.length === 0 && (
+              <li className="px-2 py-2 text-sm opacity-70">No matches</li>
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+/* ------------------------------- end CountrySelect ------------------------------- */
+
 export default function AddLeadDrawer({
   onClose,
   onSuccess,
@@ -52,18 +188,22 @@ export default function AddLeadDrawer({
 
   // countries from DB (normalize to array)
   const _c = useCountriesApi("en");
-const countriesLoading = _c?.loading ?? false;
-const countriesRaw = _c?.countries ?? _c ?? [];
+  const countriesLoading = _c?.loading ?? false;
+  const countriesRaw = _c?.countries ?? _c ?? [];
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
-  const countryOpts = useMemo(() => {
-  if (!countries.length) return [];
-  return countries.map((c) => ({
-    cc: c.iso2,
-    code: c.default_dial,
-    label: `${c.emoji_flag || flagFromIso2(c.iso2)} ${c.name}`, // show proper name
-  }));
-}, [countries]);
 
+  const countryOpts = useMemo(() => {
+    if (!countries.length) return [];
+    return countries
+      .map((c) => {
+        const cc = String(c.iso2 || c.cc || c.code || "").toUpperCase();
+        const code = c.default_dial || c.dial || c.phone_code || "";
+        const name =
+          c.name_en || c.name || c.translation || cc;
+        return { cc, code, name, emoji: c.emoji_flag || c.flag || flagFromIso2(cc) };
+      })
+      .filter(o => o.cc && o.code);
+  }, [countries]);
 
   // form state
   const [form, setForm] = useState(INIT);
@@ -132,12 +272,12 @@ const countriesRaw = _c?.countries ?? _c ?? [];
   const updateFileCF = (key) => (e) =>
     setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
 
-  const onCountryChange = (e) => {
-    const cc = (e.target.value || "").toUpperCase();
+  const onCountryPicked = (cc) => {
+    const CC = String(cc || "").toUpperCase();
     setForm((f) => ({
       ...f,
-      mobile_country: cc,
-      mobile_code: codeByCc[cc] || "",
+      mobile_country: CC,
+      mobile_code: codeByCc[CC] || "",
     }));
   };
 
@@ -369,18 +509,18 @@ const countriesRaw = _c?.countries ?? _c ?? [];
           Mobile <span className="text-rose-400">*</span>
         </label>
         <div className="flex gap-2">
-          <select
-            className="gg-input w-28"
+          <CountrySelect
+            options={countryOpts}
             value={form.mobile_country}
-            onChange={onCountryChange}
-            aria-label="Country"
+            onChange={onCountryPicked}
             disabled={countriesLoading || !countryOpts.length}
-          >
-            {countryOpts.map((c) => (
-              <option key={c.cc} value={c.cc}>{c.label} {c.code}</option>
-            ))}
-          </select>
-          <input readOnly className="gg-input w-20 text-center" value={form.mobile_code} aria-label="Dial code" />
+          />
+          <input
+            readOnly
+            className="gg-input w-20 text-center"
+            value={form.mobile_code}
+            aria-label="Dial code"
+          />
           <input
             className="gg-input flex-1"
             value={form.mobile}
