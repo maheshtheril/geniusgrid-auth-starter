@@ -37,7 +37,7 @@ import leadsAssignRoutes from "./routes/leads.assign.routes.js"
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 import adminCronRoutes from "./routes/admin.cron.routes.js";
 
-import leadsAiRoutes from "./routes/leads.ai.routes.js";
+
 
 // --- Config ---
 const app = express();
