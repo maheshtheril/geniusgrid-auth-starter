@@ -360,13 +360,16 @@ export default function LeadsPage() {
           />
         )}
 
-        {openAdd && (
-          <AddLeadDrawer
-            key={addKey}                // remount to reset internal state each open
-            onClose={() => setOpenAdd(false)}
-            onSuccess={onAddSuccess}
-          />
-        )}
+       {openAdd && (
+  <AddLeadDrawer
+    key={addKey}
+    stages={stages}                    // already fetched from API
+    sources={["Website","Referral","Ads","Outbound","Event"]} // or from API
+    customFields={myCustomFields}      // ← array from your settings API
+    onClose={() => setOpenAdd(false)}
+    onSuccess={onAddSuccess}
+  />
+)}
       </div>
     </div>
   );
