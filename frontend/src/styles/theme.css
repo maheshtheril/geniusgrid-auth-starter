@@ -1,3 +1,8 @@
+/* =========================================================
+   GeniusGrid Theme System (data-theme: light | dark | night)
+   Production-ready tokens + primitives + components
+   ========================================================= */
+
 /* ===================== THEME TOKENS ===================== */
 /* Global defaults (overridden per theme) */
 :root{
@@ -5,6 +10,19 @@
   --elev-1: 0 6px 16px -6px rgba(0,0,0,.12);
   --elev-2: 0 12px 32px -12px rgba(0,0,0,.16);
   --ring-w:4px;
+
+  /* z-index scale */
+  --z-base: 1;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-tooltip: 30;
+  --z-drawer: 1000;
+  --z-modal: 1100;
+  --z-toast: 1200;
+
+  /* app layout */
+  --topbar-h:56px;
+  --sidebar-w:256px;
 }
 
 /* LIGHT — airy, low-contrast borders, crisp text */
@@ -21,9 +39,11 @@
   --primary-600:#2563EB;
   --ring:rgba(59,130,246,.28);
   --shadow: var(--elev-1);
+
+  --success:#10B981; --warning:#F59E0B; --danger:#EF4444; --info:#0EA5E9;
 }
 
-/* DARK — your default */
+/* DARK — default */
 :root[data-theme="dark"]{
   color-scheme: dark;
   --bg:#0B0D10;
@@ -37,6 +57,8 @@
   --primary-600:#5A73FF;
   --ring:rgba(110,139,255,.33);
   --shadow: var(--elev-1);
+
+  --success:#34D399; --warning:#F59E0B; --danger:#F87171; --info:#38BDF8;
 }
 
 /* NIGHT — deeper/colder */
@@ -53,11 +75,21 @@
   --primary-600:#42BFF2;
   --ring:rgba(100,210,255,.30);
   --shadow: var(--elev-1);
+
+  --success:#22D3EE; --warning:#FBBF24; --danger:#FB7185; --info:#60A5FA;
 }
 
 /* ===================== PAGE BASE ===================== */
 html,body,#root{height:100%}
-body{background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+body{
+  background:var(--bg);
+  color:var(--text);
+  -webkit-font-smoothing:antialiased;
+  font-variant-ligatures: contextual;
+}
+a{ color:var(--primary); text-decoration:none }
+a:hover{ text-decoration:underline }
 
 /* ===================== PRIMITIVES ===================== */
 .gg-surface{
@@ -70,14 +102,17 @@ body{background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased
 }
 .gg-muted{ color:var(--muted); }
 
-.gg-input{
+.gg-input, .gg-select, .gg-textarea{
   background:var(--surface); color:var(--text);
   border:1px solid var(--border); border-radius:var(--radius);
   height:36px; padding:0 .6rem; outline:0; transition:border-color .15s, box-shadow .15s, background .15s;
 }
-.gg-input::placeholder{ color:color-mix(in oklab, var(--muted) 70%, transparent); }
-.gg-input:hover{ border-color:var(--border-strong); }
-.gg-input:focus{ box-shadow:0 0 0 var(--ring-w) var(--ring); border-color:transparent; }
+.gg-textarea{ height:auto; min-height:88px; padding:.6rem .7rem; resize:vertical }
+.gg-select{ appearance:none; background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%); background-position:calc(100% - 18px) 50%, calc(100% - 12px) 50%; background-size:6px 6px; background-repeat:no-repeat; }
+
+.gg-input::placeholder,.gg-textarea::placeholder{ color:color-mix(in oklab, var(--muted) 70%, transparent); }
+.gg-input:hover,.gg-select:hover,.gg-textarea:hover{ border-color:var(--border-strong); }
+.gg-input:focus,.gg-select:focus,.gg-textarea:focus{ box-shadow:0 0 0 var(--ring-w) var(--ring); border-color:transparent; }
 
 .gg-btn{
   display:inline-flex; align-items:center; justify-content:center; gap:.5rem;
@@ -87,15 +122,28 @@ body{background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased
 }
 .gg-btn:hover{ border-color:var(--border-strong); background:color-mix(in oklab, var(--surface) 94%, var(--panel)); }
 .gg-btn:active{ transform:translateY(1px); }
+.gg-btn[disabled]{ opacity:.6; cursor:not-allowed }
 
 .gg-btn-primary{
   background:var(--primary); color:#fff; border-color:transparent;
 }
 .gg-btn-primary:hover{ background:var(--primary-600); }
+
 .gg-btn-ghost{
   background:transparent; color:var(--text); border-color:var(--border);
 }
 .gg-btn-ghost:hover{ background:color-mix(in oklab, var(--border) 28%, transparent); }
+
+/* Checkbox / Switch */
+.gg-checkbox{
+  width:16px; height:16px; border-radius:4px;
+  border:1px solid var(--border); background:var(--surface);
+  appearance:none; display:inline-grid; place-content:center; cursor:pointer;
+  transition:border-color .15s, background .15s, box-shadow .15s;
+}
+.gg-checkbox:focus{ box-shadow:0 0 0 var(--ring-w) var(--ring); border-color:transparent; }
+.gg-checkbox:checked{ background:var(--primary); border-color:var(--primary); }
+.gg-checkbox:checked::after{ content:""; width:10px; height:10px; background:#fff; clip-path: polygon(14% 44%, 0 64%, 42% 100%, 100% 16%, 80% 0, 38% 62%); }
 
 /* Pills / chips */
 .gg-chip{
@@ -106,9 +154,14 @@ body{background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased
 }
 
 /* ===================== LAYOUT POLISH ===================== */
-.app-topbar{ height:56px; padding:0 12px; display:flex; align-items:center; gap:12px;
-  background:var(--surface); border-bottom:1px solid var(--border); }
-.app-sidebar{ width:256px; background:var(--panel); border-right:1px solid var(--border); }
+.app-topbar{
+  height:var(--topbar-h); padding:0 12px; display:flex; align-items:center; gap:12px;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  position:sticky; top:0; z-index:var(--z-sticky);
+}
+.app-sidebar{
+  width:var(--sidebar-w); background:var(--panel); border-right:1px solid var(--border);
+}
 .app-content{ padding:16px; }
 
 /* Sidebar nav */
@@ -119,19 +172,104 @@ body{background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased
 .app-link:hover{ background:color-mix(in oklab, var(--border) 24%, transparent); color:var(--text); }
 .app-link.active{ background:color-mix(in oklab, var(--border) 40%, transparent); color:var(--text); font-weight:600; }
 
-/* Table polish */
-.gg-table{ overflow:hidden; border-radius:var(--radius-lg); border:1px solid var(--border); background:var(--panel); }
-.gg-thead{ position:sticky; top:0; background:linear-gradient(180deg, color-mix(in oklab, var(--panel) 94%, transparent), var(--panel)); }
-.gg-th{ font-size:.72rem; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); }
+/* ===================== TABLE POLISH ===================== */
+.gg-table{
+  overflow:hidden; border-radius:var(--radius-lg); border:1px solid var(--border); background:var(--panel);
+  width:100%;
+}
+.gg-thead{ position:sticky; top:0; z-index:var(--z-sticky);
+  background:linear-gradient(180deg, color-mix(in oklab, var(--panel) 94%, transparent), var(--panel));
+}
+.gg-th{ font-size:.72rem; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); text-align:left; padding:.6rem .75rem; }
+.gg-td{ padding:.6rem .75rem; }
 .gg-tr{ border-top:1px solid var(--border); }
 .gg-tr:hover{ background:color-mix(in oklab, var(--panel) 96%, var(--surface)); }
 
 /* Badges for status/stage */
-.badge-blue  { background: #3B82F51A; color:#2563EB; border:1px solid #2563EB33; }
-.badge-green { background: #10B9811A; color:#059669; border:1px solid #05966933; }
-.badge-amber { background: #F59E0B1A; color:#B45309; border:1px solid #B4530933; }
-.badge-rose  { background: #F43F5E1A; color:#E11D48; border:1px solid #E11D4833; }
+.badge{ display:inline-flex; align-items:center; gap:.4rem; height:24px; padding:0 .5rem; border-radius:999px; font-weight:600; font-size:.72rem; border:1px solid transparent; }
+.badge-blue  { background:#3B82F51A; color:#2563EB; border-color:#2563EB33; }
+.badge-green { background:#10B9811A; color:#059669; border-color:#05966933; }
+.badge-amber { background:#F59E0B1A; color:#B45309; border-color:#B4530933; }
+.badge-rose  { background:#F43F5E1A; color:#E11D48; border-color:#E11D4833; }
 
-/* Compact cards in light need deeper shadow for separation */
+/* ===================== OVERLAYS (Drawer/Modal/Tooltip) ===================== */
+.gg-overlay{
+  position:fixed; inset:0; background:rgba(0,0,0,.4); backdrop-filter:saturate(120%) blur(2px);
+}
+.gg-drawer{
+  position:fixed; top:0; right:0; height:100dvh; width:min(680px, 96vw);
+  background:var(--surface); border-left:1px solid var(--border);
+  box-shadow:var(--elev-2); z-index:var(--z-drawer); display:flex; flex-direction:column;
+}
+.gg-modal{
+  position:fixed; inset:0; display:grid; place-items:center; z-index:var(--z-modal);
+}
+.gg-modal-card{ width:min(720px, 96vw); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-lg); box-shadow:var(--elev-2); }
+
+/* ===================== FORM LAYOUTS ===================== */
+.form-row{ display:grid; grid-template-columns: 1fr 1fr; gap:12px; }
+.form-col{ display:flex; flex-direction:column; gap:6px; }
+.form-label{ font-size:.82rem; color:var(--muted); }
+.form-help{ font-size:.75rem; color:var(--muted); }
+
+/* ===================== PAGINATION / TOOLBAR ===================== */
+.gg-toolbar{
+  display:flex; gap:8px; align-items:center; padding:8px; border:1px solid var(--border);
+  background:var(--panel); border-radius:var(--radius-lg);
+}
+.gg-pagination{
+  display:flex; align-items:center; gap:6px;
+}
+.gg-page-btn{ min-width:32px; height:32px; border-radius:8px; border:1px solid var(--border); background:var(--surface); }
+.gg-page-btn[aria-current="page"]{ background:var(--primary); color:#fff; border-color:transparent; }
+
+/* ===================== TOASTS ===================== */
+.gg-toast{
+  position:fixed; right:16px; bottom:16px; z-index:var(--z-toast);
+  display:grid; gap:8px;
+}
+.gg-toast-item{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
+  padding:.6rem .8rem; box-shadow:var(--shadow);
+}
+
+/* ===================== SCROLLBAR (WebKit) ===================== */
+*::-webkit-scrollbar{ width:10px; height:10px; }
+*::-webkit-scrollbar-track{ background:color-mix(in oklab, var(--panel) 70%, transparent); }
+*::-webkit-scrollbar-thumb{ background:color-mix(in oklab, var(--border) 80%, transparent); border-radius:999px; border:2px solid transparent; background-clip:padding-box; }
+*::-webkit-scrollbar-thumb:hover{ background:color-mix(in oklab, var(--border-strong) 90%, transparent); }
+
+/* ===================== FOCUS & SELECTION ===================== */
+:where(button, [href], input, select, textarea):focus-visible{
+  outline:none; box-shadow:0 0 0 var(--ring-w) var(--ring) !important;
+}
+::selection{
+  background:color-mix(in oklab, var(--primary) 40%, transparent);
+  color:#fff;
+}
+
+/* ===================== SKELETONS ===================== */
+.gg-skeleton{
+  position:relative; overflow:hidden; background:color-mix(in oklab, var(--panel) 70%, transparent);
+  border-radius:8px; min-height:1rem;
+}
+.gg-skeleton::after{
+  content:""; position:absolute; inset:0; transform:translateX(-100%);
+  background:linear-gradient(90deg, transparent, color-mix(in oklab, var(--surface) 50%, transparent), transparent);
+  animation:gg-skel 1.2s infinite;
+}
+@keyframes gg-skel{ to { transform:translateX(100%); } }
+
+/* ===================== UTILS ===================== */
+.hidden{ display:none !important; }
+.flex{ display:flex }
+.grid{ display:grid }
+.items-center{ align-items:center }
+.justify-between{ justify-content:space-between }
+.gap-2{ gap:.5rem } .gap-3{ gap:.75rem } .gap-4{ gap:1rem }
+.p-2{ padding:.5rem } .p-3{ padding:.75rem } .p-4{ padding:1rem }
+.rounded{ border-radius:var(--radius) } .rounded-lg{ border-radius:var(--radius-lg) }
+
+/* ===================== LIGHT-SPECIFIC POLISH ===================== */
 :root[data-theme="light"] .gg-panel,
 :root[data-theme="light"] .gg-surface { box-shadow: var(--elev-2); }
