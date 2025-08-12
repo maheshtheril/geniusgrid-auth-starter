@@ -1,51 +1,36 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-/* ===== App frame ====================================================== */
+/* ===== App frame (theme-aware) ===== */
 .app-shell{ display:flex; min-height:100dvh; background:var(--bg); color:var(--text); }
 .app-main{ flex:1; display:flex; flex-direction:column; }
 .app-content{ padding:1rem; }
 
-/* ===== Sidebar ======================================================== */
-.app-sidebar{ width:256px; background:var(--panel); border-right:1px solid var(--border); }
-.app-sidebar .section-title{ color:var(--muted); font-size:.8rem; letter-spacing:.04em; }
-.app-nav a{
-  display:flex; align-items:center; gap:.5rem; padding:.6rem .75rem; border-radius:.75rem;
-  color:var(--muted);
+/* ===== Sidebar ===== */
+.app-sidebar{
+  width:256px;
+  background:var(--panel);
+  border-right:1px solid var(--border);
+  display:flex; flex-direction:column;
 }
-.app-nav a:hover{ background:color-mix(in oklab, var(--border) 20%, transparent); color:var(--text); }
-.app-nav a.active{
-  background:color-mix(in oklab, var(--border) 30%, transparent);
-  color:var(--text); font-weight:600;
+.sidebar-head, .sidebar-foot{
+  padding:.75rem .75rem; color:var(--muted); font-size:.8rem; letter-spacing:.04em;
 }
+.app-nav{ display:flex; flex-direction:column; gap:.25rem; padding:.25rem .25rem .75rem; }
 
-/* ===== Topbar ========================================================= */
-.app-topbar{
-  height:56px; display:flex; align-items:center; gap:.75rem; padding:0 1rem;
-  background:var(--surface); border-bottom:1px solid var(--border);
+.app-link{
+  display:flex; align-items:center; gap:.5rem;
+  margin:0 .5rem; padding:.55rem .75rem;
+  border-radius:.75rem; color:var(--muted);
+  text-decoration:none; text-align:left;
 }
-.brand{ font-weight:700; }
-
-/* ===== Reusable (mapped to tokens) =================================== */
-.panel, .gg-panel{ background:var(--panel); border:1px solid var(--border); border-radius:1rem; }
-.glass{ backdrop-filter:saturate(180%) blur(10px); }
-.gg-surface{ background:var(--surface); border:1px solid var(--border); border-radius:1rem; }
-.gg-muted{ color:var(--muted); }
-
-.gg-input{
-  background:var(--surface); color:var(--text);
-  border:1px solid var(--border); outline:0;
+.app-link:hover{
+  background: color-mix(in oklab, var(--border) 22%, transparent);
+  color: var(--text);
 }
-.gg-input:focus{ box-shadow:0 0 0 4px var(--ring); }
-
-.gg-btn{
-  display:inline-flex; align-items:center; justify-content:center;
-  padding:.5rem .75rem; border-radius:.75rem; font-weight:600;
-  transition:background .15s, opacity .15s, border-color .15s;
+.app-link.active{
+  background: color-mix(in oklab, var(--border) 36%, transparent);
+  color: var(--text); font-weight:600;
 }
-.gg-btn-ghost{ background:transparent; color:var(--text); }
-.gg-btn-ghost:hover{ background:color-mix(in oklab, var(--border) 30%, transparent); }
+.nav-toggle{ cursor:pointer; border:0; background:transparent; width:100%; }
+.nav-dot{ width:6px; height:6px; border-radius:9999px; background: var(--border); }
 
-/* Optional: keep legacy utility names usable with tokens */
-.select, .btn, .input { background:var(--surface); color:var(--text); border:1px solid var(--border); }
+/* Remove any list/bullet artifacts from resets */
+.app-sidebar ul, .app-sidebar li { list-style:none; margin:0; padding:0; }
