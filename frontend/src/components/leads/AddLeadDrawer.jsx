@@ -56,15 +56,14 @@ const countriesLoading = _c?.loading ?? false;
 const countriesRaw = _c?.countries ?? _c ?? [];
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
   const countryOpts = useMemo(() => {
-    if (!countries.length) return [];
-    return countries
-      .map((c) => ({
-        cc: (c.iso2 || c.cc || c.code || "").toUpperCase(),
-        code: c.default_dial || c.dial || c.phone_code || "",
-        label: `${c.emoji_flag || c.flag || flagFromIso2(c.iso2 || c.cc || "")} ${(c.iso2 || c.cc || "").toUpperCase()}`,
-      }))
-      .filter(o => o.cc && o.code);
-  }, [countries]);
+  if (!countries.length) return [];
+  return countries.map((c) => ({
+    cc: c.iso2,
+    code: c.default_dial,
+    label: `${c.emoji_flag || flagFromIso2(c.iso2)} ${c.name}`, // show proper name
+  }));
+}, [countries]);
+
 
   // form state
   const [form, setForm] = useState(INIT);
