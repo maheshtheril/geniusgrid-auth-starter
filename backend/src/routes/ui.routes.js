@@ -1,11 +1,7 @@
-// backend/src/routes/ui.routes.js
 import { Router } from "express";
-
 const router = Router();
 
-// Minimal theme payload your frontend expects.
-// Tweak values / read from env as you like.
-router.get("/theme", (req, res) => {
+router.get("/theme", (_req, res) => {
   res.json({
     brandName: process.env.APP_BRAND_NAME || "GeniusGrid",
     logoUrl: process.env.APP_LOGO_URL || null,

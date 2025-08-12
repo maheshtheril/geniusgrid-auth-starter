@@ -1,6 +1,5 @@
 // src/server.js
 import "dotenv/config";
-import uiRoutes from "./routes/ui.routes.js";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -15,9 +14,9 @@ import { randomUUID } from "crypto";
 import { pool } from "./db/pool.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 
+import uiRoutes from "./routes/ui.routes.js";
 import metaRoutes from "./routes/meta.routes.js";
 import countriesRouter from "./routes/countries.js";
-import healthRoutes from "./routes/health.routes.js";
 import csrfRoutes from "./routes/csrf.routes.js";
 import bootstrapRoutes from "./routes/bootstrap.routes.js";
 import auth from "./routes/auth.js";
@@ -77,17 +76,6 @@ app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-app.use("/api/crm", /* requireAuth, */ customFieldsRoutes);
-
-// ---------------- PUBLIC HEALTH FIRST (no auth, no rate-limit) ----------------
-app.get("/healthz", (_req, res) => res.status(200).send("ok"));
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({ ok: true, ts: new Date().toISOString() });
-});
-app.head("/api/health", (_req, res) => res.sendStatus(200)); // Render sometimes probes HEAD
-app.head("/", (_req, res) => res.sendStatus(200));
-app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
-
 // ---------------- CORS (MUST be before any routes that need it) ----------------
 app.use(
   cors({
@@ -120,6 +108,15 @@ app.use((req, res, next) => {
   res.setHeader("X-Request-Id", req.id);
   next();
 });
+
+// ---------------- PUBLIC HEALTH (no auth, no rate-limit) ----------------
+app.get("/healthz", (_req, res) => res.status(200).send("ok"));
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({ ok: true, ts: new Date().toISOString() });
+});
+app.head("/api/health", (_req, res) => res.sendStatus(200)); // Render sometimes probes HEAD
+app.head("/", (_req, res) => res.sendStatus(200));
+app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
 
 // ---------------- Session (PG store) ----------------
 app.use(
@@ -162,22 +159,16 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
-// ---------------- PUBLIC routes ----------------
+// ---------------- PUBLIC routes (after CORS; before 404) ----------------
+app.use("/api/ui", uiRoutes);                 // <-- fixes /api/ui/theme 404
 app.use("/api/meta", metaRoutes);
-app.use("/api/countries", countriesRouter); // now after CORS ✅
-app.use("/api/ready", async (_req, res) => {
-  try {
-    await pool.query("select 1");
-    res.json({ ready: true });
-  } catch {
-    res.status(503).json({ ready: false });
-  }
-});
+app.use("/api/countries", countriesRouter);   // CORS now applies ✅
 app.use("/api/csrf", csrfRoutes);
 app.use("/api/bootstrap", bootstrapRoutes);
 app.use("/api/auth", auth);
-app.use("/api/auth", authMe); // /api/auth/me (reads session if exists)
+app.use("/api/auth", authMe);                 // /api/auth/me (reads session if exists)
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
+app.use("/api/crm", /* requireAuth, */ customFieldsRoutes); // CORS applies ✅
 
 // ---------------- PROTECTED routes ----------------
 app.use("/api/admin", requireAuth, adminUsers);
@@ -198,7 +189,7 @@ app.use((err, req, res, _next) => {
     detail: err.message || "Unexpected error",
   });
 });
-app.use("/api/ui", uiRoutes);
+
 // ---------------- Start & Graceful Shutdown ----------------
 const server = app.listen(PORT, "0.0.0.0", () => {
   logger.info(
