@@ -1,25 +1,9 @@
 // src/components/ThemeToggle.jsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import { applyTheme, nextMode as libNextMode } from "@/theme/applyTheme";
+import { uiApi } from "@/api/ui";
 
-// Optional imports; component works even if these paths don't exist
-let applyThemeLib = null;
-let nextModeLib = null;
-try {
-  // eslint-disable-next-line import/no-unresolved
-  const lib = await import("@/theme/applyTheme");
-  applyThemeLib = lib.applyTheme || null;
-  nextModeLib = lib.nextMode || null;
-} catch {}
-
-let uiApi = null;
-try {
-  // eslint-disable-next-line import/no-unresolved
-  uiApi = (await import("@/api/ui")).uiApi || null;
-} catch {}
-
-const THEMES = ["light", "dark", "night"];
-const LS_KEYS = ["gg.theme", "theme"]; // read both, write both for compat
-
+// Fallback tokens if server theme not reachable
 const FALLBACK_THEME = {
   modes: {
     light: {
@@ -40,111 +24,60 @@ const FALLBACK_THEME = {
   }
 };
 
-/* ---------------- helpers ---------------- */
-function readSavedTheme() {
-  for (const k of LS_KEYS) {
-    const v = localStorage.getItem(k);
-    if (v && THEMES.includes(v)) return v;
-  }
-  return null;
-}
-function saveTheme(mode) {
-  for (const k of LS_KEYS) localStorage.setItem(k, mode);
-}
-function getDomTheme() {
-  const t = document.documentElement.getAttribute("data-theme");
-  return THEMES.includes(t) ? t : null;
-}
-function setDomTheme(mode) {
-  document.documentElement.setAttribute("data-theme", mode);
-  document.body?.setAttribute?.("data-theme", mode);
-}
-function safeNextMode(themeCfg, current) {
-  if (typeof nextModeLib === "function") return nextModeLib(themeCfg, current);
-  const order = Object.keys(themeCfg?.modes || {}).length
-    ? Object.keys(themeCfg.modes)
-    : THEMES;
-  const i = Math.max(0, order.indexOf(current));
-  return order[(i + 1) % order.length];
-}
-function safeApplyTheme(themeCfg, mode) {
-  // Prefer your library applyTheme(cfg, mode)
-  if (typeof applyThemeLib === "function") {
-    try { applyThemeLib(themeCfg, mode); } catch {}
-  }
-  // Always set the attribute so CSS tokens take effect
-  setDomTheme(mode);
-  saveTheme(mode);
+function safeNextMode(theme, current) {
+  if (typeof libNextMode === "function") return libNextMode(theme, current);
+  const order = Object.keys(theme?.modes || {}).length
+    ? Object.keys(theme.modes)
+    : ["light","dark","night"];
+  const idx = Math.max(0, order.indexOf(current));
+  return order[(idx + 1) % order.length];
 }
 
-/* ---------------- component ---------------- */
 export default function ThemeToggle() {
-  // Determine initial mode: user saved → DOM → OS → 'light'
+  // initial mode from LS → DOM → default
   const initial =
-    readSavedTheme() ||
-    getDomTheme() ||
-    (window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ? "dark" : "light");
+    localStorage.getItem("theme") ||
+    document.documentElement.getAttribute("data-theme") ||
+    "dark";
 
   const [mode, setMode] = useState(initial);
-  const [themeCfg, setThemeCfg] = useState(null);
+  const [theme, setTheme] = useState(null);
 
-  // On mount: load theme config (window.__GG_THEME → API → fallback) and apply current mode
   useEffect(() => {
     let alive = true;
     (async () => {
       try {
-        const cfg =
-          window.__GG_THEME ||
-          (uiApi && typeof uiApi.getTheme === "function" ? await uiApi.getTheme() : null) ||
-          FALLBACK_THEME;
+        const cfg = window.__GG_THEME || (await uiApi.getTheme()) || FALLBACK_THEME;
         if (!alive) return;
-        setThemeCfg(cfg);
-        safeApplyTheme(cfg, mode);
+        setTheme(cfg);
+        applyTheme(cfg, mode);
       } catch {
         if (!alive) return;
-        setThemeCfg(FALLBACK_THEME);
-        safeApplyTheme(FALLBACK_THEME, mode);
+        setTheme(FALLBACK_THEME);
+        applyTheme(FALLBACK_THEME, mode);
       }
+      document.documentElement.setAttribute("data-theme", mode);
+      document.body.setAttribute("data-theme", mode);
+      localStorage.setItem("theme", mode);
     })();
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once
-
-  // Keep label in sync if something external changes <html data-theme>
-  useEffect(() => {
-    const obs = new MutationObserver(() => {
-      const dom = getDomTheme();
-      if (dom && dom !== mode) setMode(dom);
-    });
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
-    return () => obs.disconnect();
-  }, [mode]);
+  }, []); // mount once
 
   const cycle = () => {
-    const cfg = themeCfg || FALLBACK_THEME;
-    const current = getDomTheme() || mode;
-    const next = safeNextMode(cfg, current);
+    const cfg = theme || FALLBACK_THEME;
+    const next = safeNextMode(cfg, mode);
     setMode(next);
-    safeApplyTheme(cfg, next);
+    applyTheme(cfg, next);
+    document.documentElement.setAttribute("data-theme", next);
+    document.body.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
 
-    // best-effort notify server (non-blocking)
-    const payload = { theme: next };
-    if (uiApi?.setTheme) {
-      try { uiApi.setTheme(payload); } catch {}
-    } else {
-      try {
-        fetch(`${import.meta.env?.VITE_UI_API_BASE || ""}/ui/theme`, {
-          method: "POST",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        }).catch(() => {});
-      } catch {}
-    }
+    // best-effort server persist (non-blocking)
+    uiApi?.setTheme?.({ theme: next });
   };
 
   const label = mode === "light" ? "☀️ Light" : mode === "dark" ? "🌙 Dark" : "🌌 Night";
-
   return (
     <button className="gg-btn gg-btn-ghost h-9 px-3" onClick={cycle} title="Switch theme">
       {label}
