@@ -41,7 +41,8 @@ export default function AddLeadDrawer({
   stages = ["new","prospect","proposal","negotiation","closed"],
   sources = ["Website","Referral","Ads","Outbound","Event"],
   customFields = [],
-  variant = "quick", // "quick" | "full"
+  // variant kept for compatibility but ignored (we always show all fields)
+  variant = "full",
   onManageCustomFields,        // optional external manager
   onCreateCustomField,         // optional async: (field) => persistedField or null
 }) {
@@ -52,7 +53,6 @@ export default function AddLeadDrawer({
   const [custom, setCustom] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [mode, setMode] = useState(variant); // UI mode: quick or full
   const [dupMobile, setDupMobile] = useState(null);
 
   // local custom fields (so "Add" works instantly even without backend)
@@ -73,7 +73,6 @@ export default function AddLeadDrawer({
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
-    setMode(variant);
     setCfList(
       (Array.isArray(customFields) ? customFields : []).map(f => ({
         ...f,
@@ -139,11 +138,8 @@ export default function AddLeadDrawer({
 
   // ---- GROUPED CUSTOM FIELDS (from local cfList) ----
   const { generalCF, advanceCF } = useMemo(() => {
-    const g = [],
-      a = [];
-    for (const f of cfList) {
-      (f.group === "advance" ? a : g).push(f);
-    }
+    const g = [], a = [];
+    for (const f of cfList) (f.group === "advance" ? a : g).push(f);
     return { generalCF: g, advanceCF: a };
   }, [cfList]);
 
@@ -154,7 +150,7 @@ export default function AddLeadDrawer({
       if (!String(form[k] ?? "").trim()) p[k] = msg;
     };
 
-    // required for both modes
+    // required
     need("name", "Lead name is required");
     need("mobile", "Mobile is required");
     need("follow_up_date", "Follow-up date is required");
@@ -165,7 +161,7 @@ export default function AddLeadDrawer({
       p.email = "Invalid email";
     if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile))
       p.mobile = "Invalid phone number";
-    if (dupMobile) p.mobile = "Mobile already exists (will be sent for approval)";
+    if (dupMobile) p.mobile = "Duplicate number — will be sent for approval";
 
     // custom-field required
     for (const cf of cfList) {
@@ -349,8 +345,8 @@ export default function AddLeadDrawer({
     }
   };
 
-  // ====== CORE FIELDS ======
-  const coreQuick = (
+  // ====== CORE FIELDS (ALWAYS SHOW ALL) ======
+  const coreTop = (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div>
         <label className="block text-sm gg-muted mb-1">
@@ -368,24 +364,8 @@ export default function AddLeadDrawer({
           <div className="text-rose-400 text-xs mt-1">{problems.name}</div>
         )}
       </div>
+
       <div>
-        <label className="block text-sm gg-muted mb-1">
-          Follow Up Date <span className="text-rose-400">*</span>
-        </label>
-        <input
-          type="date"
-          className="gg-input w-full"
-          value={form.follow_up_date}
-          onChange={update("follow_up_date")}
-          aria-invalid={!!problems.follow_up_date}
-        />
-        {problems.follow_up_date && (
-          <div className="text-rose-400 text-xs mt-1">
-            {problems.follow_up_date}
-          </div>
-        )}
-      </div>
-      <div className="md:col-span-2">
         <label className="block text-sm gg-muted mb-1">
           Mobile <span className="text-rose-400">*</span>
         </label>
@@ -418,13 +398,68 @@ export default function AddLeadDrawer({
         </div>
         <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>
           {dupMobile === true
-            ? "Number exists — will be sent for approval."
+            ? "Duplicate Mobile Number will be sent for approval."
             : "We'll check duplicates automatically."}
         </div>
         {problems.mobile && (
           <div className="text-rose-400 text-xs mt-1">{problems.mobile}</div>
         )}
       </div>
+
+      <div>
+        <label className="block text-sm gg-muted mb-1">Email</label>
+        <input
+          className="gg-input w-full"
+          value={form.email}
+          onChange={update("email")}
+          placeholder="you@company.com"
+          aria-invalid={!!problems.email}
+        />
+        {problems.email && (
+          <div className="text-rose-400 text-xs mt-1">{problems.email}</div>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm gg-muted mb-1">Expected Revenue</label>
+        <input
+          type="number"
+          inputMode="decimal"
+          className="gg-input w-full"
+          value={form.expected_revenue}
+          onChange={update("expected_revenue")}
+          placeholder="Revenue"
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm gg-muted mb-1">
+          Follow Up Date <span className="text-rose-400">*</span>
+        </label>
+        <input
+          type="date"
+          className="gg-input w-full"
+          value={form.follow_up_date}
+          onChange={update("follow_up_date")}
+          aria-invalid={!!problems.follow_up_date}
+        />
+        {problems.follow_up_date && (
+          <div className="text-rose-400 text-xs mt-1">
+            {problems.follow_up_date}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <label className="block text-sm gg-muted mb-1">Profession</label>
+        <input
+          className="gg-input w-full"
+          value={form.profession}
+          onChange={update("profession")}
+          placeholder="Profession"
+        />
+      </div>
+
       <div>
         <label className="block text-sm gg-muted mb-1">
           Lead Stage <span className="text-rose-400">*</span>
@@ -445,6 +480,7 @@ export default function AddLeadDrawer({
           <div className="text-rose-400 text-xs mt-1">{problems.stage}</div>
         )}
       </div>
+
       <div>
         <label className="block text-sm gg-muted mb-1">
           Source <span className="text-rose-400">*</span>
@@ -469,45 +505,7 @@ export default function AddLeadDrawer({
     </div>
   );
 
-  const coreExtra = (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-      <div>
-        <label className="block text-sm gg-muted mb-1">Email</label>
-        <input
-          className="gg-input w-full"
-          value={form.email}
-          onChange={update("email")}
-          placeholder="you@company.com"
-          aria-invalid={!!problems.email}
-        />
-        {problems.email && (
-          <div className="text-rose-400 text-xs mt-1">{problems.email}</div>
-        )}
-      </div>
-      <div>
-        <label className="block text-sm gg-muted mb-1">Expected Revenue</label>
-        <input
-          type="number"
-          inputMode="decimal"
-          className="gg-input w-full"
-          value={form.expected_revenue}
-          onChange={update("expected_revenue")}
-          placeholder="Revenue"
-        />
-      </div>
-      <div>
-        <label className="block text-sm gg-muted mb-1">Profession</label>
-        <input
-          className="gg-input w-full"
-          value={form.profession}
-          onChange={update("profession")}
-          placeholder="Profession"
-        />
-      </div>
-    </div>
-  );
-
-  // ====== GROUP SECTIONS (ALWAYS VISIBLE) ======
+  // ====== GROUP SECTIONS ======
   const generalGroup = (
     <section className="gg-panel p-3">
       <div className="flex items-center justify-between mb-2">
@@ -523,12 +521,7 @@ export default function AddLeadDrawer({
         </button>
       </div>
 
-      {mode === "quick" ? coreQuick : (
-        <>
-          {coreQuick}
-          {coreExtra}
-        </>
-      )}
+      {coreTop}
 
       <div className="mt-4">
         <div className="text-sm font-semibold mb-2">Custom fields — General</div>
@@ -648,20 +641,9 @@ export default function AddLeadDrawer({
         <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--border)]">
           <div>
             <h2 className="text-lg font-semibold">New Lead</h2>
-            <div className="gg-muted text-xs">
-              {mode === "quick"
-                ? "Quick add — only required fields"
-                : "Full form — everything at once"}
-            </div>
+            <div className="gg-muted text-xs">All fields</div>
           </div>
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="gg-btn gg-btn-ghost"
-              onClick={() => setMode((m) => (m === "quick" ? "full" : "quick"))}
-            >
-              {mode === "quick" ? "Full form" : "Quick add"}
-            </button>
             <button
               className="gg-btn gg-btn-ghost"
               onClick={onClose}
@@ -705,7 +687,7 @@ export default function AddLeadDrawer({
         </div>
       </aside>
 
-      {/* Inline Custom Field Modal (works even without external manager) */}
+      {/* Inline Custom Field Modal */}
       {showCFModal && (
         <CFModal
           onClose={() => setShowCFModal(false)}
