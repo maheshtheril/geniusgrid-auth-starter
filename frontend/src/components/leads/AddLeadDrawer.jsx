@@ -35,7 +35,6 @@ const INIT = {
   source: "",
   // advance
   details: "",
-  // (no static file fields here anymore)
 };
 
 export default function AddLeadDrawer({
@@ -51,7 +50,7 @@ export default function AddLeadDrawer({
 }) {
   const api = useLeadsApi();
 
-  // countries from DB
+  // countries from DB (normalize to array)
   const { countries: countriesRaw, loading: countriesLoading } = useCountriesApi("en");
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
   const countryOpts = useMemo(() => {
@@ -205,15 +204,11 @@ export default function AddLeadDrawer({
     const customForJson = {};
     const files = {};
 
-    // move file-type custom fields to FormData entries, others stay in JSON
     for (const cf of cfList) {
       const key = cf.key;
       const v = custom[key];
       if (cf.type === "file") {
-        if (v instanceof File) {
-          // backend should read these from cf_files[<key>]
-          files[`cf_files[${key}]`] = v;
-        }
+        if (v instanceof File) files[`cf_files[${key}]`] = v; // adjust name if your API differs
       } else {
         if (v !== undefined) customForJson[key] = v;
       }
@@ -281,7 +276,7 @@ export default function AddLeadDrawer({
     }
   };
 
-  // custom field renderer (now supports file)
+  // custom field renderer (supports file)
   const renderCF = (cf) => {
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
@@ -337,12 +332,7 @@ export default function AddLeadDrawer({
       case "file":
         return wrap(
           <>
-            <input
-              type="file"
-              className={base}
-              accept={cf.accept || "*/*"}
-              onChange={updateFileCF(key)}
-            />
+            <input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />
             {val instanceof File && (
               <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>
                 Selected: {val.name}
@@ -475,25 +465,20 @@ export default function AddLeadDrawer({
     <section className="gg-panel p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold">General</div>
-        <button
-          type="button"
-          className="gg-btn gg-btn-ghost"
-          onClick={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)}
-        >
-          + Add custom field
-        </button>
+        {/* Removed the "+ Add custom field" button here */}
       </div>
 
       {coreTop}
 
-      <div className="mt-4">
-        <div className="text-sm font-semibold mb-2">Custom fields — General</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {generalCF.length > 0 ? generalCF.map(renderCF) : (
-            <EmptyCustomGroup onAdd={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)} />
-          )}
+      {/* Show General custom fields only if there are any; no empty state, no add CTA */}
+      {generalCF.length > 0 && (
+        <div className="mt-4">
+          <div className="text-sm font-semibold mb-2">Custom fields — General</div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {generalCF.map(renderCF)}
+          </div>
         </div>
-      </div>
+      )}
     </section>
   );
 
@@ -520,7 +505,9 @@ export default function AddLeadDrawer({
       <div className="mt-4">
         <div className="text-sm font-semibold mb-2">Custom fields — Advance</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {advanceCF.length > 0 ? advanceCF.map(renderCF) : (
+          {advanceCF.length > 0 ? (
+            advanceCF.map(renderCF)
+          ) : (
             <EmptyCustomGroup onAdd={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)} />
           )}
         </div>
@@ -576,7 +563,7 @@ export default function AddLeadDrawer({
         </div>
       </aside>
 
-      {/* Inline Custom Field Modal */}
+      {/* Inline Custom Field Modal (still available via Advance group button) */}
       {showCFModal && (
         <CFModal
           onClose={() => setShowCFModal(false)}
