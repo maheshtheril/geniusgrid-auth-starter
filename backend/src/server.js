@@ -1,5 +1,6 @@
 // src/server.js
 import "dotenv/config";
+import uiRoutes from "./routes/ui.routes.js";
 import express from "express";
 import helmet from "helmet";
 import cors from "cors";
@@ -26,6 +27,7 @@ import dashboardRoutes from "./routes/dashboard.routes.js";
 import leadsRoutes from "./routes/leads.routes.js";
 import leadsModule from "./routes/leadsModule.routes.js";
 import rateLimit from "express-rate-limit";
+import crmCustomFieldsRoutes from "./routes/customFields.routes.js";
 
 // --- Config ---
 const app = express();
@@ -74,6 +76,8 @@ app.use(compression());
 // Parsers
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
+
+app.use("/api/crm", /* requireAuth, */ customFieldsRoutes);
 
 // ---------------- PUBLIC HEALTH FIRST (no auth, no rate-limit) ----------------
 app.get("/healthz", (_req, res) => res.status(200).send("ok"));
@@ -194,7 +198,7 @@ app.use((err, req, res, _next) => {
     detail: err.message || "Unexpected error",
   });
 });
-
+app.use("/api/ui", uiRoutes);
 // ---------------- Start & Graceful Shutdown ----------------
 const server = app.listen(PORT, "0.0.0.0", () => {
   logger.info(
