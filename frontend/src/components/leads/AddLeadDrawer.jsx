@@ -1,143 +1,134 @@
 // src/components/leads/AddLeadDrawer.jsx
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import useLeadsApi from "@/hooks/useLeadsApi";
 
 export default function AddLeadDrawer({ onClose, onSuccess }) {
   const api = useLeadsApi();
   const [saving, setSaving] = useState(false);
-  const [error, setError]   = useState("");
-  const nameRef = useRef(null);
-
+  const [error, setError] = useState("");
   const [form, setForm] = useState({
     name: "",
     company_name: "",
-    email: "",
-    phone: "",
     status: "new",
     stage: "new",
-    owner_name: "",
-    score: "",
-    notes: "",
+    owner_id: "",
   });
 
+  // lock background scroll while drawer is open
   useEffect(() => {
-    const esc = (e) => e.key === "Escape" && onClose?.();
-    document.addEventListener("keydown", esc);
-    const t = setTimeout(() => nameRef.current?.focus(), 50);
-    return () => { document.removeEventListener("keydown", esc); clearTimeout(t); };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onEsc = (e) => e.key === "Escape" && onClose?.();
+    window.addEventListener("keydown", onEsc);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onEsc);
+    };
   }, [onClose]);
 
-  const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
 
   const submit = async (e) => {
-    e.preventDefault();
+    e?.preventDefault?.();
     setError("");
-    if (!form.name.trim()) {
-      setError("Lead name is required.");
-      nameRef.current?.focus();
-      return;
-    }
+    if (!form.name.trim()) return setError("Name is required");
     setSaving(true);
     try {
-      const payload = {
-        ...form,
-        score: form.score === "" ? undefined : Number(form.score),
-      };
-      const created = await api.createLead(payload);
+      const created = await api.createLead({
+        name: form.name.trim(),
+        company_name: form.company_name.trim() || null,
+        status: form.status || "new",
+        stage: form.stage || "new",
+        owner_id: form.owner_id || null,
+      });
       onSuccess?.(created);
     } catch (err) {
-      setError(err?.response?.data?.message || err?.message || "Failed to create lead.");
+      console.error(err);
+      setError("Failed to create lead. Please try again.");
     } finally {
       setSaving(false);
     }
   };
 
-  const stop = (e) => e.stopPropagation();
+  const el = (
+    <div className="fixed inset-0 z-[100]">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/40 backdrop-blur-[1px]"
+        onClick={onClose}
+        aria-hidden
+      />
+      {/* Panel */}
+      <aside
+        className="absolute right-0 top-0 h-full w-full sm:w-[520px] bg-[var(--surface)]
+                   border-l border-[color:var(--border)] shadow-2xl
+                   animate-[slideIn_.18s_ease-out] focus:outline-none"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add Lead"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--border)]">
+          <h2 className="text-lg font-semibold">Add Lead</h2>
+          <button className="gg-btn gg-btn-ghost" onClick={onClose} aria-label="Close">✕</button>
+        </div>
 
-  return (
-    <div className="gg-drawer" role="dialog" aria-modal="true" onClick={onClose}>
-      <aside className="gg-drawer-panel" onClick={stop}>
-        <header className="gg-drawer-header">
-          <h3>Add Lead</h3>
-          <button className="btn btn-sm btn-ghost" onClick={onClose} aria-label="Close">✕</button>
-        </header>
-
-        <form className="gg-drawer-body" onSubmit={submit}>
-          {error && <div className="alert alert-error">{error}</div>}
-
-          <div className="grid gap-3">
-            <label className="form-control">
-              <span className="label-text">Lead Name *</span>
-              <input ref={nameRef} className="input input-bordered" value={form.name} onChange={update("name")} placeholder="Ada Lovelace" />
-            </label>
-
-            <label className="form-control">
-              <span className="label-text">Company</span>
-              <input className="input input-bordered" value={form.company_name} onChange={update("company_name")} placeholder="Analytical Engines Ltd" />
-            </label>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="form-control">
-                <span className="label-text">Email</span>
-                <input type="email" className="input input-bordered" value={form.email} onChange={update("email")} placeholder="ada@company.com" />
-              </label>
-              <label className="form-control">
-                <span className="label-text">Phone</span>
-                <input className="input input-bordered" value={form.phone} onChange={update("phone")} placeholder="+1 555 0199" />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-3 gap-3">
-              <label className="form-control">
-                <span className="label-text">Status</span>
-                <select className="select select-bordered" value={form.status} onChange={update("status")}>
-                  <option value="new">new</option>
-                  <option value="qualified">qualified</option>
-                  <option value="won">won</option>
-                  <option value="lost">lost</option>
-                </select>
-              </label>
-
-              <label className="form-control">
-                <span className="label-text">Stage</span>
-                <select className="select select-bordered" value={form.stage} onChange={update("stage")}>
-                  <option value="new">new</option>
-                  <option value="qualified">qualified</option>
-                  <option value="proposal">proposal</option>
-                  <option value="negotiation">negotiation</option>
-                  <option value="won">won</option>
-                  <option value="lost">lost</option>
-                </select>
-              </label>
-
-              <label className="form-control">
-                <span className="label-text">AI Score</span>
-                <input type="number" className="input input-bordered" value={form.score} onChange={update("score")} placeholder="e.g. 72" />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="form-control">
-                <span className="label-text">Owner</span>
-                <input className="input input-bordered" value={form.owner_name} onChange={update("owner_name")} placeholder="Owner name" />
-              </label>
-              <div className="hidden md:block" />
-            </div>
-
-            <label className="form-control">
-              <span className="label-text">Notes</span>
-              <textarea className="textarea textarea-bordered min-h-[96px]" value={form.notes} onChange={update("notes")} placeholder="Anything helpful for the team…" />
-            </label>
+        {/* Body */}
+        <form onSubmit={submit} className="p-4 space-y-3 overflow-auto h-[calc(100%-56px-64px)]">
+          <div>
+            <label className="block text-sm gg-muted mb-1">Lead name</label>
+            <input className="gg-input w-full" value={form.name} onChange={update("name")} placeholder="Ada Lovelace" />
           </div>
 
-          <footer className="gg-drawer-footer">
-            <button type="button" className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button type="submit" className={`btn btn-primary ${saving ? "loading" : ""}`} disabled={saving}>
-              {saving ? "Saving…" : "Create Lead"}
-            </button>
-          </footer>
+          <div>
+            <label className="block text-sm gg-muted mb-1">Company</label>
+            <input className="gg-input w-full" value={form.company_name} onChange={update("company_name")} placeholder="Analytical Engines Ltd" />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm gg-muted mb-1">Status</label>
+              <select className="gg-input w-full" value={form.status} onChange={update("status")}>
+                <option value="new">New</option>
+                <option value="qualified">Qualified</option>
+                <option value="won">Won</option>
+                <option value="lost">Lost</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm gg-muted mb-1">Stage</label>
+              <select className="gg-input w-full" value={form.stage} onChange={update("stage")}>
+                <option value="new">New</option>
+                <option value="prospect">Prospect</option>
+                <option value="proposal">Proposal</option>
+                <option value="negotiation">Negotiation</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm gg-muted mb-1">Owner (optional)</label>
+            <input className="gg-input w-full" value={form.owner_id} onChange={update("owner_id")} placeholder="user id" />
+          </div>
+
+          {error && <div className="rounded-md border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">{error}</div>}
         </form>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[color:var(--border)]">
+          <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
+          <button className="gg-btn gg-btn-primary" type="submit" onClick={submit} disabled={saving}>
+            {saving ? "Saving…" : "Save Lead"}
+          </button>
+        </div>
       </aside>
+
+      {/* simple slide-in keyframes */}
+      <style>{`@keyframes slideIn{from{transform:translateX(16px);opacity:.0}to{transform:translateX(0);opacity:1}}`}</style>
     </div>
   );
+
+  return createPortal(el, document.body);
 }
