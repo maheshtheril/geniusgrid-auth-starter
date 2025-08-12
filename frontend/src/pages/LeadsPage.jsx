@@ -24,8 +24,8 @@ const DEFAULT_COLUMNS = [
 export default function LeadsPage() {
   const api = useLeadsApi();
   const {
-    leadCustomFields = [],            // ✅ safe default so UI never crashes
-    setLeadCustomFields,              // ensure this exists in your store
+    leadCustomFields = [],
+    setLeadCustomFields,
   } = useEnv();
 
   // View, filters, pagination
@@ -139,14 +139,25 @@ export default function LeadsPage() {
     } catch {/* swallow */}
   }, [api]);
 
-  // ✅ Fetch lead custom fields once (prevents undefined reference)
+  // Fetch lead custom fields once (normalize group -> 'general')
   const fetchLeadCustomFields = useCallback(async () => {
     try {
       const res = await axios.get("/api/crm/custom-fields", {
         params: { entity: "lead" },
         withCredentials: true,
       });
-      const items = Array.isArray(res?.data?.items) ? res.data.items : (Array.isArray(res?.data) ? res.data : []);
+
+      const raw = Array.isArray(res?.data?.items)
+        ? res.data.items
+        : Array.isArray(res?.data)
+        ? res.data
+        : [];
+
+      const items = raw.map((f) => ({
+        ...f,
+        group: f?.group === "advance" ? "advance" : "general",
+      }));
+
       setLeadCustomFields?.(items);
     } catch {
       setLeadCustomFields?.([]);
@@ -248,10 +259,8 @@ export default function LeadsPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* mobile: select */}
               {viewSelect}
 
-              {/* desktop: segmented buttons */}
               <div className="hidden md:inline-flex rounded-lg overflow-hidden border border-[color:var(--border)]">
                 <button className={`gg-btn ${view==='table' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('table')} aria-pressed={view==='table'}>Table</button>
                 <button className={`gg-btn ${view==='kanban' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('kanban')} aria-pressed={view==='kanban'}>Kanban</button>
@@ -309,7 +318,6 @@ export default function LeadsPage() {
                 Reset
               </button>
 
-              {/* Columns popover */}
               <details className="relative">
                 <summary className="gg-btn cursor-pointer select-none">Columns</summary>
                 <ul className="gg-panel absolute right-0 mt-2 w-56 p-2 z-[60]">
@@ -371,7 +379,7 @@ export default function LeadsPage() {
           )}
         </div>
 
-        {/* Drawers (render at end so they layer above content) */}
+        {/* Drawers */}
         {openDrawer && (
           <LeadDrawer
             id={selected}
@@ -380,16 +388,16 @@ export default function LeadsPage() {
           />
         )}
 
-       {openAdd && (
-  <AddLeadDrawer
-    key={addKey}
-    stages={stages}
-    sources={["Website","Referral","Ads","Outbound","Event"]}
-    customFields={leadCustomFields}
-    onClose={() => setOpenAdd(false)}
-    onSuccess={onAddSuccess}
-  />
-)}
+        {openAdd && (
+          <AddLeadDrawer
+            key={addKey}
+            stages={stages}
+            sources={["Website","Referral","Ads","Outbound","Event"]}
+            customFields={leadCustomFields}
+            onClose={() => setOpenAdd(false)}
+            onSuccess={onAddSuccess}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,9 +1,10 @@
+// src/components/leads/AddLeadDrawer.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import useLeadsApi from "@/hooks/useLeadsApi";
 
-/** Custom fields shape (unchanged)
- *  [{ id,key,label,type,required,options? }, ...]
+/** Custom fields shape:
+ *  [{ id,key,label,type,required,options?, group: 'general'|'advance' }, ...]
  */
 
 const INIT = {
@@ -41,6 +42,7 @@ export default function AddLeadDrawer({
   sources = ["Website","Referral","Ads","Outbound","Event"],
   customFields = [],
   variant = "quick", // "quick" | "full"
+  onManageCustomFields, // optional handler to open CF settings/modal
 }) {
   const api = useLeadsApi();
 
@@ -103,6 +105,18 @@ export default function AddLeadDrawer({
     }, 450);
     return () => { alive = false; clearTimeout(timer); };
   }, [form.mobile, form.mobile_code, api]);
+
+  // ---- GROUPED CUSTOM FIELDS ----
+  // default any missing/invalid group to "general"
+  const { generalCF, advanceCF } = useMemo(() => {
+    const list = Array.isArray(customFields) ? customFields : [];
+    const g = [], a = [];
+    for (const f of list) {
+      const item = { ...f, group: f?.group === "advance" ? "advance" : "general" };
+      (item.group === "advance" ? a : g).push(item);
+    }
+    return { generalCF: g, advanceCF: a };
+  }, [customFields]);
 
   // validation
   const problems = useMemo(() => {
@@ -187,7 +201,7 @@ export default function AddLeadDrawer({
     }
   };
 
-  // custom field renderer (unchanged API, minor polish)
+  // custom field renderer
   const renderCF = (cf) => {
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
@@ -291,11 +305,20 @@ export default function AddLeadDrawer({
         </div>
       </div>
 
+      {/* ======= ALWAYS-VISIBLE ADVANCE GROUP ======= */}
       <section className="gg-panel mt-4">
-        <button type="button" className="w-full flex items-center justify-between px-3 py-2" onClick={()=>setOpenAdvanced(v=>!v)} aria-expanded={openAdvanced}>
+        <div className="flex items-center justify-between px-3 py-2">
           <span className="text-sm font-semibold">Advance</span>
-          <span className="gg-chip">{openAdvanced ? "Hide" : "Show"}</span>
-        </button>
+          <div className="flex items-center gap-2">
+            <button type="button" className="gg-btn gg-btn-ghost" onClick={()=>setOpenAdvanced(v=>!v)} aria-expanded={openAdvanced}>
+              {openAdvanced ? "Hide" : "Show"}
+            </button>
+            <button type="button" className="gg-btn" onClick={() => onManageCustomFields?.()}>
+              Manage / Add custom fields
+            </button>
+          </div>
+        </div>
+
         <div className="px-3 pb-3" style={{ display: openAdvanced ? "block" : "none" }}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="md:col-span-2">
@@ -316,17 +339,46 @@ export default function AddLeadDrawer({
             </div>
           </div>
 
-          {customFields?.length > 0 && (
-            <div className="mt-4">
-              <div className="text-sm font-semibold mb-2">Custom fields</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {customFields.map(renderCF)}
-              </div>
+          {/* Advance custom fields */}
+          <div className="mt-4">
+            <div className="text-sm font-semibold mb-2">Custom fields — Advance</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {advanceCF.length > 0 ? (
+                advanceCF.map(renderCF)
+              ) : (
+                <EmptyCustomGroup onAdd={() => onManageCustomFields?.()} />
+              )}
             </div>
-          )}
+          </div>
         </div>
       </section>
     </>
+  );
+
+  // GENERAL GROUP — always visible, includes system core + general custom fields
+  const generalGroup = (
+    <section className="gg-panel p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-semibold">General</div>
+        <button type="button" className="gg-btn gg-btn-ghost" onClick={() => onManageCustomFields?.()}>
+          + Add custom field
+        </button>
+      </div>
+
+      {mode === "quick" ? quickFields : fullFields}
+
+      {/* General custom fields (below system fields) */}
+      <div className="mt-4">
+        <div className="text-sm font-semibold mb-2">Custom fields — General</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {generalCF.length > 0 ? (
+            generalCF.map(renderCF)
+          ) : (
+            <EmptyCustomGroup onAdd={() => onManageCustomFields?.()} />
+          )}
+        </div>
+      </div>
+    </section>
   );
 
   const el = (
@@ -359,10 +411,7 @@ export default function AddLeadDrawer({
 
         {/* Body */}
         <form onSubmit={submit} className="p-4 space-y-4 overflow-auto h-[calc(100%-56px-64px)]">
-          <section className="gg-panel p-3">
-            <div className="text-sm font-semibold mb-2">General</div>
-            {mode === "quick" ? quickFields : fullFields}
-          </section>
+          {generalGroup}
 
           {error && (
             <div className="rounded-md border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">
@@ -402,6 +451,15 @@ export default function AddLeadDrawer({
   );
 
   return createPortal(el, document.body);
+}
+
+function EmptyCustomGroup({ onAdd }) {
+  return (
+    <div className="gg-card flex items-center justify-between">
+      <div className="text-sm text-[color:var(--muted)]">No custom fields yet.</div>
+      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>Add a custom field</button>
+    </div>
+  );
 }
 
 function cap(s){ return String(s||"").charAt(0).toUpperCase() + String(s||"").slice(1); }
