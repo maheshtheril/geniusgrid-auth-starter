@@ -2,7 +2,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import useLeadsApi from "@/hooks/useLeadsApi";
-import useCountriesApi, { flagFromIso2 } from "@/hooks/useCountriesApi";
+import useCountriesApi from "@/hooks/useCountriesApi";
+
+/** Turn "IN" -> 🇮🇳 (emoji flag fallback if DB doesn’t provide one) */
+const flagFromIso2 = (iso2 = "") =>
+  iso2.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
 
 /** Custom fields shape:
  *  [{ id,key,label,type,required,options?, group: 'general'|'advance' }, ...]
@@ -34,10 +38,9 @@ export default function AddLeadDrawer({
   stages = ["new","prospect","proposal","negotiation","closed"],
   sources = ["Website","Referral","Ads","Outbound","Event"],
   customFields = [],
-  // variant kept for compatibility but ignored (we always show all fields)
-  variant = "full",
-  onManageCustomFields,        // optional external manager
-  onCreateCustomField,         // optional async: (field) => persistedField or null
+  variant = "full", // kept for compatibility; we always show all fields
+  onManageCustomFields,
+  onCreateCustomField,
 }) {
   const api = useLeadsApi();
 
@@ -67,13 +70,13 @@ export default function AddLeadDrawer({
   const firstInputRef = useRef(null);
   const submittingRef = useRef(false);
 
-  // prepare country code map (from DB-driven options)
+  // dial code map from DB
   const codeByCc = useMemo(
     () => Object.fromEntries(countryOpts.map((c) => [c.cc, c.code])),
     [countryOpts]
   );
 
-  // hard reset on mount (prevents stale values on reopen)
+  // hard reset on mount
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
@@ -86,10 +89,9 @@ export default function AddLeadDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only
 
-  // when countries load, ensure mobile_code matches selected country (or default to first)
+  // sync dial code once countries arrive
   useEffect(() => {
-    if (countriesLoading) return;
-    if (!countryOpts.length) return;
+    if (countriesLoading || !countryOpts.length) return;
     setForm((f) => {
       const cc = f.mobile_country && codeByCc[f.mobile_country] ? f.mobile_country : countryOpts[0].cc;
       const code = codeByCc[cc] || "";
@@ -136,7 +138,7 @@ export default function AddLeadDrawer({
       return;
     }
     const timer = setTimeout(async () => {
-      if (!api?.checkMobile) return; // silently skip if not available
+      if (!api?.checkMobile) return;
       try {
         const res = await api.checkMobile({
           mobile: `${form.mobile_code} ${String(form.mobile).trim()}`,
@@ -152,7 +154,7 @@ export default function AddLeadDrawer({
     };
   }, [form.mobile, form.mobile_code, api]);
 
-  // ---- GROUPED CUSTOM FIELDS (from local cfList) ----
+  // ---- GROUPED CUSTOM FIELDS ----
   const { generalCF, advanceCF } = useMemo(() => {
     const g = [], a = [];
     for (const f of cfList) (f.group === "advance" ? a : g).push(f);
@@ -162,32 +164,23 @@ export default function AddLeadDrawer({
   // validation
   const problems = useMemo(() => {
     const p = {};
-    const need = (k, msg) => {
-      if (!String(form[k] ?? "").trim()) p[k] = msg;
-    };
+    const need = (k, msg) => { if (!String(form[k] ?? "").trim()) p[k] = msg; };
 
-    // required
     need("name", "Lead name is required");
     need("mobile", "Mobile is required");
     need("follow_up_date", "Follow-up date is required");
     need("stage", "Lead stage is required");
     need("source", "Source is required");
 
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      p.email = "Invalid email";
-    if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile))
-      p.mobile = "Invalid phone number";
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) p.email = "Invalid email";
+    if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile)) p.mobile = "Invalid phone number";
     if (dupMobile) p.mobile = "Duplicate number — will be sent for approval";
 
-    // custom-field required
     for (const cf of cfList) {
       if (cf.required) {
         const v = custom?.[cf.key];
-        if (cf.type === "checkbox") {
-          if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`;
-        } else if (v === undefined || v === null || v === "") {
-          p[`cf:${cf.key}`] = `${cf.label} is required`;
-        }
+        if (cf.type === "checkbox") { if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`; }
+        else if (v === undefined || v === null || v === "") { p[`cf:${cf.key}`] = `${cf.label} is required`; }
       }
     }
     return p;
@@ -218,11 +211,7 @@ export default function AddLeadDrawer({
       meeting_photo_file: form.meeting_photo_file,
       voice_record_file: form.voice_record_file,
     };
-    const hasFiles = !!(
-      files.headshot_file ||
-      files.meeting_photo_file ||
-      files.voice_record_file
-    );
+    const hasFiles = !!(files.headshot_file || files.meeting_photo_file || files.voice_record_file);
     return { base, files, hasFiles };
   }
 
@@ -361,7 +350,7 @@ export default function AddLeadDrawer({
     }
   };
 
-  // ====== CORE FIELDS (ALWAYS SHOW ALL) ======
+  // ====== CORE FIELDS ======
   const coreTop = (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div>
@@ -659,15 +648,6 @@ export default function AddLeadDrawer({
           <div>
             <h2 className="text-lg font-semibold">New Lead</h2>
             <div className="gg-muted text-xs">All fields</div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              className="gg-btn gg-btn-ghost"
-              onClick={onClose}
-              aria-label="Close"
-            >
-              ✕
-            </button>
           </div>
         </div>
 
