@@ -1,0 +1,16 @@
+:root { color-scheme: light; }
+:root[data-theme="light"] {}
+:root[data-theme="dark"] {}
+:root[data-theme="night"] {}
+
+html,body,#root{height:100%}
+body{background:var(--bg); color:var(--text)}
+
+.gg-surface{background:var(--surface);border:1px solid var(--border)}
+.gg-panel{background:var(--panel);border:1px solid var(--border)}
+.gg-muted{color:var(--muted)}
+.gg-btn{display:inline-flex;align-items:center;gap:.5rem;padding:.5rem .75rem;border-radius:.75rem;}
+.gg-btn-primary{background:var(--primary);color:#fff}
+.gg-btn-ghost{background:transparent;color:var(--text)}
+.gg-input{background:var(--surface);border:1px solid var(--border);color:var(--text);padding:.5rem .6rem;border-radius:.5rem}
+.gg-chip{padding:.2rem .5rem;border-radius:999px;background:var(--surface);border:1px solid var(--border);font-size:.75rem}

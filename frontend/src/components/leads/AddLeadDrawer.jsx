@@ -2,14 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import useLeadsApi from "@/hooks/useLeadsApi";
 
-/** Shape for custom fields
- * customFields = [
- *  { id:"cf1", key:"profession", label:"Profession", type:"text", required:false },
- *  { id:"cf2", key:"lifecycle",  label:"Lead Life Cycle", type:"select", options:["Monthly","Quarterly"], required:false },
- *  { id:"cf3", key:"rating",     label:"Rating", type:"number" },
- *  { id:"cf4", key:"notes",      label:"Notes", type:"textarea" },
- *  { id:"cf5", key:"nda",        label:"NDA Signed", type:"checkbox" },
- * ]
+/** Custom fields shape (unchanged)
+ *  [{ id,key,label,type,required,options? }, ...]
  */
 
 const INIT = {
@@ -45,16 +39,19 @@ export default function AddLeadDrawer({
   prefill,
   stages = ["new","prospect","proposal","negotiation","closed"],
   sources = ["Website","Referral","Ads","Outbound","Event"],
-  customFields = [],              // see shape above
+  customFields = [],
+  variant = "quick", // "quick" | "full"
 }) {
   const api = useLeadsApi();
 
   // form state
-  const [form, setForm] = useState({ ...INIT, ...(prefill || {}) });
-  const [custom, setCustom] = useState({}); // dynamic custom fields
+  const [form, setForm] = useState(INIT);
+  const [custom, setCustom] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [openAdvanced, setOpenAdvanced] = useState(true);
+  const [mode, setMode] = useState(variant); // UI mode: quick or full
+  const [dupMobile, setDupMobile] = useState(null);
 
   // refs
   const firstInputRef = useRef(null);
@@ -62,7 +59,15 @@ export default function AddLeadDrawer({
   // prepare country code map
   const codeByCc = useMemo(() => Object.fromEntries(COUNTRY_OPTS.map(c => [c.cc, c.code])), []);
 
-  // life-cycle: lock body scroll, esc to close, focus first input
+  // hard reset on mount (prevents stale values on reopen)
+  useEffect(() => {
+    setForm({ ...INIT, ...(prefill || {}) });
+    setCustom({});
+    setMode(variant);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // mount only
+
+  // lock body scroll, esc to close, focus first
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -76,12 +81,6 @@ export default function AddLeadDrawer({
     };
   }, [onClose]);
 
-  // reset when prefill updates
-  useEffect(() => {
-    setForm({ ...INIT, ...(prefill || {}) });
-    setCustom({});
-  }, [prefill]);
-
   // helpers
   const update = (k) => (e) => setForm(f => ({ ...f, [k]: e.target?.value ?? e }));
   const updateFile = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.files?.[0] || null }));
@@ -91,33 +90,71 @@ export default function AddLeadDrawer({
     setForm(f => ({ ...f, mobile_country: cc, mobile_code: codeByCc[cc] || "" }));
   };
 
+  // duplicate mobile check (debounced)
+  useEffect(() => {
+    let alive = true;
+    if (!form.mobile.trim()) { setDupMobile(null); return; }
+    const timer = setTimeout(async () => {
+      if (!api?.checkMobile) return; // silently skip if not available
+      try {
+        const res = await api.checkMobile({ mobile: `${form.mobile_code} ${form.mobile.trim()}` });
+        if (alive) setDupMobile(!!res?.exists);
+      } catch { if (alive) setDupMobile(null); }
+    }, 450);
+    return () => { alive = false; clearTimeout(timer); };
+  }, [form.mobile, form.mobile_code, api]);
+
   // validation
   const problems = useMemo(() => {
     const p = {};
-    if (!form.name.trim()) p.name = "Lead name is required";
-    if (!form.mobile.trim()) p.mobile = "Mobile is required";
-    if (!form.follow_up_date) p.follow_up_date = "Follow-up date is required";
-    if (!form.stage) p.stage = "Lead stage is required";
-    if (!form.source) p.source = "Source is required";
+    const need = (k, msg) => { if (!String(form[k] ?? "").trim()) p[k] = msg; };
+
+    // required for both modes
+    need("name", "Lead name is required");
+    need("mobile", "Mobile is required");
+    need("follow_up_date", "Follow-up date is required");
+    need("stage", "Lead stage is required");
+    need("source", "Source is required");
 
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) p.email = "Invalid email";
     if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile)) p.mobile = "Invalid phone number";
+    if (dupMobile) p.mobile = "Mobile already exists (will be sent for approval)";
 
     // custom-field required
     for (const cf of customFields) {
-      if (cf.required && !valueForCF(custom, cf)) {
-        p[`cf:${cf.key}`] = `${cf.label} is required`;
+      if (cf.required) {
+        const v = custom?.[cf.key];
+        if (cf.type === "checkbox") { if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`; }
+        else if (v === undefined || v === null || v === "") p[`cf:${cf.key}`] = `${cf.label} is required`;
       }
     }
     return p;
-  }, [form, custom, customFields]);
+  }, [form, custom, customFields, dupMobile]);
 
   const isValid = Object.keys(problems).length === 0;
 
-  function valueForCF(store, cf) {
-    const v = store?.[cf.key];
-    if (cf.type === "checkbox") return !!v;
-    return (v ?? "") !== "";
+  // payload builder
+  function buildPayload() {
+    const base = {
+      name: form.name.trim(),
+      mobile: `${form.mobile_code} ${form.mobile.trim()}`,
+      email: form.email.trim() || null,
+      expected_revenue: form.expected_revenue ? Number(form.expected_revenue) : null,
+      follow_up_date: form.follow_up_date,
+      profession: form.profession || null,
+      stage: form.stage,
+      status: form.status || "new",
+      source: form.source,
+      details: form.details || null,
+      custom_fields: custom,
+    };
+    const files = {
+      headshot_file: form.headshot_file,
+      meeting_photo_file: form.meeting_photo_file,
+      voice_record_file: form.voice_record_file,
+    };
+    const hasFiles = !!(files.headshot_file || files.meeting_photo_file || files.voice_record_file);
+    return { base, files, hasFiles };
   }
 
   const submit = async (e) => {
@@ -127,32 +164,21 @@ export default function AddLeadDrawer({
 
     setSaving(true);
     try {
-      // payload
-      const payload = {
-        name: form.name.trim(),
-        mobile: `${form.mobile_code} ${form.mobile.trim()}`,
-        email: form.email.trim() || null,
-        expected_revenue: form.expected_revenue ? Number(form.expected_revenue) : null,
-        follow_up_date: form.follow_up_date,
-        profession: form.profession || null,
-        stage: form.stage,
-        status: form.status || "new",
-        source: form.source,
-        custom_fields: custom,  // dynamic values
-      };
+      const { base, files, hasFiles } = buildPayload();
+      let created;
 
-      // If you need file upload, switch to FormData and expose api.createLeadMultipart
-      // For now: send JSON; you can handle files later server-side.
-      const created = await api.createLead(payload);
-
-      // micro success pulse
-      const btn = document.getElementById("addlead-save");
-      if (btn) {
-        btn.classList.add("success-pulse");
-        setTimeout(() => onSuccess?.(created), 220);
+      if (hasFiles && api.createLeadMultipart) {
+        const fd = new FormData();
+        Object.entries(base).forEach(([k,v]) => fd.append(k, typeof v === "object" ? JSON.stringify(v) : (v ?? "")));
+        Object.entries(files).forEach(([k,f]) => { if (f) fd.append(k, f); });
+        created = await api.createLeadMultipart(fd);
       } else {
-        onSuccess?.(created);
+        created = await api.createLead(base);
       }
+
+      const btn = document.getElementById("addlead-save");
+      if (btn) { btn.classList.add("success-pulse"); setTimeout(() => onSuccess?.(created), 220); }
+      else onSuccess?.(created);
     } catch (err) {
       console.error(err);
       setError("Failed to create lead. Please try again.");
@@ -161,75 +187,150 @@ export default function AddLeadDrawer({
     }
   };
 
-  // field render for custom fields
+  // custom field renderer (unchanged API, minor polish)
   const renderCF = (cf) => {
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
     const set = (v) => setCustom((s) => ({ ...s, [key]: v }));
-
     const base = "gg-input w-full";
-    const label = (
-      <label className="block text-sm gg-muted mb-1">
-        {cf.label} {cf.required && <span className="text-rose-400">*</span>}
-      </label>
+    const req = cf.required && <span className="text-rose-400">*</span>;
+
+    const wrap = (control) => (
+      <div key={cf.id || key}>
+        {cf.type !== "checkbox" && (
+          <label className="block text-sm gg-muted mb-1">{cf.label} {req}</label>
+        )}
+        {control}
+        {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-1">{problems[`cf:${key}`]}</div>}
+      </div>
     );
 
     switch (cf.type) {
-      case "textarea":
-        return (
-          <div key={cf.id || key}>
-            {label}
-            <textarea className={`${base} h-24`} value={val} onChange={(e)=>set(e.target.value)} />
-            {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-1">{problems[`cf:${key}`]}</div>}
-          </div>
-        );
-      case "number":
-        return (
-          <div key={cf.id || key}>
-            {label}
-            <input type="number" className={base} value={val} onChange={(e)=>set(e.target.value)} />
-            {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-1">{problems[`cf:${key}`]}</div>}
-          </div>
-        );
-      case "date":
-        return (
-          <div key={cf.id || key}>
-            {label}
-            <input type="date" className={base} value={val} onChange={(e)=>set(e.target.value)} />
-            {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-1">{problems[`cf:${key}`]}</div>}
-          </div>
-        );
-      case "select":
-        return (
-          <div key={cf.id || key}>
-            {label}
-            <select className={base} value={val} onChange={(e)=>set(e.target.value)}>
-              <option value="">Select…</option>
-              {(cf.options || []).map(opt => <option key={String(opt)} value={opt}>{opt}</option>)}
-            </select>
-            {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-1">{problems[`cf:${key}`]}</div>}
-          </div>
-        );
+      case "textarea": return wrap(<textarea className={`${base} h-24`} value={val} onChange={(e)=>set(e.target.value)} />);
+      case "number":   return wrap(<input type="number" className={base} value={val} onChange={(e)=>set(e.target.value)} />);
+      case "date":     return wrap(<input type="date" className={base} value={val} onChange={(e)=>set(e.target.value)} />);
+      case "select":   return wrap(
+        <select className={base} value={val} onChange={(e)=>set(e.target.value)}>
+          <option value="">Select…</option>
+          {(cf.options || []).map(opt => <option key={String(opt)} value={opt}>{opt}</option>)}
+        </select>
+      );
       case "checkbox":
         return (
           <label key={cf.id || key} className="flex items-center gap-2">
             <input type="checkbox" checked={!!val} onChange={(e)=>set(e.target.checked)} />
-            <span className="text-sm">{label.props.children}</span>
+            <span className="text-sm">{cf.label} {req}</span>
           </label>
         );
-      default: // text
-        return (
-          <div key={cf.id || key}>
-            {label}
-            <input className={base} value={val} onChange={(e)=>set(e.target.value)} />
-            {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-1">{problems[`cf:${key}`]}</div>}
-          </div>
-        );
+      default:
+        return wrap(<input className={base} value={val} onChange={(e)=>set(e.target.value)} />);
     }
   };
 
+  // quick mode = only the must-have fields
+  const quickFields = (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label className="block text-sm gg-muted mb-1">Lead Name <span className="text-rose-400">*</span></label>
+        <input ref={firstInputRef} className="gg-input w-full" value={form.name} onChange={update("name")} placeholder="Lead name" />
+        {problems.name && <div className="text-rose-400 text-xs mt-1">{problems.name}</div>}
+      </div>
+      <div>
+        <label className="block text-sm gg-muted mb-1">Follow Up Date <span className="text-rose-400">*</span></label>
+        <input type="date" className="gg-input w-full" value={form.follow_up_date} onChange={update("follow_up_date")} />
+        {problems.follow_up_date && <div className="text-rose-400 text-xs mt-1">{problems.follow_up_date}</div>}
+      </div>
+      <div className="md:col-span-2">
+        <label className="block text-sm gg-muted mb-1">Mobile <span className="text-rose-400">*</span></label>
+        <div className="flex gap-2">
+          <select className="gg-input w-28" value={form.mobile_country} onChange={onCountryChange} aria-label="Country">
+            {COUNTRY_OPTS.map(c => <option key={c.cc} value={c.cc}>{c.label} {c.code}</option>)}
+          </select>
+          <input readOnly className="gg-input w-20 text-center" value={form.mobile_code} aria-label="Dial code" />
+          <input className="gg-input flex-1" value={form.mobile} onChange={update("mobile")} placeholder="Enter mobile number" />
+        </div>
+        <div className="text-xs mt-1" style={{color:"var(--muted)"}}>
+          {dupMobile === true ? "Number exists — will be sent for approval." : "We'll check duplicates automatically."}
+        </div>
+        {problems.mobile && <div className="text-rose-400 text-xs mt-1">{problems.mobile}</div>}
+      </div>
+      <div>
+        <label className="block text-sm gg-muted mb-1">Lead Stage <span className="text-rose-400">*</span></label>
+        <select className="gg-input w-full" value={form.stage} onChange={update("stage")}>
+          {stages.map(s => <option key={s} value={s}>{cap(s)}</option>)}
+        </select>
+        {problems.stage && <div className="text-rose-400 text-xs mt-1">{problems.stage}</div>}
+      </div>
+      <div>
+        <label className="block text-sm gg-muted mb-1">Source <span className="text-rose-400">*</span></label>
+        <select className="gg-input w-full" value={form.source} onChange={update("source")}>
+          <option value="">Select a Source</option>
+          {sources.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+        {problems.source && <div className="text-rose-400 text-xs mt-1">{problems.source}</div>}
+      </div>
+    </div>
+  );
+
+  const fullFields = (
+    <>
+      {quickFields}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+        <div>
+          <label className="block text-sm gg-muted mb-1">Email</label>
+          <input className="gg-input w-full" value={form.email} onChange={update("email")} placeholder="you@company.com" />
+          {problems.email && <div className="text-rose-400 text-xs mt-1">{problems.email}</div>}
+        </div>
+        <div>
+          <label className="block text-sm gg-muted mb-1">Expected Revenue</label>
+          <input type="number" inputMode="decimal" className="gg-input w-full" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="Revenue" />
+        </div>
+        <div>
+          <label className="block text-sm gg-muted mb-1">Profession</label>
+          <input className="gg-input w-full" value={form.profession} onChange={update("profession")} placeholder="Profession" />
+        </div>
+      </div>
+
+      <section className="gg-panel mt-4">
+        <button type="button" className="w-full flex items-center justify-between px-3 py-2" onClick={()=>setOpenAdvanced(v=>!v)} aria-expanded={openAdvanced}>
+          <span className="text-sm font-semibold">Advance</span>
+          <span className="gg-chip">{openAdvanced ? "Hide" : "Show"}</span>
+        </button>
+        <div className="px-3 pb-3" style={{ display: openAdvanced ? "block" : "none" }}>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="md:col-span-2">
+              <label className="block text-sm gg-muted mb-1">Detailed information</label>
+              <textarea className="gg-input w-full h-24" value={form.details} onChange={update("details")} placeholder="Notes or context" />
+            </div>
+            <div>
+              <label className="block text-sm gg-muted mb-1">Headshot Photo</label>
+              <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("headshot_file")} />
+            </div>
+            <div>
+              <label className="block text-sm gg-muted mb-1">Photo of the meeting</label>
+              <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("meeting_photo_file")} />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-sm gg-muted mb-1">Add voice record</label>
+              <input type="file" className="gg-input w-full" accept="audio/*" onChange={updateFile("voice_record_file")} />
+            </div>
+          </div>
+
+          {customFields?.length > 0 && (
+            <div className="mt-4">
+              <div className="text-sm font-semibold mb-2">Custom fields</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {customFields.map(renderCF)}
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </>
+  );
+
   const el = (
-    <div className="fixed inset-0 z-[100]">
+    <div className="fixed inset-0 z-[9999]">
       {/* Backdrop */}
       <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] animate-fadeIn" onClick={onClose} aria-hidden />
 
@@ -244,123 +345,23 @@ export default function AddLeadDrawer({
         <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--border)]">
           <div>
             <h2 className="text-lg font-semibold">New Lead</h2>
-            <div className="gg-muted text-xs">Enter the essentials — advanced details are optional.</div>
+            <div className="gg-muted text-xs">
+              {mode === "quick" ? "Quick add — only required fields" : "Full form — everything at once"}
+            </div>
           </div>
-          <button className="gg-btn gg-btn-ghost" onClick={onClose} aria-label="Close">✕</button>
+          <div className="flex items-center gap-2">
+            <button type="button" className="gg-btn gg-btn-ghost" onClick={() => setMode(m => m === "quick" ? "full" : "quick")}>
+              {mode === "quick" ? "Full form" : "Quick add"}
+            </button>
+            <button className="gg-btn gg-btn-ghost" onClick={onClose} aria-label="Close">✕</button>
+          </div>
         </div>
 
         {/* Body */}
         <form onSubmit={submit} className="p-4 space-y-4 overflow-auto h-[calc(100%-56px-64px)]">
-          {/* General grid */}
           <section className="gg-panel p-3">
             <div className="text-sm font-semibold mb-2">General</div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm gg-muted mb-1">Lead Name <span className="text-rose-400">*</span></label>
-                <input ref={firstInputRef} className="gg-input w-full" value={form.name} onChange={update("name")} placeholder="Lead name" />
-                {problems.name && <div className="text-rose-400 text-xs mt-1">{problems.name}</div>}
-              </div>
-
-              <div>
-                <label className="block text-sm gg-muted mb-1">Mobile <span className="text-rose-400">*</span></label>
-                <div className="flex gap-2">
-                  <select className="gg-input w-28" value={form.mobile_country} onChange={onCountryChange} aria-label="Country">
-                    {COUNTRY_OPTS.map(c => <option key={c.cc} value={c.cc}>{c.label} {c.code}</option>)}
-                  </select>
-                  <input readOnly className="gg-input w-20 text-center" value={form.mobile_code} aria-label="Dial code" />
-                  <input className="gg-input flex-1" value={form.mobile} onChange={update("mobile")} placeholder="Enter Mobile Number" />
-                </div>
-                <div className="text-xs mt-1" style={{color:"var(--muted)"}}>
-                  Duplicate mobile numbers will be sent for approval.
-                </div>
-                {problems.mobile && <div className="text-rose-400 text-xs mt-1">{problems.mobile}</div>}
-              </div>
-
-              <div>
-                <label className="block text-sm gg-muted mb-1">Email</label>
-                <input className="gg-input w-full" value={form.email} onChange={update("email")} placeholder="you@company.com" />
-                {problems.email && <div className="text-rose-400 text-xs mt-1">{problems.email}</div>}
-              </div>
-
-              <div>
-                <label className="block text-sm gg-muted mb-1">Expected Revenue</label>
-                <input type="number" inputMode="decimal" className="gg-input w-full" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="Revenue" />
-              </div>
-
-              <div>
-                <label className="block text-sm gg-muted mb-1">Follow Up Date <span className="text-rose-400">*</span></label>
-                <input type="date" className="gg-input w-full" value={form.follow_up_date} onChange={update("follow_up_date")} />
-                {problems.follow_up_date && <div className="text-rose-400 text-xs mt-1">{problems.follow_up_date}</div>}
-              </div>
-
-              <div>
-                <label className="block text-sm gg-muted mb-1">Profession</label>
-                <input className="gg-input w-full" value={form.profession} onChange={update("profession")} placeholder="Profession" />
-              </div>
-
-              <div>
-                <label className="block text-sm gg-muted mb-1">Lead Stage <span className="text-rose-400">*</span></label>
-                <select className="gg-input w-full" value={form.stage} onChange={update("stage")}>
-                  {stages.map(s => <option key={s} value={s}>{cap(s)}</option>)}
-                </select>
-                {problems.stage && <div className="text-rose-400 text-xs mt-1">{problems.stage}</div>}
-              </div>
-
-              <div>
-                <label className="block text-sm gg-muted mb-1">Source <span className="text-rose-400">*</span></label>
-                <select className="gg-input w-full" value={form.source} onChange={update("source")}>
-                  <option value="">Select a Source</option>
-                  {sources.map(s => <option key={s} value={s}>{s}</option>)}
-                </select>
-                {problems.source && <div className="text-rose-400 text-xs mt-1">{problems.source}</div>}
-              </div>
-            </div>
-          </section>
-
-          {/* Advance (collapsible) */}
-          <section className="gg-panel">
-            <button type="button"
-                    className="w-full flex items-center justify-between px-3 py-2"
-                    onClick={()=>setOpenAdvanced(v=>!v)}
-                    aria-expanded={openAdvanced}>
-              <span className="text-sm font-semibold">Advance</span>
-              <span className="gg-chip">{openAdvanced ? "Hide" : "Show"}</span>
-            </button>
-
-            <div className="px-3 pb-3" style={{ display: openAdvanced ? "block" : "none" }}>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="md:col-span-2">
-                  <label className="block text-sm gg-muted mb-1">Detailed information</label>
-                  <textarea className="gg-input w-full h-24" value={form.details} onChange={update("details")} placeholder="Notes or context" />
-                </div>
-
-                <div>
-                  <label className="block text-sm gg-muted mb-1">Headshot Photo</label>
-                  <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("headshot_file")} />
-                </div>
-
-                <div>
-                  <label className="block text-sm gg-muted mb-1">Photo of the meeting</label>
-                  <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("meeting_photo_file")} />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm gg-muted mb-1">Add voice record</label>
-                  <input type="file" className="gg-input w-full" accept="audio/*" onChange={updateFile("voice_record_file")} />
-                </div>
-              </div>
-
-              {/* Custom fields grid */}
-              {customFields?.length > 0 && (
-                <div className="mt-4">
-                  <div className="text-sm font-semibold mb-2">Custom fields</div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {customFields.map(renderCF)}
-                  </div>
-                </div>
-              )}
-            </div>
+            {mode === "quick" ? quickFields : fullFields}
           </section>
 
           {error && (

@@ -34,7 +34,7 @@ export default function AppTopbar() {
           </label>
         )}
 
-        {/* Theme toggle – cycles light/dark/night (no extra side effects here) */}
+        {/* Theme toggle – cycles light/dark/night */}
         <ThemeToggle compact />
 
         <UserChip email={user?.email} />
