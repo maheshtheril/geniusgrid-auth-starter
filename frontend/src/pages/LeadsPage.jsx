@@ -222,47 +222,15 @@ export default function LeadsPage() {
             <span className="text-sm text-[color:var(--muted)]">({count})</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div className="inline-flex rounded-lg overflow-hidden border border-[color:var(--border)]">
-              <button
-                className={`px-3 py-1.5 text-sm ${
-                  view === "table"
-                    ? "bg-[color:var(--primary)] text-white"
-                    : "bg-transparent text-[color:var(--text)] hover:bg-white/10"
-                }`}
-                onClick={() => setView("table")}
-              >
-                Table
-              </button>
-              <button
-                className={`px-3 py-1.5 text-sm ${
-                  view === "kanban"
-                    ? "bg-[color:var(--primary)] text-white"
-                    : "bg-transparent text-[color:var(--text)] hover:bg-white/10"
-                }`}
-                onClick={() => setView("kanban")}
-              >
-                Kanban
-              </button>
-              <button
-                className={`px-3 py-1.5 text-sm ${
-                  view === "cards"
-                    ? "bg-[color:var(--primary)] text-white"
-                    : "bg-transparent text-[color:var(--text)] hover:bg-white/10"
-                }`}
-                onClick={() => setView("cards")}
-              >
-                Cards
-              </button>
-            </div>
+        <div className="flex items-center gap-2">
+  <div className="inline-flex rounded-lg overflow-hidden border border-[color:var(--border)]">
+    <button className={`gg-btn ${view==='table' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('table')}>Table</button>
+    <button className={`gg-btn ${view==='kanban' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('kanban')}>Kanban</button>
+    <button className={`gg-btn ${view==='cards' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('cards')}>Cards</button>
+  </div>
 
-            <button
-              className="px-3 py-1.5 rounded-lg bg-[color:var(--primary)] hover:opacity-90 text-white text-sm"
-              onClick={() => setOpenAdd(true)}
-            >
-              + Add Lead
-            </button>
-          </div>
+  <button className="gg-btn gg-btn-primary" onClick={()=>setOpenAdd(true)}>+ Add Lead</button>
+</div>
         </div>
 
         {/* Filters */}
