@@ -8,62 +8,63 @@ import LeadDrawer from "@/components/leads/LeadDrawer";
 import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
 
 const DEFAULT_COLUMNS = [
-  { key: "name", label: "Lead", visible: true },
-  { key: "company_name", label: "Company", visible: true },
-  { key: "status", label: "Status", visible: true },
-  { key: "stage", label: "Stage", visible: true },
-  { key: "owner_name", label: "Owner", visible: true },
-  { key: "score", label: "AI Score", visible: true },
-  { key: "priority", label: "Priority", visible: false },
-  { key: "created_at", label: "Created", visible: true },
+  { key: "name",        label: "Lead",     visible: true  },
+  { key: "company_name",label: "Company",  visible: true  },
+  { key: "status",      label: "Status",   visible: true  },
+  { key: "stage",       label: "Stage",    visible: true  },
+  { key: "owner_name",  label: "Owner",    visible: true  },
+  { key: "score",       label: "AI Score", visible: true  },
+  { key: "priority",    label: "Priority", visible: false },
+  { key: "created_at",  label: "Created",  visible: true  },
 ];
 
 export default function LeadsPage() {
   const api = useLeadsApi();
 
   // View, filters, pagination
-  const [view, setView] = useState("table");
-  const [query, setQuery] = useState("");
-  const [filters, setFilters] = useState({ owner_id: "", stage: "", status: "" });
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
-  const [count, setCount] = useState(0);
+  const [view, setView]             = useState("table");
+  const [query, setQuery]           = useState("");
+  const [filters, setFilters]       = useState({ owner_id: "", stage: "", status: "" });
+  const [page, setPage]             = useState(1);
+  const [pageSize, setPageSize]     = useState(25);
+  const [count, setCount]           = useState(0);
 
   // Sorting
-  const [sortKey, setSortKey] = useState(null);
-  const [sortDir, setSortDir] = useState("asc");
+  const [sortKey, setSortKey]       = useState(null);
+  const [sortDir, setSortDir]       = useState("asc");
 
   // Data + UI state
-  const [rows, setRows] = useState([]);
-  const [stages, setStages] = useState([]);
-  const [columns, setColumns] = useState(() => {
+  const [rows, setRows]             = useState([]);
+  const [stages, setStages]         = useState([]);
+  const [columns, setColumns]       = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("leads.columns"));
       return saved?.length ? saved : DEFAULT_COLUMNS;
-    } catch {
-      return DEFAULT_COLUMNS;
-    }
+    } catch { return DEFAULT_COLUMNS; }
   });
-  const [selected, setSelected] = useState(null);
+
+  const [selected, setSelected]     = useState(null);
   const [openDrawer, setOpenDrawer] = useState(false);
-  const [openAdd, setOpenAdd] = useState(false);
-  const [loading, setLoading] = useState(false);
+
+  // Remount Add drawer each open to clear form state
+  const [openAdd, setOpenAdd]       = useState(false);
+  const [addKey, setAddKey]         = useState(0);
+
+  const [loading, setLoading]       = useState(false);
 
   // Mounted guard
   const mountedRef = useRef(false);
   useEffect(() => {
     mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
+    return () => { mountedRef.current = false; };
   }, []);
 
   // Realtime updates
   useRealtime({
     onLeadEvent: (evt) => {
       if (!evt?.lead) return;
-      setRows((prev) => {
-        const idx = prev.findIndex((r) => r.id === evt.lead.id);
+      setRows(prev => {
+        const idx = prev.findIndex(r => r.id === evt.lead.id);
         if (idx === -1) return [evt.lead, ...prev];
         const next = prev.slice();
         next[idx] = { ...prev[idx], ...evt.lead };
@@ -72,10 +73,7 @@ export default function LeadsPage() {
     },
   });
 
-  const visibleColumns = useMemo(
-    () => columns.filter((c) => c.visible),
-    [columns]
-  );
+  const visibleColumns = useMemo(() => columns.filter(c => c.visible), [columns]);
 
   // Params (legacy + premium)
   const params = useMemo(() => {
@@ -83,7 +81,7 @@ export default function LeadsPage() {
 
     const premium = {
       search_query: query?.trim() || undefined,
-      filter_stage: filters.stage || undefined,
+      filter_stage:  filters.stage || undefined,
       filter_status: filters.status || undefined,
       filter_owner_id: filters.owner_id || undefined,
       page_number: page,
@@ -91,7 +89,7 @@ export default function LeadsPage() {
       sort_by: sortKey || undefined,
       sort_direction: sortDir || undefined,
       view_type: view,
-      visible_columns: visibleColumns.map((c) => c.key),
+      visible_columns: visibleColumns.map(c => c.key),
       timezone,
       include_ai_insights: true,
       include_related_entities: ["company", "owner"],
@@ -102,29 +100,26 @@ export default function LeadsPage() {
       stage: filters.stage || undefined,
       status: filters.status || undefined,
       owner_id: filters.owner_id || undefined,
-      page,
-      pageSize,
+      page, pageSize,
       sort: sortKey || undefined,
-      dir: sortDir || undefined,
+      dir:  sortDir || undefined,
       view,
     };
 
     const merged = { ...legacy, ...premium };
-    return Object.fromEntries(
-      Object.entries(merged).filter(([, v]) => v !== undefined)
-    );
+    return Object.fromEntries(Object.entries(merged).filter(([,v]) => v !== undefined));
   }, [query, filters, page, pageSize, sortKey, sortDir, view, visibleColumns]);
 
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api.listLeads(params);
+      const data  = await api.listLeads(params);
       if (!mountedRef.current) return;
       const items = data.items || data.rows || [];
       setRows(items);
       setCount(Number(data.total ?? items.length ?? 0));
     } finally {
-      if (mountedRef.current) setLoading(false);
+      mountedRef.current && setLoading(false);
     }
   }, [api, params]);
 
@@ -133,17 +128,13 @@ export default function LeadsPage() {
       const data = await api.listPipelines();
       if (!mountedRef.current) return;
       setStages(data.stages || data || []);
-    } catch {}
+    } catch {/* swallow */}
   }, [api]);
 
-  useEffect(() => {
-    fetchPipelines();
-  }, [fetchPipelines]);
-  useEffect(() => {
-    fetchLeads();
-  }, [fetchLeads]);
+  useEffect(() => { fetchPipelines(); }, [fetchPipelines]);
+  useEffect(() => { fetchLeads(); }, [fetchLeads]);
 
-  // Client-side sorting
+  // Client-side sorting (stable)
   const sortedRows = useMemo(() => {
     if (!sortKey) return rows;
     const normalize = (v) => {
@@ -156,11 +147,11 @@ export default function LeadsPage() {
       return String(v).toLowerCase();
     };
     const arr = [...rows];
-    arr.sort((a, b) => {
+    arr.sort((a,b) => {
       const va = normalize(a[sortKey]);
       const vb = normalize(b[sortKey]);
       if (va < vb) return sortDir === "asc" ? -1 : 1;
-      if (va > vb) return sortDir === "asc" ? 1 : -1;
+      if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
     });
     return arr;
@@ -169,32 +160,35 @@ export default function LeadsPage() {
   // Actions
   const onInlineUpdate = async (id, patch) => {
     await api.updateLead(id, patch);
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+    setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
   };
-
   const onMoveStage = async ({ id, toStage }) => {
     await api.updateLead(id, { stage: toStage });
-    setRows((prev) => prev.map((r) => (r.id === id ? { ...r, stage: toStage } : r)));
+    setRows(prev => prev.map(r => (r.id === id ? { ...r, stage: toStage } : r)));
   };
-
-  const onOpenLead = (id) => {
-    setSelected(id);
-    setOpenDrawer(true);
-  };
+  const onOpenLead = (id) => { setSelected(id); setOpenDrawer(true); };
 
   const onAddSuccess = (newLead) => {
     setOpenAdd(false);
     if (newLead?.id) {
-      setRows((prev) => [newLead, ...prev]);
-      setCount((c) => c + 1);
+      setRows(prev => [newLead, ...prev]);
+      setCount(c => c + 1);
+      // Snap to Table view to make the new row obvious (optional)
+      setView("table");
+      // Scroll to top to show the new item
+      try { window.scrollTo({ top: 0, behavior: "smooth" }); } catch {}
     }
   };
 
+  const openAddDrawer = () => {
+    // Increase key so the drawer remounts clean each time (prevents stale state)
+    setAddKey(k => k + 1);
+    setOpenAdd(true);
+  };
+
   const toggleColumn = (key) => {
-    setColumns((prev) => {
-      const next = prev.map((c) =>
-        c.key === key ? { ...c, visible: !c.visible } : c
-      );
+    setColumns(prev => {
+      const next = prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c);
       localStorage.setItem("leads.columns", JSON.stringify(next));
       return next;
     });
@@ -202,99 +196,119 @@ export default function LeadsPage() {
 
   const handleSort = (key) => {
     if (!key) return;
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
+    if (sortKey === key) setSortDir(d => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("asc"); }
     setPage(1);
   };
+
+  // Compact view selector for small screens
+  const viewSelect = (
+    <select
+      aria-label="View"
+      className="gg-input md:hidden"
+      value={view}
+      onChange={(e)=>setView(e.target.value)}
+    >
+      <option value="table">Table</option>
+      <option value="kanban">Kanban</option>
+      <option value="cards">Cards</option>
+    </select>
+  );
 
   return (
     <div className="min-h-[100dvh] bg-[var(--bg)] text-[color:var(--text)]">
       <div className="p-4 flex flex-col gap-4">
 
         {/* Header */}
-        <div className="flex items-center justify-between p-4 rounded-2xl gg-panel shadow-xl">
-          <div className="flex items-center gap-3">
-            <h1 className="text-xl font-semibold text-[color:var(--text)]">Leads</h1>
-            <span className="text-sm text-[color:var(--muted)]">({count})</span>
+        <div className="gg-panel shadow-xl p-4 rounded-2xl">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-semibold">Leads</h1>
+              <span className="text-sm text-[color:var(--muted)]">({count})</span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* mobile: select */}
+              {viewSelect}
+
+              {/* desktop: segmented buttons */}
+              <div className="hidden md:inline-flex rounded-lg overflow-hidden border border-[color:var(--border)]">
+                <button className={`gg-btn ${view==='table' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('table')} aria-pressed={view==='table'}>Table</button>
+                <button className={`gg-btn ${view==='kanban' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('kanban')} aria-pressed={view==='kanban'}>Kanban</button>
+                <button className={`gg-btn ${view==='cards' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('cards')} aria-pressed={view==='cards'}>Cards</button>
+              </div>
+
+              <button className="gg-btn gg-btn-primary" onClick={openAddDrawer}>
+                + Add Lead
+              </button>
+            </div>
           </div>
-
-        <div className="flex items-center gap-2">
-  <div className="inline-flex rounded-lg overflow-hidden border border-[color:var(--border)]">
-    <button className={`gg-btn ${view==='table' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('table')}>Table</button>
-    <button className={`gg-btn ${view==='kanban' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('kanban')}>Kanban</button>
-    <button className={`gg-btn ${view==='cards' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('cards')}>Cards</button>
-  </div>
-
-  <button className="gg-btn gg-btn-primary" onClick={()=>setOpenAdd(true)}>+ Add Lead</button>
-</div>
         </div>
 
         {/* Filters */}
-        <div className="flex items-center gap-3 p-3 rounded-2xl gg-surface">
-          <input
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); setPage(1); }}
-            placeholder="Search name, email, phone, company…"
-            className="gg-input px-3 py-2 rounded-md w-64 placeholder-[color:var(--muted)]"
-          />
+        <div className="gg-surface p-3 rounded-2xl">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <input
+              value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(1); }}
+              placeholder="Search name, email, phone, company…"
+              className="gg-input w-full lg:w-64"
+              aria-label="Search leads"
+            />
 
-          <select
-            className="gg-input px-3 py-2 rounded-md"
-            value={filters.stage}
-            onChange={(e) => { setFilters(f => ({ ...f, stage: e.target.value || "" })); setPage(1); }}
-            aria-label="Stage"
-          >
-            <option value="">All Stages</option>
-            {stages?.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
+            <div className="flex gap-3">
+              <select
+                className="gg-input"
+                value={filters.stage}
+                onChange={(e) => { setFilters(f => ({ ...f, stage: e.target.value || "" })); setPage(1); }}
+                aria-label="Stage"
+              >
+                <option value="">All Stages</option>
+                {stages?.map(s => (<option key={s} value={s}>{s}</option>))}
+              </select>
 
-          <select
-            className="gg-input px-3 py-2 rounded-md"
-            value={filters.status}
-            onChange={(e) => { setFilters(f => ({ ...f, status: e.target.value || "" })); setPage(1); }}
-            aria-label="Status"
-          >
-            <option value="">All Status</option>
-            <option value="new">New</option>
-            <option value="qualified">Qualified</option>
-            <option value="won">Won</option>
-            <option value="lost">Lost</option>
-          </select>
+              <select
+                className="gg-input"
+                value={filters.status}
+                onChange={(e) => { setFilters(f => ({ ...f, status: e.target.value || "" })); setPage(1); }}
+                aria-label="Status"
+              >
+                <option value="">All Status</option>
+                <option value="new">New</option>
+                <option value="qualified">Qualified</option>
+                <option value="won">Won</option>
+                <option value="lost">Lost</option>
+              </select>
+            </div>
 
-          <button
-            className="ml-auto gg-btn gg-btn-ghost border border-[color:var(--border)]"
-            onClick={() => { setFilters({ owner_id: "", stage: "", status: "" }); setQuery(""); setPage(1); }}
-          >
-            Reset
-          </button>
+            <div className="flex items-center gap-2 lg:ml-auto">
+              <button
+                className="gg-btn gg-btn-ghost"
+                onClick={() => { setFilters({ owner_id: "", stage: "", status: "" }); setQuery(""); setPage(1); }}
+              >
+                Reset
+              </button>
 
-          <div className="relative">
-            <details className="group">
-              <summary className="gg-btn gg-btn-ghost border border-[color:var(--border)] cursor-pointer select-none">
-                Columns
-              </summary>
-              <ul className="absolute right-0 mt-2 w-56 rounded-2xl gg-panel p-2 shadow-xl z-20">
-                {columns.map((c) => (
-                  <li key={c.key} className="px-2 py-1.5">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={c.visible}
-                        onChange={() => toggleColumn(c.key)}
-                        className="accent-[var(--primary)]"
-                      />
-                      <span className="text-sm text-[color:var(--text)]">{c.label}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-            </details>
+              {/* Columns popover */}
+              <details className="relative">
+                <summary className="gg-btn cursor-pointer select-none">Columns</summary>
+                <ul className="gg-panel absolute right-0 mt-2 w-56 p-2 z-[60]">
+                  {columns.map(c => (
+                    <li key={c.key} className="px-2 py-1.5">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={c.visible}
+                          onChange={() => toggleColumn(c.key)}
+                          className="accent-[var(--primary)]"
+                        />
+                        <span className="text-sm">{c.label}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            </div>
           </div>
         </div>
 
@@ -337,7 +351,7 @@ export default function LeadsPage() {
           )}
         </div>
 
-        {/* Drawers */}
+        {/* Drawers (render at end so they layer above content) */}
         {openDrawer && (
           <LeadDrawer
             id={selected}
@@ -345,8 +359,10 @@ export default function LeadsPage() {
             onUpdated={(patch) => onInlineUpdate(selected, patch)}
           />
         )}
+
         {openAdd && (
           <AddLeadDrawer
+            key={addKey}                // remount to reset internal state each open
             onClose={() => setOpenAdd(false)}
             onSuccess={onAddSuccess}
           />
