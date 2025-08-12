@@ -14,11 +14,6 @@ function normalizeToArray(maybe) {
   if (Array.isArray(maybe?.data)) return maybe.data;
   if (Array.isArray(maybe?.rows)) return maybe.rows;
   if (Array.isArray(maybe?.results)) return maybe.results;
-  if (maybe && typeof maybe === "object") {
-    const vals = Object.values(maybe);
-    // if it looks like a homogeneous array of objects (common API quirks)
-    if (vals.length && vals.every(v => typeof v === "object")) return vals;
-  }
   return [];
 }
 
@@ -40,9 +35,7 @@ const INIT = {
   source: "",
   // advance
   details: "",
-  headshot_file: null,
-  meeting_photo_file: null,
-  voice_record_file: null,
+  // (no static file fields here anymore)
 };
 
 export default function AddLeadDrawer({
@@ -58,17 +51,18 @@ export default function AddLeadDrawer({
 }) {
   const api = useLeadsApi();
 
-  // countries from DB (may not be a clean array -> normalize)
+  // countries from DB
   const { countries: countriesRaw, loading: countriesLoading } = useCountriesApi("en");
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
-
   const countryOpts = useMemo(() => {
     if (!countries.length) return [];
-    return countries.map((c) => ({
-      cc: c.iso2 || c.cc || c.code || "",
-      code: c.default_dial || c.dial || c.phone_code || "",
-      label: `${c.emoji_flag || c.flag || flagFromIso2(c.iso2 || c.cc || "")} ${(c.iso2 || c.cc || "").toUpperCase()}`,
-    })).filter(o => o.cc && o.code);
+    return countries
+      .map((c) => ({
+        cc: (c.iso2 || c.cc || c.code || "").toUpperCase(),
+        code: c.default_dial || c.dial || c.phone_code || "",
+        label: `${c.emoji_flag || c.flag || flagFromIso2(c.iso2 || c.cc || "")} ${(c.iso2 || c.cc || "").toUpperCase()}`,
+      }))
+      .filter(o => o.cc && o.code);
   }, [countries]);
 
   // form state
@@ -134,11 +128,9 @@ export default function AddLeadDrawer({
   }, [onClose]);
 
   // helpers
-  const update = (k) => (e) =>
-    setForm((f) => ({ ...f, [k]: e?.target?.value ?? e }));
-
-  const updateFile = (k) => (e) =>
-    setForm((f) => ({ ...f, [k]: e.target.files?.[0] || null }));
+  const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target?.value ?? e }));
+  const updateFileCF = (key) => (e) =>
+    setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
 
   const onCountryChange = (e) => {
     const cc = (e.target.value || "").toUpperCase();
@@ -167,10 +159,7 @@ export default function AddLeadDrawer({
         if (alive) setDupMobile(null);
       }
     }, 450);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
+    return () => { alive = false; clearTimeout(timer); };
   }, [form.mobile, form.mobile_code, api]);
 
   // ---- GROUPED CUSTOM FIELDS ----
@@ -196,10 +185,14 @@ export default function AddLeadDrawer({
     if (dupMobile) p.mobile = "Duplicate number — will be sent for approval";
 
     for (const cf of cfList) {
-      if (cf.required) {
-        const v = custom?.[cf.key];
-        if (cf.type === "checkbox") { if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`; }
-        else if (v === undefined || v === null || v === "") { p[`cf:${cf.key}`] = `${cf.label} is required`; }
+      if (!cf.required) continue;
+      const v = custom?.[cf.key];
+      if (cf.type === "checkbox") {
+        if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`;
+      } else if (cf.type === "file") {
+        if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`;
+      } else if (v === undefined || v === null || v === "") {
+        p[`cf:${cf.key}`] = `${cf.label} is required`;
       }
     }
     return p;
@@ -207,8 +200,25 @@ export default function AddLeadDrawer({
 
   const isValid = Object.keys(problems).length === 0;
 
-  // payload builder
+  // payload builder (separates file-type custom fields into multipart parts)
   function buildPayload() {
+    const customForJson = {};
+    const files = {};
+
+    // move file-type custom fields to FormData entries, others stay in JSON
+    for (const cf of cfList) {
+      const key = cf.key;
+      const v = custom[key];
+      if (cf.type === "file") {
+        if (v instanceof File) {
+          // backend should read these from cf_files[<key>]
+          files[`cf_files[${key}]`] = v;
+        }
+      } else {
+        if (v !== undefined) customForJson[key] = v;
+      }
+    }
+
     const base = {
       name: String(form.name || "").trim(),
       mobile: `${form.mobile_code} ${String(form.mobile || "").trim()}`,
@@ -223,14 +233,10 @@ export default function AddLeadDrawer({
       status: form.status || "new",
       source: form.source,
       details: form.details || null,
-      custom_fields: custom,
+      custom_fields: customForJson,
     };
-    const files = {
-      headshot_file: form.headshot_file,
-      meeting_photo_file: form.meeting_photo_file,
-      voice_record_file: form.voice_record_file,
-    };
-    const hasFiles = !!(files.headshot_file || files.meeting_photo_file || files.voice_record_file);
+
+    const hasFiles = Object.keys(files).length > 0;
     return { base, files, hasFiles };
   }
 
@@ -264,12 +270,8 @@ export default function AddLeadDrawer({
       }
 
       const btn = document.getElementById("addlead-save");
-      if (btn) {
-        btn.classList.add("success-pulse");
-        setTimeout(() => onSuccess?.(created), 220);
-      } else {
-        onSuccess?.(created);
-      }
+      if (btn) { btn.classList.add("success-pulse"); setTimeout(() => onSuccess?.(created), 220); }
+      else onSuccess?.(created);
     } catch (err) {
       console.error(err);
       setError("Failed to create lead. Please try again.");
@@ -279,7 +281,7 @@ export default function AddLeadDrawer({
     }
   };
 
-  // custom field renderer
+  // custom field renderer (now supports file)
   const renderCF = (cf) => {
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
@@ -306,66 +308,50 @@ export default function AddLeadDrawer({
     switch (cf.type) {
       case "textarea":
         return wrap(
-          <textarea
-            className={`${base} h-24`}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <textarea className={`${base} h-24`} value={val} onChange={(e) => set(e.target.value)} />
         );
       case "number":
         return wrap(
-          <input
-            type="number"
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <input type="number" className={base} value={val} onChange={(e) => set(e.target.value)} />
         );
       case "date":
         return wrap(
-          <input
-            type="date"
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <input type="date" className={base} value={val} onChange={(e) => set(e.target.value)} />
         );
       case "select":
         return wrap(
-          <select
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          >
+          <select className={base} value={val} onChange={(e) => set(e.target.value)}>
             <option value="">Select…</option>
             {(cf.options || []).map((opt) => (
-              <option key={String(opt)} value={opt}>
-                {opt}
-              </option>
+              <option key={String(opt)} value={opt}>{opt}</option>
             ))}
           </select>
         );
       case "checkbox":
         return (
           <label key={cf.id || key} className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={!!val}
-              onChange={(e) => set(e.target.checked)}
-            />
-            <span className="text-sm">
-              {cf.label} {req}
-            </span>
+            <input type="checkbox" checked={!!val} onChange={(e) => set(e.target.checked)} />
+            <span className="text-sm">{cf.label} {req}</span>
           </label>
         );
-      default:
+      case "file":
         return wrap(
-          <input
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <>
+            <input
+              type="file"
+              className={base}
+              accept={cf.accept || "*/*"}
+              onChange={updateFileCF(key)}
+            />
+            {val instanceof File && (
+              <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>
+                Selected: {val.name}
+              </div>
+            )}
+          </>
         );
+      default:
+        return wrap(<input className={base} value={val} onChange={(e) => set(e.target.value)} />);
     }
   };
 
@@ -384,9 +370,7 @@ export default function AddLeadDrawer({
           placeholder="Lead name"
           aria-invalid={!!problems.name}
         />
-        {problems.name && (
-          <div className="text-rose-400 text-xs mt-1">{problems.name}</div>
-        )}
+        {problems.name && <div className="text-rose-400 text-xs mt-1">{problems.name}</div>}
       </div>
 
       <div>
@@ -402,17 +386,10 @@ export default function AddLeadDrawer({
             disabled={countriesLoading || !countryOpts.length}
           >
             {countryOpts.map((c) => (
-              <option key={c.cc} value={c.cc}>
-                {c.label} {c.code}
-              </option>
+              <option key={c.cc} value={c.cc}>{c.label} {c.code}</option>
             ))}
           </select>
-          <input
-            readOnly
-            className="gg-input w-20 text-center"
-            value={form.mobile_code}
-            aria-label="Dial code"
-          />
+          <input readOnly className="gg-input w-20 text-center" value={form.mobile_code} aria-label="Dial code" />
           <input
             className="gg-input flex-1"
             value={form.mobile}
@@ -422,13 +399,9 @@ export default function AddLeadDrawer({
           />
         </div>
         <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>
-          {dupMobile === true
-            ? "Duplicate Mobile Number will be sent for approval."
-            : "We'll check duplicates automatically."}
+          {dupMobile === true ? "Duplicate Mobile Number will be sent for approval." : "We'll check duplicates automatically."}
         </div>
-        {problems.mobile && (
-          <div className="text-rose-400 text-xs mt-1">{problems.mobile}</div>
-        )}
+        {problems.mobile && <div className="text-rose-400 text-xs mt-1">{problems.mobile}</div>}
       </div>
 
       <div>
@@ -440,9 +413,7 @@ export default function AddLeadDrawer({
           placeholder="you@company.com"
           aria-invalid={!!problems.email}
         />
-        {problems.email && (
-          <div className="text-rose-400 text-xs mt-1">{problems.email}</div>
-        )}
+        {problems.email && <div className="text-rose-400 text-xs mt-1">{problems.email}</div>}
       </div>
 
       <div>
@@ -468,64 +439,33 @@ export default function AddLeadDrawer({
           onChange={update("follow_up_date")}
           aria-invalid={!!problems.follow_up_date}
         />
-        {problems.follow_up_date && (
-          <div className="text-rose-400 text-xs mt-1">
-            {problems.follow_up_date}
-          </div>
-        )}
+        {problems.follow_up_date && <div className="text-rose-400 text-xs mt-1">{problems.follow_up_date}</div>}
       </div>
 
       <div>
         <label className="block text-sm gg-muted mb-1">Profession</label>
-        <input
-          className="gg-input w-full"
-          value={form.profession}
-          onChange={update("profession")}
-          placeholder="Profession"
-        />
+        <input className="gg-input w-full" value={form.profession} onChange={update("profession")} placeholder="Profession" />
       </div>
 
       <div>
         <label className="block text-sm gg-muted mb-1">
           Lead Stage <span className="text-rose-400">*</span>
         </label>
-        <select
-          className="gg-input w-full"
-          value={form.stage}
-          onChange={update("stage")}
-          aria-invalid={!!problems.stage}
-        >
-          {stages.map((s) => (
-            <option key={s} value={s}>
-              {cap(s)}
-            </option>
-          ))}
+        <select className="gg-input w-full" value={form.stage} onChange={update("stage")} aria-invalid={!!problems.stage}>
+          {stages.map((s) => (<option key={s} value={s}>{cap(s)}</option>))}
         </select>
-        {problems.stage && (
-          <div className="text-rose-400 text-xs mt-1">{problems.stage}</div>
-        )}
+        {problems.stage && <div className="text-rose-400 text-xs mt-1">{problems.stage}</div>}
       </div>
 
       <div>
         <label className="block text-sm gg-muted mb-1">
           Source <span className="text-rose-400">*</span>
         </label>
-        <select
-          className="gg-input w-full"
-          value={form.source}
-          onChange={update("source")}
-          aria-invalid={!!problems.source}
-        >
+        <select className="gg-input w-full" value={form.source} onChange={update("source")} aria-invalid={!!problems.source}>
           <option value="">Select a Source</option>
-          {sources.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
+          {sources.map((s) => (<option key={s} value={s}>{s}</option>))}
         </select>
-        {problems.source && (
-          <div className="text-rose-400 text-xs mt-1">{problems.source}</div>
-        )}
+        {problems.source && <div className="text-rose-400 text-xs mt-1">{problems.source}</div>}
       </div>
     </div>
   );
@@ -538,9 +478,7 @@ export default function AddLeadDrawer({
         <button
           type="button"
           className="gg-btn gg-btn-ghost"
-          onClick={() =>
-            onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)
-          }
+          onClick={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)}
         >
           + Add custom field
         </button>
@@ -551,16 +489,8 @@ export default function AddLeadDrawer({
       <div className="mt-4">
         <div className="text-sm font-semibold mb-2">Custom fields — General</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {generalCF.length > 0 ? (
-            generalCF.map(renderCF)
-          ) : (
-            <EmptyCustomGroup
-              onAdd={() =>
-                onManageCustomFields
-                  ? onManageCustomFields()
-                  : setShowCFModal(true)
-              }
-            />
+          {generalCF.length > 0 ? generalCF.map(renderCF) : (
+            <EmptyCustomGroup onAdd={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)} />
           )}
         </div>
       </div>
@@ -574,9 +504,7 @@ export default function AddLeadDrawer({
         <button
           type="button"
           className="gg-btn"
-          onClick={() =>
-            onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)
-          }
+          onClick={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)}
         >
           Manage / Add custom fields
         </button>
@@ -584,60 +512,16 @@ export default function AddLeadDrawer({
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="md:col-span-2">
-          <label className="block text-sm gg-muted mb-1">
-            Detailed information
-          </label>
-          <textarea
-            className="gg-input w-full h-24"
-            value={form.details}
-            onChange={update("details")}
-            placeholder="Notes or context"
-          />
-        </div>
-        <div>
-          <label className="block text-sm gg-muted mb-1">Headshot Photo</label>
-          <input
-            type="file"
-            className="gg-input w-full"
-            accept="image/*"
-            onChange={updateFile("headshot_file")}
-          />
-        </div>
-        <div>
-          <label className="block text-sm gg-muted mb-1">
-            Photo of the meeting
-          </label>
-          <input
-            type="file"
-            className="gg-input w-full"
-            accept="image/*"
-            onChange={updateFile("meeting_photo_file")}
-          />
-        </div>
-        <div className="md:col-span-2">
-          <label className="block text-sm gg-muted mb-1">Add voice record</label>
-          <input
-            type="file"
-            className="gg-input w-full"
-            accept="audio/*"
-            onChange={updateFile("voice_record_file")}
-          />
+          <label className="block text-sm gg-muted mb-1">Detailed information</label>
+          <textarea className="gg-input w-full h-24" value={form.details} onChange={update("details")} placeholder="Notes or context" />
         </div>
       </div>
 
       <div className="mt-4">
         <div className="text-sm font-semibold mb-2">Custom fields — Advance</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {advanceCF.length > 0 ? (
-            advanceCF.map(renderCF)
-          ) : (
-            <EmptyCustomGroup
-              onAdd={() =>
-                onManageCustomFields
-                  ? onManageCustomFields()
-                  : setShowCFModal(true)
-              }
-            />
+          {advanceCF.length > 0 ? advanceCF.map(renderCF) : (
+            <EmptyCustomGroup onAdd={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)} />
           )}
         </div>
       </div>
@@ -647,20 +531,14 @@ export default function AddLeadDrawer({
   const el = (
     <div className="fixed inset-0 z-[9999]">
       {/* Backdrop */}
-      <div
-        className="absolute inset-0 bg-black/40 backdrop-blur-[1px] animate-fadeIn"
-        onClick={onClose}
-        aria-hidden
-      />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] animate-fadeIn" onClick={onClose} aria-hidden />
 
       {/* Drawer */}
       <aside
         className="absolute right-0 top-0 h-full w-full sm:w-[720px]
                     bg-[var(--surface)] border-l border-[color:var(--border)] shadow-2xl
                     animate-slideIn will-change-transform"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Add Lead"
+        role="dialog" aria-modal="true" aria-label="Add Lead"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--border)]">
@@ -671,10 +549,7 @@ export default function AddLeadDrawer({
         </div>
 
         {/* Body */}
-        <form
-          onSubmit={submit}
-          className="p-4 space-y-4 overflow-auto h-[calc(100%-56px-64px)]"
-        >
+        <form onSubmit={submit} className="p-4 space-y-4 overflow-auto h-[calc(100%-56px-64px)]">
           {generalGroup}
           {advanceGroup}
 
@@ -687,9 +562,7 @@ export default function AddLeadDrawer({
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[color:var(--border)]">
-          <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>
-            Cancel
-          </button>
+          <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
           <button
             id="addlead-save"
             className="gg-btn gg-btn-primary"
@@ -708,10 +581,7 @@ export default function AddLeadDrawer({
         <CFModal
           onClose={() => setShowCFModal(false)}
           onSave={async (field) => {
-            let newField = {
-              ...field,
-              group: field.group === "advance" ? "advance" : "general",
-            };
+            let newField = { ...field, group: field.group === "advance" ? "advance" : "general" };
             if (onCreateCustomField) {
               try {
                 const persisted = await onCreateCustomField(newField);
@@ -752,9 +622,7 @@ function EmptyCustomGroup({ onAdd }) {
   return (
     <div className="gg-card flex items-center justify-between">
       <div className="text-sm text-[color:var(--muted)]">No custom fields yet.</div>
-      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>
-        Add a custom field
-      </button>
+      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>Add a custom field</button>
     </div>
   );
 }
@@ -779,10 +647,9 @@ function CFModal({ onClose, onSave }) {
       type: f.type,
       group: f.group,
       required: !!f.required,
-      options:
-        f.type === "select"
-          ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean)
-          : [],
+      options: f.type === "select"
+        ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean)
+        : [],
     };
     onSave?.(field);
   };
@@ -793,37 +660,22 @@ function CFModal({ onClose, onSave }) {
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gg-panel p-4 rounded-2xl w-[520px] max-w-[92vw]">
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-lg font-semibold">Add custom field</h3>
-          <button className="gg-btn gg-btn-ghost" onClick={onClose}>
-            ✕
-          </button>
+          <button className="gg-btn gg-btn-ghost" onClick={onClose}>✕</button>
         </div>
 
         <div className="grid grid-cols-1 gap-3">
           <div>
             <label className="gg-label">Label *</label>
-            <input
-              className="gg-input"
-              value={f.label}
-              onChange={(e) => setF((s) => ({ ...s, label: e.target.value }))}
-            />
+            <input className="gg-input" value={f.label} onChange={(e) => setF((s) => ({ ...s, label: e.target.value }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="gg-label">Key</label>
-              <input
-                className="gg-input"
-                value={f.key}
-                onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))}
-                placeholder="auto from label if empty"
-              />
+              <input className="gg-input" value={f.key} onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))} placeholder="auto from label if empty" />
             </div>
             <div>
               <label className="gg-label">Group</label>
-              <select
-                className="gg-input"
-                value={f.group}
-                onChange={(e) => setF((s) => ({ ...s, group: e.target.value }))}
-              >
+              <select className="gg-input" value={f.group} onChange={(e) => setF((s) => ({ ...s, group: e.target.value }))}>
                 <option value="general">General</option>
                 <option value="advance">Advance</option>
               </select>
@@ -833,11 +685,7 @@ function CFModal({ onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="gg-label">Type</label>
-              <select
-                className="gg-input"
-                value={f.type}
-                onChange={(e) => setF((s) => ({ ...s, type: e.target.value }))}
-              >
+              <select className="gg-input" value={f.type} onChange={(e) => setF((s) => ({ ...s, type: e.target.value }))}>
                 <option value="text">Text</option>
                 <option value="email">Email</option>
                 <option value="phone">Phone</option>
@@ -851,14 +699,7 @@ function CFModal({ onClose, onSave }) {
             </div>
             <div className="flex items-end">
               <label className="inline-flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  className="gg-checkbox"
-                  checked={f.required}
-                  onChange={(e) =>
-                    setF((s) => ({ ...s, required: e.target.checked }))
-                  }
-                />
+                <input type="checkbox" className="gg-checkbox" checked={f.required} onChange={(e) => setF((s) => ({ ...s, required: e.target.checked }))} />
                 Required
               </label>
             </div>
@@ -867,25 +708,14 @@ function CFModal({ onClose, onSave }) {
           {f.type === "select" && (
             <div>
               <label className="gg-label">Options (comma separated)</label>
-              <input
-                className="gg-input"
-                placeholder="e.g., Hot, Warm, Cold"
-                value={f.optionsText}
-                onChange={(e) =>
-                  setF((s) => ({ ...s, optionsText: e.target.value }))
-                }
-              />
+              <input className="gg-input" placeholder="e.g., Hot, Warm, Cold" value={f.optionsText} onChange={(e) => setF((s) => ({ ...s, optionsText: e.target.value }))} />
             </div>
           )}
         </div>
 
         <div className="flex justify-end mt-4 gap-2">
-          <button className="gg-btn gg-btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-          <button className="gg-btn gg-btn-primary" onClick={save}>
-            Save
-          </button>
+          <button className="gg-btn gg-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="gg-btn gg-btn-primary" onClick={save}>Save</button>
         </div>
       </div>
     </div>,
@@ -893,6 +723,4 @@ function CFModal({ onClose, onSave }) {
   );
 }
 
-function cap(s) {
-  return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
-}
+function cap(s){ return String(s||"").charAt(0).toUpperCase() + String(s||"").slice(1); }
