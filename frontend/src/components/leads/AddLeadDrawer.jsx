@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import useLeadsApi from "@/hooks/useLeadsApi";
+import useCountriesApi, { flagFromIso2 } from "@/hooks/useCountriesApi";
 
 /** Custom fields shape:
  *  [{ id,key,label,type,required,options?, group: 'general'|'advance' }, ...]
@@ -26,14 +27,6 @@ const INIT = {
   voice_record_file: null,
 };
 
-const COUNTRY_OPTS = [
-  { cc: "IN", code: "+91",  label: "🇮🇳 IN" },
-  { cc: "US", code: "+1",   label: "🇺🇸 US" },
-  { cc: "GB", code: "+44",  label: "🇬🇧 UK" },
-  { cc: "AE", code: "+971", label: "🇦🇪 AE" },
-  { cc: "SG", code: "+65",  label: "🇸🇬 SG" },
-];
-
 export default function AddLeadDrawer({
   onClose,
   onSuccess,
@@ -47,6 +40,17 @@ export default function AddLeadDrawer({
   onCreateCustomField,         // optional async: (field) => persistedField or null
 }) {
   const api = useLeadsApi();
+
+  // countries from DB
+  const { countries, loading: countriesLoading } = useCountriesApi("en");
+  const countryOpts = useMemo(() => {
+    if (!countries?.length) return [];
+    return countries.map((c) => ({
+      cc: c.iso2,
+      code: c.default_dial,
+      label: `${c.emoji_flag || flagFromIso2(c.iso2)} ${c.iso2}`,
+    }));
+  }, [countries]);
 
   // form state
   const [form, setForm] = useState(INIT);
@@ -63,10 +67,10 @@ export default function AddLeadDrawer({
   const firstInputRef = useRef(null);
   const submittingRef = useRef(false);
 
-  // prepare country code map
+  // prepare country code map (from DB-driven options)
   const codeByCc = useMemo(
-    () => Object.fromEntries(COUNTRY_OPTS.map(c => [c.cc, c.code])),
-    []
+    () => Object.fromEntries(countryOpts.map((c) => [c.cc, c.code])),
+    [countryOpts]
   );
 
   // hard reset on mount (prevents stale values on reopen)
@@ -74,13 +78,25 @@ export default function AddLeadDrawer({
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
     setCfList(
-      (Array.isArray(customFields) ? customFields : []).map(f => ({
+      (Array.isArray(customFields) ? customFields : []).map((f) => ({
         ...f,
         group: f?.group === "advance" ? "advance" : "general",
       }))
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only
+
+  // when countries load, ensure mobile_code matches selected country (or default to first)
+  useEffect(() => {
+    if (countriesLoading) return;
+    if (!countryOpts.length) return;
+    setForm((f) => {
+      const cc = f.mobile_country && codeByCc[f.mobile_country] ? f.mobile_country : countryOpts[0].cc;
+      const code = codeByCc[cc] || "";
+      if (f.mobile_country === cc && f.mobile_code === code) return f;
+      return { ...f, mobile_country: cc, mobile_code: code };
+    });
+  }, [countriesLoading, countryOpts, codeByCc]);
 
   // lock body scroll, esc to close, focus first
   useEffect(() => {
@@ -375,8 +391,9 @@ export default function AddLeadDrawer({
             value={form.mobile_country}
             onChange={onCountryChange}
             aria-label="Country"
+            disabled={countriesLoading || !countryOpts.length}
           >
-            {COUNTRY_OPTS.map((c) => (
+            {countryOpts.map((c) => (
               <option key={c.cc} value={c.cc}>
                 {c.label} {c.code}
               </option>
@@ -772,7 +789,7 @@ function CFModal({ onClose, onSave }) {
   };
 
   return createPortal(
-    <div className="fixed inset-0 z[10000]">
+    <div className="fixed inset-0 z-[10000]">
       <div className="absolute inset-0 bg-black/40" onClick={onClose} />
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gg-panel p-4 rounded-2xl w-[520px] max-w-[92vw]">
         <div className="flex items-center justify-between mb-3">
