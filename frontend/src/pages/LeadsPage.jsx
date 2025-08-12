@@ -380,16 +380,16 @@ export default function LeadsPage() {
           />
         )}
 
-        {openAdd && (
-          <AddLeadDrawer
-            key={addKey}
-            stages={stages} // already fetched from API
-            sources={["Website","Referral","Ads","Outbound","Event"]}
-            customFields={leadCustomFields}  {/* ✅ fixed: was myCustomFields */}
-            onClose={() => setOpenAdd(false)}
-            onSuccess={onAddSuccess}
-          />
-        )}
+       {openAdd && (
+  <AddLeadDrawer
+    key={addKey}
+    stages={stages}
+    sources={["Website","Referral","Ads","Outbound","Event"]}
+    customFields={leadCustomFields}
+    onClose={() => setOpenAdd(false)}
+    onSuccess={onAddSuccess}
+  />
+)}
       </div>
     </div>
   );
