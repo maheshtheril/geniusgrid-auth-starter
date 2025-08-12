@@ -42,7 +42,8 @@ export default function AddLeadDrawer({
   sources = ["Website","Referral","Ads","Outbound","Event"],
   customFields = [],
   variant = "quick", // "quick" | "full"
-  onManageCustomFields, // optional handler to open CF settings/modal
+  onManageCustomFields,        // optional external manager
+  onCreateCustomField,         // optional async: (field) => persistedField or null
 }) {
   const api = useLeadsApi();
 
@@ -51,9 +52,12 @@ export default function AddLeadDrawer({
   const [custom, setCustom] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [openAdvanced, setOpenAdvanced] = useState(true);
   const [mode, setMode] = useState(variant); // UI mode: quick or full
   const [dupMobile, setDupMobile] = useState(null);
+
+  // local custom fields (so "Add" works instantly even without backend)
+  const [cfList, setCfList] = useState([]);
+  const [showCFModal, setShowCFModal] = useState(false);
 
   // refs
   const firstInputRef = useRef(null);
@@ -66,6 +70,12 @@ export default function AddLeadDrawer({
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
     setMode(variant);
+    setCfList(
+      (Array.isArray(customFields) ? customFields : []).map(f => ({
+        ...f,
+        group: f?.group === "advance" ? "advance" : "general",
+      }))
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only
 
@@ -106,17 +116,14 @@ export default function AddLeadDrawer({
     return () => { alive = false; clearTimeout(timer); };
   }, [form.mobile, form.mobile_code, api]);
 
-  // ---- GROUPED CUSTOM FIELDS ----
-  // default any missing/invalid group to "general"
+  // ---- GROUPED CUSTOM FIELDS (from local cfList) ----
   const { generalCF, advanceCF } = useMemo(() => {
-    const list = Array.isArray(customFields) ? customFields : [];
     const g = [], a = [];
-    for (const f of list) {
-      const item = { ...f, group: f?.group === "advance" ? "advance" : "general" };
-      (item.group === "advance" ? a : g).push(item);
+    for (const f of cfList) {
+      (f.group === "advance" ? a : g).push(f);
     }
     return { generalCF: g, advanceCF: a };
-  }, [customFields]);
+  }, [cfList]);
 
   // validation
   const problems = useMemo(() => {
@@ -135,7 +142,7 @@ export default function AddLeadDrawer({
     if (dupMobile) p.mobile = "Mobile already exists (will be sent for approval)";
 
     // custom-field required
-    for (const cf of customFields) {
+    for (const cf of cfList) {
       if (cf.required) {
         const v = custom?.[cf.key];
         if (cf.type === "checkbox") { if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`; }
@@ -143,7 +150,7 @@ export default function AddLeadDrawer({
       }
     }
     return p;
-  }, [form, custom, customFields, dupMobile]);
+  }, [form, custom, cfList, dupMobile]);
 
   const isValid = Object.keys(problems).length === 0;
 
@@ -241,8 +248,8 @@ export default function AddLeadDrawer({
     }
   };
 
-  // quick mode = only the must-have fields
-  const quickFields = (
+  // ====== CORE FIELDS ======
+  const coreQuick = (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div>
         <label className="block text-sm gg-muted mb-1">Lead Name <span className="text-rose-400">*</span></label>
@@ -286,95 +293,92 @@ export default function AddLeadDrawer({
     </div>
   );
 
-  const fullFields = (
-    <>
-      {quickFields}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
-        <div>
-          <label className="block text-sm gg-muted mb-1">Email</label>
-          <input className="gg-input w-full" value={form.email} onChange={update("email")} placeholder="you@company.com" />
-          {problems.email && <div className="text-rose-400 text-xs mt-1">{problems.email}</div>}
-        </div>
-        <div>
-          <label className="block text-sm gg-muted mb-1">Expected Revenue</label>
-          <input type="number" inputMode="decimal" className="gg-input w-full" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="Revenue" />
-        </div>
-        <div>
-          <label className="block text-sm gg-muted mb-1">Profession</label>
-          <input className="gg-input w-full" value={form.profession} onChange={update("profession")} placeholder="Profession" />
-        </div>
+  const coreExtra = (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3">
+      <div>
+        <label className="block text-sm gg-muted mb-1">Email</label>
+        <input className="gg-input w-full" value={form.email} onChange={update("email")} placeholder="you@company.com" />
+        {problems.email && <div className="text-rose-400 text-xs mt-1">{problems.email}</div>}
       </div>
-
-      {/* ======= ALWAYS-VISIBLE ADVANCE GROUP ======= */}
-      <section className="gg-panel mt-4">
-        <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-sm font-semibold">Advance</span>
-          <div className="flex items-center gap-2">
-            <button type="button" className="gg-btn gg-btn-ghost" onClick={()=>setOpenAdvanced(v=>!v)} aria-expanded={openAdvanced}>
-              {openAdvanced ? "Hide" : "Show"}
-            </button>
-            <button type="button" className="gg-btn" onClick={() => onManageCustomFields?.()}>
-              Manage / Add custom fields
-            </button>
-          </div>
-        </div>
-
-        <div className="px-3 pb-3" style={{ display: openAdvanced ? "block" : "none" }}>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <div className="md:col-span-2">
-              <label className="block text-sm gg-muted mb-1">Detailed information</label>
-              <textarea className="gg-input w-full h-24" value={form.details} onChange={update("details")} placeholder="Notes or context" />
-            </div>
-            <div>
-              <label className="block text-sm gg-muted mb-1">Headshot Photo</label>
-              <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("headshot_file")} />
-            </div>
-            <div>
-              <label className="block text-sm gg-muted mb-1">Photo of the meeting</label>
-              <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("meeting_photo_file")} />
-            </div>
-            <div className="md:col-span-2">
-              <label className="block text-sm gg-muted mb-1">Add voice record</label>
-              <input type="file" className="gg-input w-full" accept="audio/*" onChange={updateFile("voice_record_file")} />
-            </div>
-          </div>
-
-          {/* Advance custom fields */}
-          <div className="mt-4">
-            <div className="text-sm font-semibold mb-2">Custom fields — Advance</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {advanceCF.length > 0 ? (
-                advanceCF.map(renderCF)
-              ) : (
-                <EmptyCustomGroup onAdd={() => onManageCustomFields?.()} />
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-    </>
+      <div>
+        <label className="block text-sm gg-muted mb-1">Expected Revenue</label>
+        <input type="number" inputMode="decimal" className="gg-input w-full" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="Revenue" />
+      </div>
+      <div>
+        <label className="block text-sm gg-muted mb-1">Profession</label>
+        <input className="gg-input w-full" value={form.profession} onChange={update("profession")} placeholder="Profession" />
+      </div>
+    </div>
   );
 
-  // GENERAL GROUP — always visible, includes system core + general custom fields
+  // ====== GROUP SECTIONS (ALWAYS VISIBLE) ======
   const generalGroup = (
     <section className="gg-panel p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold">General</div>
-        <button type="button" className="gg-btn gg-btn-ghost" onClick={() => onManageCustomFields?.()}>
+        <button
+          type="button"
+          className="gg-btn gg-btn-ghost"
+          onClick={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)}
+        >
           + Add custom field
         </button>
       </div>
 
-      {mode === "quick" ? quickFields : fullFields}
+      {mode === "quick" ? coreQuick : (<>{coreQuick}{coreExtra}</>)}
 
-      {/* General custom fields (below system fields) */}
       <div className="mt-4">
         <div className="text-sm font-semibold mb-2">Custom fields — General</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {generalCF.length > 0 ? (
             generalCF.map(renderCF)
           ) : (
-            <EmptyCustomGroup onAdd={() => onManageCustomFields?.()} />
+            <EmptyCustomGroup onAdd={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)} />
+          )}
+        </div>
+      </div>
+    </section>
+  );
+
+  const advanceGroup = (
+    <section className="gg-panel p-3">
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-semibold">Advance</div>
+        <button
+          type="button"
+          className="gg-btn"
+          onClick={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)}
+        >
+          Manage / Add custom fields
+        </button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="md:col-span-2">
+          <label className="block text-sm gg-muted mb-1">Detailed information</label>
+          <textarea className="gg-input w-full h-24" value={form.details} onChange={update("details")} placeholder="Notes or context" />
+        </div>
+        <div>
+          <label className="block text-sm gg-muted mb-1">Headshot Photo</label>
+          <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("headshot_file")} />
+        </div>
+        <div>
+          <label className="block text-sm gg-muted mb-1">Photo of the meeting</label>
+          <input type="file" className="gg-input w-full" accept="image/*" onChange={updateFile("meeting_photo_file")} />
+        </div>
+        <div className="md:col-span-2">
+          <label className="block text-sm gg-muted mb-1">Add voice record</label>
+          <input type="file" className="gg-input w-full" accept="audio/*" onChange={updateFile("voice_record_file")} />
+        </div>
+      </div>
+
+      <div className="mt-4">
+        <div className="text-sm font-semibold mb-2">Custom fields — Advance</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {advanceCF.length > 0 ? (
+            advanceCF.map(renderCF)
+          ) : (
+            <EmptyCustomGroup onAdd={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)} />
           )}
         </div>
       </div>
@@ -402,7 +406,7 @@ export default function AddLeadDrawer({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button type="button" className="gg-btn gg-btn-ghost" onClick={() => setMode(m => m === "quick" ? "full" : "quick")}>
+            <button type="button" className="gg-btn gg-btn-ghost" onClick={() => setMode(m => (m === "quick" ? "full" : "quick"))}>
               {mode === "quick" ? "Full form" : "Quick add"}
             </button>
             <button className="gg-btn gg-btn-ghost" onClick={onClose} aria-label="Close">✕</button>
@@ -412,6 +416,7 @@ export default function AddLeadDrawer({
         {/* Body */}
         <form onSubmit={submit} className="p-4 space-y-4 overflow-auto h-[calc(100%-56px-64px)]">
           {generalGroup}
+          {advanceGroup}
 
           {error && (
             <div className="rounded-md border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">
@@ -428,6 +433,24 @@ export default function AddLeadDrawer({
           </button>
         </div>
       </aside>
+
+      {/* Inline Custom Field Modal (works even without external manager) */}
+      {showCFModal && (
+        <CFModal
+          onClose={() => setShowCFModal(false)}
+          onSave={async (field) => {
+            let newField = { ...field, group: field.group === "advance" ? "advance" : "general" };
+            if (onCreateCustomField) {
+              try {
+                const persisted = await onCreateCustomField(newField);
+                if (persisted) newField = { ...newField, ...persisted };
+              } catch {}
+            }
+            setCfList((list) => [...list, newField]);
+            setShowCFModal(false);
+          }}
+        />
+      )}
 
       {/* Animations */}
       <style>{`
@@ -459,6 +482,104 @@ function EmptyCustomGroup({ onAdd }) {
       <div className="text-sm text-[color:var(--muted)]">No custom fields yet.</div>
       <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>Add a custom field</button>
     </div>
+  );
+}
+
+function CFModal({ onClose, onSave }) {
+  const [f, setF] = useState({
+    label: "",
+    key: "",
+    type: "text",
+    group: "general",
+    required: false,
+    optionsText: "",
+  });
+
+  const save = () => {
+    const key = (f.key || f.label).trim().toLowerCase().replace(/\s+/g, "_");
+    if (!f.label.trim()) return;
+    const field = {
+      id: crypto.randomUUID(),
+      label: f.label.trim(),
+      key,
+      type: f.type,
+      group: f.group,
+      required: !!f.required,
+      options: f.type === "select"
+        ? f.optionsText.split(",").map(s => s.trim()).filter(Boolean)
+        : [],
+    };
+    onSave?.(field);
+  };
+
+  return createPortal(
+    <div className="fixed inset-0 z-[10000]">
+      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
+      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gg-panel p-4 rounded-2xl w-[520px] max-w-[92vw]">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-lg font-semibold">Add custom field</h3>
+          <button className="gg-btn gg-btn-ghost" onClick={onClose}>✕</button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="gg-label">Label *</label>
+            <input className="gg-input" value={f.label} onChange={(e)=>setF(s=>({...s, label:e.target.value}))} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="gg-label">Key</label>
+              <input className="gg-input" value={f.key} onChange={(e)=>setF(s=>({...s, key:e.target.value}))} placeholder="auto from label if empty" />
+            </div>
+            <div>
+              <label className="gg-label">Group</label>
+              <select className="gg-input" value={f.group} onChange={(e)=>setF(s=>({...s, group:e.target.value}))}>
+                <option value="general">General</option>
+                <option value="advance">Advance</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="gg-label">Type</label>
+              <select className="gg-input" value={f.type} onChange={(e)=>setF(s=>({...s, type:e.target.value}))}>
+                <option value="text">Text</option>
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="textarea">Textarea</option>
+                <option value="select">Select</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+                <option value="checkbox">Checkbox</option>
+                <option value="file">File</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <label className="inline-flex items-center gap-2">
+                <input type="checkbox" className="gg-checkbox" checked={f.required}
+                  onChange={(e)=>setF(s=>({...s, required:e.target.checked}))} />
+                Required
+              </label>
+            </div>
+          </div>
+
+          {f.type === "select" && (
+            <div>
+              <label className="gg-label">Options (comma separated)</label>
+              <input className="gg-input" placeholder="e.g., Hot, Warm, Cold"
+                value={f.optionsText} onChange={(e)=>setF(s=>({...s, optionsText:e.target.value}))} />
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end mt-4 gap-2">
+          <button className="gg-btn gg-btn-ghost" onClick={onClose}>Cancel</button>
+          <button className="gg-btn gg-btn-primary" onClick={save}>Save</button>
+        </div>
+      </div>
+    </div>,
+    document.body
   );
 }
 
