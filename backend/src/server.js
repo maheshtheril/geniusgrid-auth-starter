@@ -14,7 +14,7 @@ import { pool } from "./db/pool.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 // src/server.js
 import metaRoutes from "./routes/meta.routes.js";
-
+import countriesRouter from "./routes/countries.js";
 
 // --- Routes ---
 import healthRoutes from "./routes/health.routes.js";
@@ -64,6 +64,8 @@ app.use(
 );
 
 app.use("/api/meta", metaRoutes);
+
+app.use("/api/countries", countriesRouter);
 
 
 

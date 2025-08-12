@@ -1,0 +1,7 @@
+{
+  "devDependencies": {
+    "i18n-iso-countries": "^7.14.0",
+    "libphonenumber-js": "^1.12.10",
+    "pg": "^8.16.3"
+  }
+}

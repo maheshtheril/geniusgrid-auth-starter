@@ -51,7 +51,9 @@ export default function AddLeadDrawer({
   const api = useLeadsApi();
 
   // countries from DB (normalize to array)
-  const { countries: countriesRaw, loading: countriesLoading } = useCountriesApi("en");
+  const _c = useCountriesApi("en");
+const countriesLoading = _c?.loading ?? false;
+const countriesRaw = _c?.countries ?? _c ?? [];
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
   const countryOpts = useMemo(() => {
     if (!countries.length) return [];

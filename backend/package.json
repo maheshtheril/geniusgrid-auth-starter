@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "migrate": "node scripts/migrate.js",
-    "start": "npm run migrate && node src/server.js"
+    "start": "npm run migrate && node src/server.js",
+    "seed:countries": "node scripts/seed-countries.cjs",
+    "seed\\:countries": "node scripts/seed-countries.cjs"
   },
   "dependencies": {
     "argon2": "^0.41.1",
@@ -29,5 +31,10 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "i18n-iso-countries": "^7.14.0",
+    "libphonenumber-js": "^1.12.10",
+    "world-countries": "^5.1.0"
   }
 }
