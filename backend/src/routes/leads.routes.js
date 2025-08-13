@@ -1,13 +1,12 @@
-// src/routes/leads.routes.js — FULL
-// Express routes aligned to public.leads schema with RLS/tenant scoping
+// src/routes/leads.routes.js — FULL (master‑editable PATCH)
 // Endpoints:
 //   GET    /api/leads/ping
-//   GET    /api/leads                (list with filters, paging)
-//   GET    /api/leads/pipelines      (distinct stages as array)
-//   GET    /api/leads/stages         (alias of pipelines)
-//   GET    /api/leads/check-mobile   (?phone= or ?mobile=)
-//   POST   /api/leads                (create)
-//   PATCH  /api/leads/:id            (update selected fields)
+//   GET    /api/leads                 list (filters + paging)
+//   GET    /api/leads/pipelines       distinct stages (array)
+//   GET    /api/leads/stages          alias of pipelines
+//   GET    /api/leads/check-mobile    (?phone= or ?mobile=)
+//   POST   /api/leads                 create lead (JSON)
+//   PATCH  /api/leads/:id             update (MASTER FIELDS enabled)
 
 import express from "express";
 import { pool } from "../db/pool.js";
@@ -42,10 +41,7 @@ async function setTenant(client, tenantId) {
 /* ---------------- probe ---------------- */
 router.get("/ping", (_req, res) => res.json({ ok: true }));
 
-/* ---------------- GET /api/leads ----------------
-   Query: page, pageSize (or size), q, status, stage, owner_id
-   Returns: { items, total, page, size }
--------------------------------------------------- */
+/* ---------------- GET /api/leads ---------------- */
 router.get("/", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
@@ -70,7 +66,6 @@ router.get("/", async (req, res) => {
 
   const offset = (page - 1) * size;
 
-  // Alias to match typical UI columns
   const listSQL = `
     SELECT
       id,
@@ -81,12 +76,15 @@ router.get("/", async (req, res) => {
       company AS company_name,
       email,
       phone,
+      website,
       source,
       status,
       stage,
       owner   AS owner_name,
       score,
       priority,
+      tags_text,
+      followup_at,
       created_at,
       updated_at,
       ai_summary,
@@ -127,7 +125,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-/* ---------------- Distinct stages helper ---------------- */
+/* ---------------- Distinct stages helper + routes ---------------- */
 async function loadStageList(tenantId, companyId) {
   const params = [tenantId];
   let where = `WHERE tenant_id = $1 AND stage IS NOT NULL AND stage <> ''`;
@@ -149,7 +147,7 @@ router.get("/pipelines", async (req, res) => {
 
   try {
     const stages = await loadStageList(tenantId, getCompanyId(req));
-    res.json(stages); // plain array
+    res.json(stages);
   } catch (err) {
     console.error("GET /leads/pipelines error:", err);
     res.json(["new", "qualified", "proposal", "won", "lost"]);
@@ -169,9 +167,7 @@ router.get("/stages", async (req, res) => {
   }
 });
 
-/* ---------------- GET /api/leads/check-mobile ----------------
-   Usage: /api/leads/check-mobile?phone=+91%209876543210
--------------------------------------------------------------- */
+/* ---------------- GET /api/leads/check-mobile ---------------- */
 router.get("/check-mobile", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ exists: false, error: "No tenant" });
@@ -183,7 +179,6 @@ router.get("/check-mobile", async (req, res) => {
   try {
     await setTenant(client, tenantId);
 
-    // Normalize using DB function to match stored leads
     const normRes = await client.query("SELECT public.phone_to_norm($1) AS pn", [raw]);
     const pn = normRes.rows?.[0]?.pn || null;
 
@@ -206,10 +201,7 @@ router.get("/check-mobile", async (req, res) => {
   }
 });
 
-/* ---------------- POST /api/leads ----------------
-   Body: { name*, phone, email, source, status, stage, followup_at(ISO), custom(json) }
-   Uses tenant_id from session/header and optional company_id.
---------------------------------------------------- */
+/* ---------------- POST /api/leads ---------------- */
 router.post("/", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
@@ -220,27 +212,24 @@ router.post("/", async (req, res) => {
   const name = String(b.name || "").trim();
   if (!name) return res.status(400).json({ error: "name is required" });
 
-  // Accept E.164-ish phone, DB will normalize via phone_to_norm()
   const phone = b.phone ? String(b.phone).trim() : null;
   const email = b.email ? String(b.email).trim() : null;
   const source = b.source ? String(b.source).trim() : null;
   const status = b.status ? String(b.status).trim() : "new";
   const stage  = b.stage  ? String(b.stage).trim()  : null;
 
-  // Accept either ISO string or null
   const followup_at = b.followup_at ? new Date(b.followup_at) : null;
 
-  // jsonb column
   const custom = (b.custom && typeof b.custom === "object") ? b.custom : {};
 
   const sql = `
     INSERT INTO public.leads
-      (tenant_id, company_id, name, email, phone, source, status, stage, followup_at, custom)
+      (tenant_id, company_id, name, email, phone, website, source, status, stage, followup_at, custom)
     VALUES
-      ($1,        $2,         $3,   $4,    $5,    $6,     $7,     $8,    $9,         $10)
-    RETURNING id, tenant_id, company_id, name, email, phone, source, status, stage, followup_at, created_at;
+      ($1,        $2,         $3,   $4,    $5,    $6,      $7,     $8,     $9,    $10,         $11)
+    RETURNING id, tenant_id, company_id, name, email, phone, website, source, status, stage, followup_at, created_at;
   `;
-  const params = [tenantId, companyId, name, email, phone, source, status, stage, followup_at, custom];
+  const params = [tenantId, companyId, name, email, phone, b.website ?? null, source, status, stage, followup_at, custom];
 
   const client = await pool.connect();
   try {
@@ -249,14 +238,10 @@ router.post("/", async (req, res) => {
     return res.status(201).json(rows[0]);
   } catch (err) {
     console.error("POST /leads error:", err);
-
-    // Common Postgres error codes
     if (err.code === "23514") {
-      // CHECK constraint (e.g., phone_norm too short)
       return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
     }
     if (err.code === "23505") {
-      // UNIQUE violation (tenant+email or tenant+phone_norm)
       return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
     }
     return res.status(500).json({ error: "Failed to create lead" });
@@ -265,7 +250,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-/* ---------------- PATCH /api/leads/:id ---------------- */
+/* ---------------- PATCH /api/leads/:id (MASTER EDITS) ---------------- */
 router.patch("/:id", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
@@ -274,26 +259,49 @@ router.patch("/:id", async (req, res) => {
   const { id } = req.params;
   const patch = req.body || {};
 
+  const allow = {
+    // master fields
+    name: "name",
+    email: "email",
+    phone: "phone",
+    source: "source",
+    followup_at: "followup_at",
+    company_name: "company", // UI -> DB
+    owner_name: "owner",     // UI -> DB
+    website: "website",
+    priority: "priority",
+    tags_text: "tags_text",
+    // existing
+    status: "status",
+    stage: "stage",
+    owner_id: "owner_id",
+    score: "score",
+    ai_summary: "ai_summary",
+    ai_next: "ai_next",
+    ai_score: "ai_score",
+  };
+
   const fields = [];
   const vals = [];
   let i = 0;
 
-  const allow = {
-    status: "status",
-    stage: "stage",
-    owner_id: "owner_id",
-    priority: "priority",
-    score: "score",
-    ai_summary: "ai_summary",
-    ai_next: "ai_next",
-  };
+  for (const [uiKey, col] of Object.entries(allow)) {
+    if (patch[uiKey] === undefined) continue;
 
-  for (const [k, col] of Object.entries(allow)) {
-    if (patch[k] !== undefined) {
-      fields.push(`${col} = $${++i}`);
-      vals.push(col === "ai_next" && Array.isArray(patch[k]) ? JSON.stringify(patch[k]) : patch[k]);
+    let v = patch[uiKey];
+
+    if (col === "followup_at") {
+      v = v ? new Date(v) : null; // accept ISO or yyyy-mm-dd
+    } else if (col === "ai_next" && Array.isArray(v)) {
+      v = JSON.stringify(v); // assign to json/text column
+    } else if (col === "priority") {
+      v = v === "" || v === null ? null : Number(v);
     }
+
+    fields.push(`${col} = $${++i}`);
+    vals.push(v);
   }
+
   if (!fields.length) return res.status(400).json({ error: "No updatable fields" });
 
   const whereVals = [id, tenantId];
@@ -304,7 +312,25 @@ router.patch("/:id", async (req, res) => {
     UPDATE public.leads
        SET ${fields.join(", ")}, updated_at = NOW()
      ${whereSQL}
-     RETURNING id, status, stage, owner_id, priority, score, ai_summary, ai_next, updated_at;
+     RETURNING id,
+               name,
+               email,
+               phone,
+               website,
+               source,
+               followup_at,
+               company AS company_name,
+               owner   AS owner_name,
+               priority,
+               tags_text,
+               status,
+               stage,
+               owner_id,
+               score,
+               ai_summary,
+               ai_next,
+               ai_score,
+               updated_at;
   `;
 
   const client = await pool.connect();
@@ -318,6 +344,9 @@ router.patch("/:id", async (req, res) => {
     res.json(row);
   } catch (err) {
     console.error("PATCH /leads/:id error:", err);
+    if (err.code === "23505") {
+      return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
+    }
     res.status(500).json({ error: "Failed to update lead" });
   } finally {
     client.release();
