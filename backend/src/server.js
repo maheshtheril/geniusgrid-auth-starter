@@ -33,15 +33,15 @@ import leadsImportRoutes from "./routes/leadsImport.routes.js";
 
 import leadsAiRoutes from "./routes/leads.ai.routes.js";
 import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
-import leadsAssignRoutes from "./routes/leads.assign.routes.js"
+import leadsAssignRoutes from "./routes/leads.assign.routes.js";
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 import adminCronRoutes from "./routes/admin.cron.routes.js";
 import aiProspectRoutes from "./routes/aiProspect.routes.js";
   
 import aiProspectRouter from "./routes/aiProspect.js";
 import leadsImportsRouter from "./routes/leadsImports.js";
-import mockAIProspect from "./routes/mock-ai-prospect.js";
-
+// NOTE: we won't import the mock router file; we inline the mock handler below.
+// import mockAIProspect from "./routes/mock-ai-prospect.js";
 
 // --- Config ---
 const app = express();
@@ -90,7 +90,46 @@ app.use(compression());
 // Parsers
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
+
+// ---------------- INLINE PUBLIC MOCK (mounted BEFORE ANY /api middleware) ----------------
+if (process.env.USE_MOCK_AI === "1") {
+  app.post("/api/ai/prospect/jobs", (req, res) => {
+    console.log("[MOCK] HIT /api/ai/prospect/jobs");
+    const body = req.body || {};
+    const prompt = String(body.prompt ?? "");
+    const n = Math.max(1, Math.min(parseInt(body.count ?? 10, 10) || 10, 200));
+    const filters = body.filters || {};
+
+    const items = Array.from({ length: n }, (_, i) => ({
+      id: randomUUID(),
+      name: `Mock Lead ${i + 1}`,
+      company_name: `Mock Company ${((i % 10) + 1)}`,
+      email: `lead${i + 1}@example.com`,
+      phone: `+1-555-000-${1000 + i}`,
+      status: "new",
+      stage: "Prospect",
+      owner_name: "AI Bot",
+      score: Math.floor(Math.random() * 100),
+      created_at: new Date().toISOString(),
+      _prompt: prompt,
+      _filters: filters,
+    }));
+
+    return res.status(200).json({
+      ok: true,
+      jobId: randomUUID(),
+      status: "completed",
+      items,
+      total: items.length,
+    });
+  });
+
+  console.log("[MOCK] Public inline /api/ai/prospect/jobs is ENABLED");
+}
+
+// FIRST /api middleware after the mock
 app.use("/api", leadsCheckMobile);
+
 // ---------------- CORS (MUST be before any routes that need it) ----------------
 app.use(
   cors({
@@ -200,10 +239,10 @@ app.use("/api/admin/cron", adminCronRoutes);
 app.use("/api/leads", requireAuth, leadsImportRoutes);
 app.use("/api", requireAuth, leadsImportRoutes);
 app.use("/api", aiProspectRoutes);    // AI prospecting endpoints
-
 app.use("/api", aiProspectRouter);
 app.use("/api", leadsImportsRouter);
-app.use("/api", mockAIProspect);
+
+// (Removed the previous "mockAIProspect" mount at the bottom to prevent shadowing)
 
 // ---------------- 404 & Errors ----------------
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
