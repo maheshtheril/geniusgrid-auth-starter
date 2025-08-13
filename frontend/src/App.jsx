@@ -13,6 +13,8 @@ import DashboardPage from "./pages/DashboardPage.jsx";
 import LeadsPage from "./pages/LeadsPage.jsx";
 import CompaniesPage from "./pages/CompaniesPage.jsx";
 import LeadCreate from "@/pages/LeadCreate.jsx"; // needs vite alias "@"
+import DiscoverLeads from "@/pages/leads/DiscoverLeads.jsx";
+import ImportReview from "@/pages/leads/ImportReview.jsx";
 
 class ErrorBoundary extends React.Component {
   constructor(p){ super(p); this.state = { error: null }; }
@@ -77,7 +79,8 @@ export default function App() {
             <Route path="crm/leads" element={<LeadsPage />} />
             <Route path="crm/leads/new" element={<LeadCreate />} />
           </Route>
-
+          <Route path="/app/leads/discover" element={<DiscoverLeads />} />
+          <Route path="/leads/imports/:id" element={<ImportReview />} />
           {/* Redirects */}
           <Route path="/dashboard/app/*" element={<Navigate to="/app" replace />} />
           <Route path="*" element={<Navigate to="/health" replace />} />

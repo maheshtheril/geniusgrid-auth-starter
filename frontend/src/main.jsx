@@ -22,25 +22,40 @@ try {
 const FALLBACK_THEME = {
   modes: {
     light: {
-      "--bg":"#F7F8FA","--surface":"#FFFFFF","--panel":"#FFFFFF",
-      "--text":"#0B1220","--muted":"#5B667A","--border":"rgba(15,23,42,.1)",
-      "--primary":"#3B82F6","--ring":"rgba(59,130,246,.35)"
+      "--bg": "#F7F8FA",
+      "--surface": "#FFFFFF",
+      "--panel": "#FFFFFF",
+      "--text": "#0B1220",
+      "--muted": "#5B667A",
+      "--border": "rgba(15,23,42,.1)",
+      "--primary": "#3B82F6",
+      "--ring": "rgba(59,130,246,.35)",
     },
     dark: {
-      "--bg":"#0B0D10","--surface":"#0F1318","--panel":"#131822",
-      "--text":"#E5E7EB","--muted":"#9AA5B1","--border":"rgba(255,255,255,.08)",
-      "--primary":"#6E8BFF","--ring":"rgba(110,139,255,.35)"
+      "--bg": "#0B0D10",
+      "--surface": "#0F1318",
+      "--panel": "#131822",
+      "--text": "#E5E7EB",
+      "--muted": "#9AA5B1",
+      "--border": "rgba(255,255,255,.08)",
+      "--primary": "#6E8BFF",
+      "--ring": "rgba(110,139,255,.35)",
     },
     night: {
-      "--bg":"#05070B","--surface":"#0A0D12","--panel":"#0E1218",
-      "--text":"#E6F0FF","--muted":"#90A0B3","--border":"rgba(150,170,200,.12)",
-      "--primary":"#64D2FF","--ring":"rgba(100,210,255,.35)"
-    }
-  }
+      "--bg": "#05070B",
+      "--surface": "#0A0D12",
+      "--panel": "#0E1218",
+      "--text": "#E6F0FF",
+      "--muted": "#90A0B3",
+      "--border": "rgba(150,170,200,.12)",
+      "--primary": "#64D2FF",
+      "--ring": "rgba(100,210,255,.35)",
+    },
+  },
 };
 
-// Validation list (and preferred order) — dark → light → night
-const THEMES = ["dark","light","night"];
+// Theme order & storage keys
+const THEMES = ["dark", "light", "night"]; // default cycle: dark → light → night
 const LS_KEYS = ["gg.theme", "theme"]; // read/write both for compatibility
 
 function readSavedMode() {
@@ -94,13 +109,22 @@ const rootEl = document.getElementById("root");
     // Silently ignore token application errors; data-theme still controls CSS variables.
   }
 
+  // === 2.5) Try to load EntitlementsProvider; fallback to Fragment if unavailable ===
+  let EntitlementsProvider = React.Fragment;
+  try {
+    const mod = await import("./context/EntitlementsContext.jsx");
+    EntitlementsProvider = mod.EntitlementsProvider || React.Fragment;
+  } catch {}
+
   // === 3) Mount the app ===
   if (!rootEl) throw new Error("Root element #root not found");
 
   createRoot(rootEl).render(
     <React.StrictMode>
       <BrowserRouter>
-        <App />
+        <EntitlementsProvider>
+          <App />
+        </EntitlementsProvider>
       </BrowserRouter>
     </React.StrictMode>
   );
