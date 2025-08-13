@@ -40,7 +40,7 @@ import aiProspectRoutes from "./routes/aiProspect.routes.js";
   
 import aiProspectRouter from "./routes/aiProspect.js";
 import leadsImportsRouter from "./routes/leadsImports.js";
-
+import mockAIProspect from "./mock-ai-prospect.js";
 
 
 // --- Config ---
@@ -203,7 +203,7 @@ app.use("/api", aiProspectRoutes);    // AI prospecting endpoints
 
 app.use("/api", aiProspectRouter);
 app.use("/api", leadsImportsRouter);
-
+app.use("/api", mockAIProspect);
 
 // ---------------- 404 & Errors ----------------
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
