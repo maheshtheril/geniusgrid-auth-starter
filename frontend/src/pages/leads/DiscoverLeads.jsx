@@ -193,6 +193,9 @@ export default function DiscoverLeads() {
     setBusy(false);
   };
 
+  const hasEvents = events.length > 0;
+  const hasPreview = preview.length > 0;
+
   return (
     <div className="space-y-3">
       {/* Input panel */}
@@ -218,6 +221,9 @@ export default function DiscoverLeads() {
             onChange={(e) => setSize(+e.target.value || 50)}
             style={{ width: 96 }}
           />
+        </div>
+
+        <div className="flex items-center gap-3 mt-2">
           <button
             className="gg-btn gg-btn-primary"
             disabled={!prompt.trim() || busy}
@@ -269,32 +275,26 @@ export default function DiscoverLeads() {
             </div>
           </div>
 
-          <div className="mt-3 grid md:grid-cols-2 gap-3">
-            {/* Events stream */}
-            <div>
-              <div className="gg-muted text-sm mb-1">Events</div>
-              <div className="mt-1" style={{ maxHeight: 300, overflow: "auto" }}>
-                {events.length ? (
-                  events.map((e, idx) => (
+          <div className={`mt-3 grid gap-3 ${hasEvents && hasPreview ? "md:grid-cols-2" : "md:grid-cols-1"}`}>
+            {/* Events stream — ONLY render if we actually have events */}
+            {hasEvents && (
+              <div>
+                <div className="gg-muted text-sm mb-1">Events</div>
+                <div className="mt-1" style={{ maxHeight: 300, overflow: "auto" }}>
+                  {events.map((e, idx) => (
                     <div key={e.id || e.ts || idx} className="text-sm">
                       <span className="gg-muted">
                         {e.ts ? new Date(e.ts).toLocaleTimeString() : "—"} • {e.level || "info"}
                       </span>{" "}
                       — {e.message || e.text || (typeof e === "string" ? e : JSON.stringify(e))}
                     </div>
-                  ))
-                ) : (
-                  <div className="gg-muted text-sm">
-                    {job?.status === "completed"
-                      ? "Job completed but no events were returned by the server."
-                      : "No events yet…"}
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
-            {/* Inline preview (first few items) */}
-            {!!preview.length && (
+            {/* Inline preview (first few items) — stretches full width when no events */}
+            {hasPreview && (
               <div>
                 <div className="gg-muted text-sm mb-1">
                   Preview (first {preview.length})
@@ -324,6 +324,13 @@ export default function DiscoverLeads() {
                     Open full review →
                   </Link>
                 </div>
+              </div>
+            )}
+
+            {/* Friendly empty state when neither events nor preview exist (rare) */}
+            {!hasEvents && !hasPreview && (
+              <div className="gg-muted text-sm">
+                Working… you’ll see a preview here once it’s ready.
               </div>
             )}
           </div>
