@@ -7,22 +7,15 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 
+// ✅ Static, safe import (no early calls)
+import { applyTheme } from "@/theme/applyTheme";
+
 // Optional deps — app still boots if these fail to import
 let uiApi = null;
 try {
   uiApi = (await import("@/api/ui")).uiApi || null;
 } catch {}
 
-let applyTheme = null;
-try {
-  applyTheme = (await import("@/theme/applyTheme")).applyTheme || null;
-} catch {}
-const savedTheme = localStorage.getItem("theme");
-if (!savedTheme) {
-  applyTheme("dark");
-} else {
-  applyTheme(savedTheme);
-}
 // Fallback theme tokens (light/dark/night)
 const FALLBACK_THEME = {
   modes: {
@@ -65,13 +58,25 @@ const LS_KEYS = ["gg.theme", "theme"]; // read/write both for compatibility
 
 function readSavedMode() {
   for (const k of LS_KEYS) {
-    const v = localStorage.getItem(k);
+    const v = safeGetLS(k);
     if (v && THEMES.includes(v)) return v;
   }
   return null;
 }
 function saveMode(mode) {
-  for (const k of LS_KEYS) localStorage.setItem(k, mode);
+  for (const k of LS_KEYS) safeSetLS(k, mode);
+}
+function safeGetLS(key) {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+function safeSetLS(key, value) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
 }
 function applyDomMode(mode) {
   document.documentElement.setAttribute("data-theme", mode);
