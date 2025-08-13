@@ -9,8 +9,8 @@ import LeadsCards from "@/components/leads/LeadsCards";
 import LeadDrawer from "@/components/leads/LeadDrawer";
 import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
 import { useEnv } from "@/store/useEnv";
-// 👇 NEW: icons for compact view toggles
-import { Table, KanbanSquare, Grid2x2 } from "lucide-react";
+// Icons for compact view toggles (✅ correct names)
+import { Table2, KanbanSquare, Grid2X2 } from "lucide-react";
 
 const DEFAULT_COLUMNS = [
   { key: "name",         label: "Lead",     visible: true  },
@@ -23,7 +23,7 @@ const DEFAULT_COLUMNS = [
   { key: "created_at",   label: "Created",  visible: true  },
 ];
 
-// 👇 NEW: tiny reusable icon button
+// Tiny reusable icon button
 function IconBtn({ title, active, onClick, children }) {
   return (
     <button
@@ -80,7 +80,7 @@ export default function LeadsPage() {
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const [aiProgress, setAiProgress] = useState({ done: 0, total: 0 });
 
-  // NEW: per-row busy ids for inline AI refresh button
+  // per-row busy ids for inline AI refresh button
   const [aiBusyIds, setAiBusyIds] = useState(() => new Set());
 
   // Mounted guard
@@ -256,7 +256,7 @@ export default function LeadsPage() {
     setPage(1);
   };
 
-  // ---- Per-row AI refresh (used by table's inline button) ----
+  // ---- Per-row AI refresh ----
   const onAiRefreshRow = useCallback(async (id) => {
     setAiBusyIds(prev => {
       const s = new Set(prev);
@@ -265,7 +265,6 @@ export default function LeadsPage() {
     });
     try {
       await api.aiRefresh(id);
-      // fetch the freshly-updated lead so table shows newest ai_summary/ai_score/etc.
       const full = await api.getLead(id).catch(() => null);
       if (mountedRef.current && full) {
         setRows(prev => prev.map(r => (r.id === id ? { ...r, ...full } : r)));
@@ -287,7 +286,6 @@ export default function LeadsPage() {
     if (!ids.length) return;
     setAiRefreshing(true);
     setAiProgress({ done: 0, total: ids.length });
-    // mark all busy
     setAiBusyIds(new Set(ids));
 
     const concurrency = 3;
@@ -304,7 +302,6 @@ export default function LeadsPage() {
             setRows(prev => prev.map(r => (r.id === id ? { ...r, ...full } : r)));
           }
         } catch {
-          // ignore individual errors
         } finally {
           done += 1;
           if (mountedRef.current) {
@@ -353,14 +350,14 @@ export default function LeadsPage() {
               {/* Mobile view select stays */}
               {viewSelect}
 
-              {/* 👇 NEW: compact icon toggles (desktop only) */}
-              <div className="hidden md:flex items-center gap-1">
+              {/* Compact icon toggles — visible at all breakpoints now */}
+              <div className="flex items-center gap-1" role="group" aria-label="Change leads view">
                 <IconBtn
                   title="Table view"
                   active={view === "table"}
                   onClick={() => setView("table")}
                 >
-                  <Table size={16} />
+                  <Table2 size={16} />
                 </IconBtn>
                 <IconBtn
                   title="Kanban view"
@@ -374,7 +371,7 @@ export default function LeadsPage() {
                   active={view === "cards"}
                   onClick={() => setView("cards")}
                 >
-                  <Grid2x2 size={16} />
+                  <Grid2X2 size={16} />
                 </IconBtn>
               </div>
 
@@ -479,7 +476,6 @@ export default function LeadsPage() {
               onPageSizeChange={setPageSize}
               onInlineUpdate={onInlineUpdate}
               onOpenLead={onOpenLead}
-              // NEW: wire per-row AI refresh controls
               onAiRefreshRow={onAiRefreshRow}
               aiRefreshingIds={aiBusyIds}
             />
