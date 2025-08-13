@@ -40,7 +40,7 @@ import aiProspectRoutes from "./routes/aiProspect.routes.js";
   
 import aiProspectRouter from "./routes/aiProspect.js";
 import leadsImportsRouter from "./routes/leadsImports.js";
-import mockAIProspect from "./mock-ai-prospect.js";
+import mockAIProspect from "./routes/mock-ai-prospect.js";
 
 
 // --- Config ---
