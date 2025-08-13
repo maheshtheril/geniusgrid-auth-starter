@@ -261,7 +261,7 @@ a:hover{ text-decoration:underline }
 @keyframes gg-skel{ to { transform:translateX(100%); } }
 
 /* ===================== UTILS ===================== */
-.hidden{ display:none !important; }
+.hidden{ display:none; } /* fixed: removed !important so responsive classes can override */
 .flex{ display:flex }
 .grid{ display:grid }
 .items-center{ align-items:center }
