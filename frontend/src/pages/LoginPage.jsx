@@ -1,9 +1,9 @@
 // src/pages/LoginPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "../styles.css";
-import logoUrl from "../assets/geniusgrid-logo.png"; // <-- BUNDLED ASSET
+import logoUrl from "../assets/geniusgrid-logo.png";
 
-/** Tenant detection from subdomain or ?tenant= */
+// --- unchanged helper ---
 function getSubdomainTenant() {
   try {
     const urlTenant = new URLSearchParams(window.location.search).get("tenant");
@@ -56,13 +56,12 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // 🔒 Tenant is internal-only now (hidden)
+  // 🔒 hidden but validated tenant
   const detectedTenant = useMemo(() => getSubdomainTenant(), []);
   const DEFAULT_TENANT =
-    (import.meta.env.VITE_DEFAULT_TENANT || "demo").toLowerCase();
+    (import.meta.env.VITE_DEFAULT_TENANT || "").toLowerCase(); // note: may be ""
 
-  // keep in state to send with request, but never show in UI
-  const [tenant, setTenant] = useState(DEFAULT_TENANT);
+  const [tenant, setTenant] = useState(""); // start empty → validation will catch if unresolved
 
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -70,17 +69,23 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    // Priority: ?tenant= / subdomain / env default / "demo"
-    const resolved = (detectedTenant || DEFAULT_TENANT || "demo").toLowerCase();
-    setTenant(resolved);
-    // also persist quietly in case you want it later
-    try { localStorage.setItem("__gg_last_tenant", resolved); } catch {}
+    // Resolution order: ?tenant / subdomain / env default
+    const resolved =
+      (detectedTenant || DEFAULT_TENANT || "").toLowerCase().trim();
+    if (resolved) {
+      setTenant(resolved);
+      try { localStorage.setItem("__gg_last_tenant", resolved); } catch {}
+    } else {
+      // leave tenant empty so validation blocks (same behavior as visible field before)
+      setTenant("");
+    }
   }, [detectedTenant]);
 
   function validate() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return "Enter a valid email";
     if (password.trim().length < 4) return "Password is required";
-    // ✅ No tenant validation in UI anymore
+    // ✅ Tenant validation NOT affected (still required)
+    if (!tenant || !tenant.trim()) return "Tenant code is required";
     return null;
   }
 
@@ -96,8 +101,6 @@ export default function LoginPage() {
     }
 
     setLoading(true);
-
-    // Prevent “stuck forever”: abort after 15s
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort("timeout"), 15000);
 
@@ -110,12 +113,11 @@ export default function LoginPage() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
-          tenant // 🔐 still sent, but hidden from user
+          tenant: tenant.trim().toLowerCase(), // 🔐 still sent
         }),
       });
 
       const data = await res.json().catch(() => ({}));
-
       if (!res.ok) {
         if (res.status === 401) setError(data?.message || "Invalid credentials or inactive user");
         else if (res.status === 400) setError(data?.message || "Missing fields");
@@ -136,54 +138,22 @@ export default function LoginPage() {
 
   return (
     <>
-      {/* Local CSS for layout */}
       <style>{`
-        .login-shell{
-          min-height:100dvh;
-          display:grid;
-          grid-template-columns: 1fr;
-          background: var(--bg);
-          color: var(--text);
-        }
-        @media (min-width: 768px){
-          .login-shell{ grid-template-columns: 1fr 1fr; }
-          .login-left{ display:flex; }
-        }
-        .login-left{
-          display:none;
-          flex-direction: column;
-          justify-content: center;
-          padding: 40px;
-          background: linear-gradient(180deg,
-            color-mix(in oklab, var(--panel) 92%, transparent),
-            var(--panel)
-          );
-          border-right: 1px solid var(--border);
-        }
-        .login-right{
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          padding: 24px;
-        }
-        .login-card{
-          width: 100%;
-          max-width: 420px;
-          border-radius: var(--radius-lg);
-        }
+        .login-shell{ min-height:100dvh; display:grid; grid-template-columns: 1fr; background: var(--bg); color: var(--text); }
+        @media (min-width: 768px){ .login-shell{ grid-template-columns: 1fr 1fr; } .login-left{ display:flex; } }
+        .login-left{ display:none; flex-direction: column; justify-content: center; padding: 40px;
+          background: linear-gradient(180deg, color-mix(in oklab, var(--panel) 92%, transparent), var(--panel));
+          border-right: 1px solid var(--border); }
+        .login-right{ display:flex; align-items:center; justify-content:center; padding: 24px; }
+        .login-card{ width: 100%; max-width: 420px; border-radius: var(--radius-lg); }
         .brand-row{ display:flex; align-items:center; gap:12px; margin-bottom:24px; }
         .brand-title{ font-weight:800; letter-spacing:.02em; }
         .brand-sub{ color: var(--muted); font-size:.9rem }
         .feature-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
-        .help-row{
-          display:flex; align-items:center; justify-content:space-between;
-          padding: 12px 16px; border-top:1px solid var(--border);
-          color: var(--muted); font-size:.9rem;
-        }
+        .help-row{ display:flex; align-items:center; justify-content:space-between; padding: 12px 16px; border-top:1px solid var(--border); color: var(--muted); font-size:.9rem; }
       `}</style>
 
       <div className="login-shell">
-        {/* LEFT: Brand / Logo panel */}
         <aside className="login-left">
           <div>
             <div className="brand-row">
@@ -210,7 +180,6 @@ export default function LoginPage() {
           </div>
         </aside>
 
-        {/* RIGHT: Form panel */}
         <main className="login-right">
           <div className="gg-panel login-card p-6">
             <div className="mb-4" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -222,10 +191,9 @@ export default function LoginPage() {
             </div>
 
             <form className="space-y-4" onSubmit={handleSubmit}>
-              {/* Hidden tenant field (not visible, but there if you ever inspect form) */}
+              {/* Hidden but present → validation + submit unaffected */}
               <input type="hidden" name="tenant" value={tenant} />
 
-              {/* Email */}
               <div className="form-col">
                 <label className="form-label">Email</label>
                 <input
@@ -239,7 +207,6 @@ export default function LoginPage() {
                 />
               </div>
 
-              {/* Password */}
               <div className="form-col">
                 <label className="form-label">Password</label>
                 <div style={{ position: "relative" }}>
@@ -255,15 +222,8 @@ export default function LoginPage() {
                   />
                   <button
                     type="button"
-                    style={{
-                      position: "absolute",
-                      right: 6,
-                      top: "50%",
-                      transform: "translateY(-50%)",
-                      borderRadius: 8,
-                      padding: "4px 8px",
-                      color: "var(--muted)"
-                    }}
+                    style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
+                      borderRadius: 8, padding: "4px 8px", color: "var(--muted)" }}
                     className="gg-btn-ghost"
                     aria-label={showPw ? "Hide password" : "Show password"}
                     onClick={() => setShowPw((s) => !s)}
@@ -273,7 +233,6 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Messages */}
               {error && (
                 <div className="rounded-lg" style={{ background: "rgba(244, 63, 94, .12)", color: "#fecdd3", padding: "8px 12px", fontSize: ".9rem" }}>
                   {error}
@@ -285,7 +244,6 @@ export default function LoginPage() {
                 </div>
               )}
 
-              {/* Primary action */}
               <button
                 className="gg-btn gg-btn-primary w-full"
                 style={{ height: 40 }}
