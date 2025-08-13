@@ -309,7 +309,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Tenant
+              Tenant
               {tenantLocked ? (
                 <div className="form-col">
                   <label className="form-label">Tenant</label>
@@ -336,9 +336,9 @@ export default function LoginPage() {
                       Change
                     </button>
                   </div>
-                  {/* <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
+                  <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
                     Detected from subdomain. Click Change to use a different tenant.
-                  </div> */}
+                  </div>
                 </div>
               ) : (
                 <div className="form-col">
@@ -355,7 +355,7 @@ export default function LoginPage() {
                     Tip: add <code>?tenant=yourcode</code> to the URL or use a tenant subdomain.
                   </div>
                 </div>
-              )} */}
+              )}
 
               {error && (
                 <div className="rounded-lg" style={{ background: "rgba(244, 63, 94, .12)", color: "#fecdd3", padding: "8px 12px", fontSize: ".9rem" }}>
