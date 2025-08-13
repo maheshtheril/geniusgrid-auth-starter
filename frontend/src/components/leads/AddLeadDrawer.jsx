@@ -1,13 +1,18 @@
-// src/components/leads/AddLeadDrawer.jsx
+// src/components/leads/AddLeadDrawer.jsx (refined, world‑class layout)
+// — Visual upgrades: airy spacing, consistent field heights, clear sectioning,
+//   elegant labels, helper text, sticky actions, accessible validation,
+//   polished Country selector, and subtle animations.
+
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Globe2, FileText, Plus, Info } from "lucide-react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
 import "flag-icons/css/flag-icons.min.css"; // SVG flags
 
 /** Turn "IN" -> 🇮🇳 (emoji fallback if DB doesn’t provide one) */
 const flagFromIso2 = (iso2 = "") =>
-  iso2.toUpperCase().replace(/./g, c => String.fromCodePoint(127397 + c.charCodeAt(0)));
+  iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 
 /** Robustly normalize "maybe-array" into a real array */
 function normalizeToArray(maybe) {
@@ -38,6 +43,68 @@ const INIT = {
   details: "",
 };
 
+/* --------------------------------- UI Primitives --------------------------------- */
+function Section({ title, subtitle, children, right }) {
+  return (
+    <section className="gg-panel rounded-2xl p-4 md:p-5 space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <div className="text-base md:text-lg font-semibold leading-tight">{title}</div>
+          {subtitle && (
+            <p className="gg-muted text-xs md:text-sm mt-0.5 leading-snug">{subtitle}</p>
+          )}
+        </div>
+        {right}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Field({ label, required, htmlFor, children, hint, error }) {
+  return (
+    <div className="space-y-1.5">
+      {label && (
+        <label htmlFor={htmlFor} className="flex items-center gap-1 text-xs md:text-sm gg-muted">
+          {label}
+          {required && <span className="text-rose-400">*</span>}
+        </label>
+      )}
+      {children}
+      {hint && !error && <p className="text-xs" style={{ color: "var(--muted)" }}>{hint}</p>}
+      {error && <p className="text-xs text-rose-400">{error}</p>}
+    </div>
+  );
+}
+
+function Input({ id, value, onChange, placeholder, type = "text", invalid }) {
+  return (
+    <input
+      id={id}
+      type={type}
+      className={`gg-input w-full h-10 md:h-11 ${invalid ? "ring-1 ring-rose-400/60" : ""}`}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      aria-invalid={!!invalid}
+    />
+  );
+}
+
+function Select({ id, value, onChange, children, invalid }) {
+  return (
+    <select
+      id={id}
+      className={`gg-input w-full h-10 md:h-11 ${invalid ? "ring-1 ring-rose-400/60" : ""}`}
+      value={value}
+      onChange={onChange}
+      aria-invalid={!!invalid}
+    >
+      {children}
+    </select>
+  );
+}
+
 /* ------------ CountrySelect (custom, with SVG flags) ------------ */
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
@@ -49,17 +116,18 @@ function CountrySelect({ options, value, onChange, disabled }) {
   const lower = (s) => String(s || "").toLowerCase();
 
   const selected = useMemo(
-    () => options.find(o => lower(o.cc) === lower(value)) || null,
+    () => options.find((o) => lower(o.cc) === lower(value)) || null,
     [options, value]
   );
 
   const filtered = useMemo(() => {
     const q = lower(query).trim();
     if (!q) return options;
-    return options.filter(o =>
-      lower(o.name).includes(q) ||
-      lower(o.cc).includes(q) ||
-      String(o.code).replace("+","").includes(q.replace("+",""))
+    return options.filter(
+      (o) =>
+        lower(o.name).includes(q) ||
+        lower(o.cc).includes(q) ||
+        String(o.code).replace("+", "").includes(q.replace("+", ""))
     );
   }, [options, query]);
 
@@ -74,7 +142,9 @@ function CountrySelect({ options, value, onChange, disabled }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  useEffect(() => { setHi(0); }, [query, open]);
+  useEffect(() => {
+    setHi(0);
+  }, [query, open]);
 
   const choose = (cc) => {
     onChange?.(cc);
@@ -95,14 +165,25 @@ function CountrySelect({ options, value, onChange, disabled }) {
       }
       return;
     }
-    if (e.key === "Escape") { setOpen(false); btnRef.current?.focus(); }
+    if (e.key === "Escape") {
+      setOpen(false);
+      btnRef.current?.focus();
+    }
   };
 
   const onListKey = (e) => {
     if (!open) return;
-    if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, filtered.length - 1)); }
-    else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
-    else if (e.key === "Enter") { e.preventDefault(); const o = filtered[hi]; if (o) choose(o.cc); }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHi((h) => Math.min(h + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHi((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      const o = filtered[hi];
+      if (o) choose(o.cc);
+    }
   };
 
   return (
@@ -111,16 +192,18 @@ function CountrySelect({ options, value, onChange, disabled }) {
         type="button"
         ref={btnRef}
         disabled={disabled}
-        className={`gg-input w-44 flex items-center gap-2 justify-between ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+        className={`gg-input h-10 md:h-11 w-44 flex items-center gap-2 justify-between ${
+          disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+        }`}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => !disabled && setOpen(o => !o)}
+        onClick={() => !disabled && setOpen((o) => !o)}
       >
         <span className="flex items-center gap-2 overflow-hidden">
           {selected ? (
             <>
               <span className={`fi fi-${selected.cc.toLowerCase()}`} aria-hidden />
-              <span className="truncate">{selected.cc}</span>
+              <span className="truncate text-sm font-medium">{selected.cc}</span>
             </>
           ) : (
             <span className="opacity-60">Country</span>
@@ -131,27 +214,29 @@ function CountrySelect({ options, value, onChange, disabled }) {
 
       {open && (
         <div
-          className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)]
-                     bg-[var(--surface)] border border-[color:var(--border)]
-                     rounded-xl shadow-xl p-2"
+          className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)] bg-[var(--surface)] border border-[color:var(--border)] rounded-2xl shadow-2xl p-2"
           role="dialog"
         >
-          <input
-            type="text"
-            className="gg-input w-full mb-2"
-            placeholder="Search country or code"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onListKey}
-          />
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <Flag className="w-4 h-4 opacity-70" />
+            <input
+              type="text"
+              className="gg-input w-full h-10"
+              placeholder="Search country or code"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onListKey}
+            />
+          </div>
           <ul role="listbox" className="max-h-64 overflow-auto" tabIndex={-1} onKeyDown={onListKey}>
             {filtered.map((o, idx) => (
               <li
                 key={o.cc}
                 role="option"
                 aria-selected={o.cc === value}
-                className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer
-                           ${idx === hi ? "bg-[color:var(--hover)]" : ""}`}
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${
+                  idx === hi ? "bg-[color:var(--hover)]" : ""
+                }`}
                 onMouseEnter={() => setHi(idx)}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => choose(o.cc)}
@@ -177,8 +262,8 @@ export default function AddLeadDrawer({
   onClose,
   onSuccess,
   prefill,
-  stages = ["new","prospect","proposal","negotiation","closed"],
-  sources = ["Website","Referral","Ads","Outbound","Event"],
+  stages = ["new", "prospect", "proposal", "negotiation", "closed"],
+  sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
   customFields = [],
   variant = "full", // kept for compatibility; we always show all fields
   onManageCustomFields,
@@ -198,11 +283,10 @@ export default function AddLeadDrawer({
       .map((c) => {
         const cc = String(c.iso2 || c.cc || c.code || "").toUpperCase();
         const code = c.default_dial || c.dial || c.phone_code || "";
-        const name =
-          c.name_en || c.name || c.translation || cc;
+        const name = c.name_en || c.name || c.translation || cc;
         return { cc, code, name, emoji: c.emoji_flag || c.flag || flagFromIso2(cc) };
       })
-      .filter(o => o.cc && o.code);
+      .filter((o) => o.cc && o.code);
   }, [countries]);
 
   // form state
@@ -269,16 +353,11 @@ export default function AddLeadDrawer({
 
   // helpers
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target?.value ?? e }));
-  const updateFileCF = (key) => (e) =>
-    setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
+  const updateFileCF = (key) => (e) => setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
 
   const onCountryPicked = (cc) => {
     const CC = String(cc || "").toUpperCase();
-    setForm((f) => ({
-      ...f,
-      mobile_country: CC,
-      mobile_code: codeByCc[CC] || "",
-    }));
+    setForm((f) => ({ ...f, mobile_country: CC, mobile_code: codeByCc[CC] || "" }));
   };
 
   // duplicate mobile check (debounced)
@@ -291,20 +370,22 @@ export default function AddLeadDrawer({
     const timer = setTimeout(async () => {
       if (!api?.checkMobile) return;
       try {
-        const res = await api.checkMobile({
-          mobile: `${form.mobile_code} ${String(form.mobile).trim()}`,
-        });
+        const res = await api.checkMobile({ mobile: `${form.mobile_code} ${String(form.mobile).trim()}` });
         if (alive) setDupMobile(!!res?.exists);
       } catch {
         if (alive) setDupMobile(null);
       }
     }, 450);
-    return () => { alive = false; clearTimeout(timer); };
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
   }, [form.mobile, form.mobile_code, api]);
 
   // ---- GROUPED CUSTOM FIELDS ----
   const { generalCF, advanceCF } = useMemo(() => {
-    const g = [], a = [];
+    const g = [],
+      a = [];
     for (const f of cfList) (f.group === "advance" ? a : g).push(f);
     return { generalCF: g, advanceCF: a };
   }, [cfList]);
@@ -312,7 +393,9 @@ export default function AddLeadDrawer({
   // validation
   const problems = useMemo(() => {
     const p = {};
-    const need = (k, msg) => { if (!String(form[k] ?? "").trim()) p[k] = msg; };
+    const need = (k, msg) => {
+      if (!String(form[k] ?? "").trim()) p[k] = msg;
+    };
 
     need("name", "Lead name is required");
     need("mobile", "Mobile is required");
@@ -360,9 +443,7 @@ export default function AddLeadDrawer({
       mobile: `${form.mobile_code} ${String(form.mobile || "").trim()}`,
       email: form.email?.trim() || null,
       expected_revenue:
-        form.expected_revenue !== "" && form.expected_revenue !== null
-          ? Number(form.expected_revenue)
-          : null,
+        form.expected_revenue !== "" && form.expected_revenue !== null ? Number(form.expected_revenue) : null,
       follow_up_date: form.follow_up_date,
       profession: form.profession || null,
       stage: form.stage,
@@ -406,8 +487,10 @@ export default function AddLeadDrawer({
       }
 
       const btn = document.getElementById("addlead-save");
-      if (btn) { btn.classList.add("success-pulse"); setTimeout(() => onSuccess?.(created), 220); }
-      else onSuccess?.(created);
+      if (btn) {
+        btn.classList.add("success-pulse");
+        setTimeout(() => onSuccess?.(created), 220);
+      } else onSuccess?.(created);
     } catch (err) {
       console.error(err);
       setError("Failed to create lead. Please try again.");
@@ -422,44 +505,34 @@ export default function AddLeadDrawer({
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
     const set = (v) => setCustom((s) => ({ ...s, [key]: v }));
-    const base = "gg-input w-full";
-    const req = cf.required && <span className="text-rose-400">*</span>;
+    const base = "gg-input w-full h-10 md:h-11";
+    const reqMark = cf.required && <span className="text-rose-400">*</span>;
 
     const wrap = (control) => (
-      <div key={cf.id || key}>
+      <div key={cf.id || key} className="space-y-1.5">
         {cf.type !== "checkbox" && (
-          <label className="block text-sm gg-muted mb-1">
-            {cf.label} {req}
-          </label>
+          <label className="text-xs md:text-sm gg-muted">{cf.label} {reqMark}</label>
         )}
         {control}
-        {problems[`cf:${key}`] && (
-          <div className="text-rose-400 text-xs mt-1">
-            {problems[`cf:${key}`]}
-          </div>
-        )}
+        {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-0.5">{problems[`cf:${key}`]}</div>}
       </div>
     );
 
     switch (cf.type) {
       case "textarea":
-        return wrap(
-          <textarea className={`${base} h-24`} value={val} onChange={(e) => set(e.target.value)} />
-        );
+        return wrap(<textarea className={`${base} h-24`} value={val} onChange={(e) => set(e.target.value)} />);
       case "number":
-        return wrap(
-          <input type="number" className={base} value={val} onChange={(e) => set(e.target.value)} />
-        );
+        return wrap(<input type="number" className={base} value={val} onChange={(e) => set(e.target.value)} />);
       case "date":
-        return wrap(
-          <input type="date" className={base} value={val} onChange={(e) => set(e.target.value)} />
-        );
+        return wrap(<input type="date" className={base} value={val} onChange={(e) => set(e.target.value)} />);
       case "select":
         return wrap(
           <select className={base} value={val} onChange={(e) => set(e.target.value)}>
             <option value="">Select…</option>
             {(cf.options || []).map((opt) => (
-              <option key={String(opt)} value={opt}>{opt}</option>
+              <option key={String(opt)} value={opt}>
+                {opt}
+              </option>
             ))}
           </select>
         );
@@ -467,7 +540,7 @@ export default function AddLeadDrawer({
         return (
           <label key={cf.id || key} className="flex items-center gap-2">
             <input type="checkbox" checked={!!val} onChange={(e) => set(e.target.checked)} />
-            <span className="text-sm">{cf.label} {req}</span>
+            <span className="text-sm">{cf.label} {reqMark}</span>
           </label>
         );
       case "file":
@@ -486,221 +559,164 @@ export default function AddLeadDrawer({
     }
   };
 
-  // ====== CORE FIELDS ======
-  const coreTop = (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-      <div>
-        <label className="block text-sm gg-muted mb-1">
-          Lead Name <span className="text-rose-400">*</span>
-        </label>
-        <input
-          ref={firstInputRef}
-          className="gg-input w-full"
-          value={form.name}
-          onChange={update("name")}
-          placeholder="Lead name"
-          aria-invalid={!!problems.name}
-        />
-        {problems.name && <div className="text-rose-400 text-xs mt-1">{problems.name}</div>}
-      </div>
-
-      <div>
-        <label className="block text-sm gg-muted mb-1">
-          Mobile <span className="text-rose-400">*</span>
-        </label>
-        <div className="flex gap-2">
-          <CountrySelect
-            options={countryOpts}
-            value={form.mobile_country}
-            onChange={onCountryPicked}
-            disabled={countriesLoading || !countryOpts.length}
-          />
-          <input
-            readOnly
-            className="gg-input w-20 text-center"
-            value={form.mobile_code}
-            aria-label="Dial code"
-          />
-          <input
-            className="gg-input flex-1"
-            value={form.mobile}
-            onChange={update("mobile")}
-            placeholder="Enter mobile number"
-            aria-invalid={!!problems.mobile}
-          />
-        </div>
-        <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>
-          {dupMobile === true ? "Duplicate Mobile Number will be sent for approval." : "We'll check duplicates automatically."}
-        </div>
-        {problems.mobile && <div className="text-rose-400 text-xs mt-1">{problems.mobile}</div>}
-      </div>
-
-      <div>
-        <label className="block text-sm gg-muted mb-1">Email</label>
-        <input
-          className="gg-input w-full"
-          value={form.email}
-          onChange={update("email")}
-          placeholder="you@company.com"
-          aria-invalid={!!problems.email}
-        />
-        {problems.email && <div className="text-rose-400 text-xs mt-1">{problems.email}</div>}
-      </div>
-
-      <div>
-        <label className="block text-sm gg-muted mb-1">Expected Revenue</label>
-        <input
-          type="number"
-          inputMode="decimal"
-          className="gg-input w-full"
-          value={form.expected_revenue}
-          onChange={update("expected_revenue")}
-          placeholder="Revenue"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm gg-muted mb-1">
-          Follow Up Date <span className="text-rose-400">*</span>
-        </label>
-        <input
-          type="date"
-          className="gg-input w-full"
-          value={form.follow_up_date}
-          onChange={update("follow_up_date")}
-          aria-invalid={!!problems.follow_up_date}
-        />
-        {problems.follow_up_date && <div className="text-rose-400 text-xs mt-1">{problems.follow_up_date}</div>}
-      </div>
-
-      <div>
-        <label className="block text-sm gg-muted mb-1">Profession</label>
-        <input className="gg-input w-full" value={form.profession} onChange={update("profession")} placeholder="Profession" />
-      </div>
-
-      <div>
-        <label className="block text-sm gg-muted mb-1">
-          Lead Stage <span className="text-rose-400">*</span>
-        </label>
-        <select className="gg-input w-full" value={form.stage} onChange={update("stage")} aria-invalid={!!problems.stage}>
-          {stages.map((s) => (<option key={s} value={s}>{cap(s)}</option>))}
-        </select>
-        {problems.stage && <div className="text-rose-400 text-xs mt-1">{problems.stage}</div>}
-      </div>
-
-      <div>
-        <label className="block text-sm gg-muted mb-1">
-          Source <span className="text-rose-400">*</span>
-        </label>
-        <select className="gg-input w-full" value={form.source} onChange={update("source")} aria-invalid={!!problems.source}>
-          <option value="">Select a Source</option>
-          {sources.map((s) => (<option key={s} value={s}>{s}</option>))}
-        </select>
-        {problems.source && <div className="text-rose-400 text-xs mt-1">{problems.source}</div>}
-      </div>
-    </div>
-  );
-
-  // ====== GROUP SECTIONS ======
-  const generalGroup = (
-    <section className="gg-panel p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-semibold">General</div>
-        {/* Removed the "+ Add custom field" button here */}
-      </div>
-
-      {coreTop}
-
-      {/* Show General custom fields only if there are any; no empty state, no add CTA */}
-      {generalCF.length > 0 && (
-        <div className="mt-4">
-          <div className="text-sm font-semibold mb-2">Custom fields — General</div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {generalCF.map(renderCF)}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-
-  const advanceGroup = (
-    <section className="gg-panel p-3">
-      <div className="flex items-center justify-between mb-2">
-        <div className="text-sm font-semibold">Advance</div>
-        <button
-          type="button"
-          className="gg-btn"
-          onClick={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)}
-        >
-          Manage / Add custom fields
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="md:col-span-2">
-          <label className="block text-sm gg-muted mb-1">Detailed information</label>
-          <textarea className="gg-input w-full h-24" value={form.details} onChange={update("details")} placeholder="Notes or context" />
-        </div>
-      </div>
-
-      <div className="mt-4">
-        <div className="text-sm font-semibold mb-2">Custom fields — Advance</div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {advanceCF.length > 0 ? (
-            advanceCF.map(renderCF)
-          ) : (
-            <EmptyCustomGroup onAdd={() => onManageCustomFields ? onManageCustomFields() : setShowCFModal(true)} />
-          )}
-        </div>
-      </div>
-    </section>
-  );
-
+  /* ============================== LAYOUT ============================== */
   const el = (
     <div className="fixed inset-0 z-[9999]">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-[1px] animate-fadeIn" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] animate-fadeIn" onClick={onClose} aria-hidden />
 
       {/* Drawer */}
       <aside
-        className="absolute right-0 top-0 h-full w-full sm:w-[720px]
-                    bg-[var(--surface)] border-l border-[color:var(--border)] shadow-2xl
-                    animate-slideIn will-change-transform"
-        role="dialog" aria-modal="true" aria-label="Add Lead"
+        className="absolute right-0 top-0 h-full w-full sm:w-[780px] bg-[var(--surface)] border-l border-[color:var(--border)] shadow-2xl animate-slideIn will-change-transform flex flex-col"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add Lead"
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[color:var(--border)]">
-          <div>
-            <h2 className="text-lg font-semibold">New Lead</h2>
-            <div className="gg-muted text-xs">All fields</div>
+        <div className="px-4 md:px-5 py-3 border-b border-[color:var(--border)] flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl gg-surface flex items-center justify-center">
+              <User2 className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-base md:text-lg font-semibold leading-tight">New Lead</h2>
+              <div className="gg-muted text-xs">Fill in the details below</div>
+            </div>
           </div>
         </div>
 
         {/* Body */}
-        <form onSubmit={submit} className="p-4 space-y-4 overflow-auto h-[calc(100%-56px-64px)]">
-          {generalGroup}
-          {advanceGroup}
+        <form onSubmit={submit} className="flex-1 overflow-auto">
+          <div className="p-4 md:p-5 space-y-5">
+            {/* GENERAL */}
+            <Section title="General" subtitle="Core information to create the lead.">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Lead Name" required htmlFor="lead-name" error={problems.name}>
+                  <div className="relative">
+                    <Input id="lead-name" value={form.name} onChange={update("name")} placeholder="e.g., Priya Sharma" invalid={!!problems.name} />
+                    <User2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                  </div>
+                </Field>
 
-          {error && (
-            <div className="rounded-md border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">
-              {error}
-            </div>
-          )}
+                <Field label="Email" htmlFor="lead-email" error={problems.email}>
+                  <div className="relative">
+                    <Input id="lead-email" value={form.email} onChange={update("email")} placeholder="you@company.com" invalid={!!problems.email} />
+                    <Mail className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                  </div>
+                </Field>
+
+                <Field label="Mobile" required htmlFor="lead-mobile" hint={dupMobile === true ? undefined : "Duplicate numbers are checked automatically."} error={problems.mobile}>
+                  <div className="flex gap-2 items-stretch">
+                    <CountrySelect options={countryOpts} value={form.mobile_country} onChange={onCountryPicked} disabled={countriesLoading || !countryOpts.length} />
+                    <input readOnly className="gg-input h-10 md:h-11 w-24 text-center" value={form.mobile_code} aria-label="Dial code" />
+                    <div className="relative flex-1">
+                      <Input id="lead-mobile" value={form.mobile} onChange={update("mobile")} placeholder="Enter mobile number" invalid={!!problems.mobile} />
+                      <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                    </div>
+                  </div>
+                  {dupMobile === true && (
+                    <div className="inline-flex items-center gap-1 mt-1 text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
+                      <Info className="w-3 h-3" /> Duplicate number — will be sent for approval
+                    </div>
+                  )}
+                </Field>
+
+                <Field label="Expected Revenue" htmlFor="lead-revenue">
+                  <Input id="lead-revenue" type="number" inputMode="decimal" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="e.g., 50000" />
+                </Field>
+
+                <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
+                  <div className="relative">
+                    <Input id="lead-follow" type="date" value={form.follow_up_date} onChange={update("follow_up_date")} invalid={!!problems.follow_up_date} />
+                    <CalendarDays className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                  </div>
+                </Field>
+
+                <Field label="Profession" htmlFor="lead-profession">
+                  <Input id="lead-profession" value={form.profession} onChange={update("profession")} placeholder="e.g., Architect" />
+                </Field>
+
+                <Field label="Lead Stage" required htmlFor="lead-stage" error={problems.stage}>
+                  <Select id="lead-stage" value={form.stage} onChange={update("stage")} invalid={!!problems.stage}>
+                    {stages.map((s) => (
+                      <option key={s} value={s}>
+                        {cap(s)}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+
+                <Field label="Source" required htmlFor="lead-source" error={problems.source}>
+                  <Select id="lead-source" value={form.source} onChange={update("source")} invalid={!!problems.source}>
+                    <option value="">Select a Source</option>
+                    {sources.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+
+              {/* GENERAL custom fields */}
+              {generalCF.length > 0 && (
+                <div className="pt-1">
+                  <div className="text-sm font-medium mb-2">Custom fields — General</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{generalCF.map(renderCF)}</div>
+                </div>
+              )}
+            </Section>
+
+            {/* ADVANCE */}
+            <Section
+              title="Advance"
+              subtitle="Optional details and attachments."
+              right={
+                <button
+                  type="button"
+                  className="gg-btn gg-btn-sm"
+                  onClick={() => (onManageCustomFields ? onManageCustomFields() : setShowCFModal(true))}
+                >
+                  <Plus className="w-4 h-4 mr-1" /> Manage / Add custom fields
+                </button>
+              }
+            >
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <Field label="Detailed information" htmlFor="lead-details">
+                    <textarea id="lead-details" className="gg-input w-full h-28" value={form.details} onChange={update("details")} placeholder="Notes or context" />
+                  </Field>
+                </div>
+              </div>
+
+              <div>
+                <div className="text-sm font-medium mb-2">Custom fields — Advance</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {advanceCF.length > 0 ? advanceCF.map(renderCF) : <EmptyCustomGroup onAdd={() => (onManageCustomFields ? onManageCustomFields() : setShowCFModal(true))} />}
+                </div>
+              </div>
+            </Section>
+
+            {error && (
+              <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">{error}</div>
+            )}
+          </div>
         </form>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 px-4 py-3 border-t border-[color:var(--border)]">
-          <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
-          <button
-            id="addlead-save"
-            className="gg-btn gg-btn-primary"
-            type="submit"
-            onClick={submit}
-            disabled={saving || !isValid}
-            aria-disabled={saving || !isValid}
-          >
-            {saving ? "Saving…" : "Save Lead"}
-          </button>
+        <div className="px-4 md:px-5 py-3 border-t border-[color:var(--border)] flex items-center justify-between gap-3 sticky bottom-0 bg-[var(--surface)]">
+          <div className="flex items-center gap-2 text-xs md:text-sm gg-muted">
+            <CheckCircle2 className="w-4 h-4" />
+            <span>Required fields marked with <span className="text-rose-400">*</span></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button id="addlead-save" className="gg-btn gg-btn-primary" type="submit" onClick={submit} disabled={saving || !isValid} aria-disabled={saving || !isValid}>
+              {saving ? "Saving…" : "Save Lead"}
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -732,12 +748,8 @@ export default function AddLeadDrawer({
         }
         .animate-fadeIn { animation: fadeIn .18s ease-out both; }
         .animate-slideIn { animation: slideIn .22s cubic-bezier(.2,.8,.2,1) both; }
-
         .success-pulse { position: relative; }
-        .success-pulse::after{
-          content:''; position:absolute; inset:-3px; border-radius:12px;
-          box-shadow:0 0 0 0 var(--ring); animation:pulse .22s ease-out 1;
-        }
+        .success-pulse::after{ content:''; position:absolute; inset:-3px; border-radius:12px; box-shadow:0 0 0 0 var(--ring); animation:pulse .22s ease-out 1; }
         @keyframes pulse{ from{box-shadow:0 0 0 0 var(--ring);} to{box-shadow:0 0 0 12px rgba(0,0,0,0);} }
       `}</style>
     </div>
@@ -748,22 +760,17 @@ export default function AddLeadDrawer({
 
 function EmptyCustomGroup({ onAdd }) {
   return (
-    <div className="gg-card flex items-center justify-between">
+    <div className="gg-card flex items-center justify-between p-3">
       <div className="text-sm text-[color:var(--muted)]">No custom fields yet.</div>
-      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>Add a custom field</button>
+      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>
+        Add a custom field
+      </button>
     </div>
   );
 }
 
 function CFModal({ onClose, onSave }) {
-  const [f, setF] = useState({
-    label: "",
-    key: "",
-    type: "text",
-    group: "general",
-    required: false,
-    optionsText: "",
-  });
+  const [f, setF] = useState({ label: "", key: "", type: "text", group: "general", required: false, optionsText: "" });
 
   const save = () => {
     const key = (f.key || f.label).trim().toLowerCase().replace(/\s+/g, "_");
@@ -775,9 +782,7 @@ function CFModal({ onClose, onSave }) {
       type: f.type,
       group: f.group,
       required: !!f.required,
-      options: f.type === "select"
-        ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean)
-        : [],
+      options: f.type === "select" ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean) : [],
     };
     onSave?.(field);
   };
@@ -794,16 +799,16 @@ function CFModal({ onClose, onSave }) {
         <div className="grid grid-cols-1 gap-3">
           <div>
             <label className="gg-label">Label *</label>
-            <input className="gg-input" value={f.label} onChange={(e) => setF((s) => ({ ...s, label: e.target.value }))} />
+            <input className="gg-input h-10" value={f.label} onChange={(e) => setF((s) => ({ ...s, label: e.target.value }))} />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="gg-label">Key</label>
-              <input className="gg-input" value={f.key} onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))} placeholder="auto from label if empty" />
+              <input className="gg-input h-10" value={f.key} onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))} placeholder="auto from label if empty" />
             </div>
             <div>
               <label className="gg-label">Group</label>
-              <select className="gg-input" value={f.group} onChange={(e) => setF((s) => ({ ...s, group: e.target.value }))}>
+              <select className="gg-input h-10" value={f.group} onChange={(e) => setF((s) => ({ ...s, group: e.target.value }))}>
                 <option value="general">General</option>
                 <option value="advance">Advance</option>
               </select>
@@ -813,7 +818,7 @@ function CFModal({ onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="gg-label">Type</label>
-              <select className="gg-input" value={f.type} onChange={(e) => setF((s) => ({ ...s, type: e.target.value }))}>
+              <select className="gg-input h-10" value={f.type} onChange={(e) => setF((s) => ({ ...s, type: e.target.value }))}>
                 <option value="text">Text</option>
                 <option value="email">Email</option>
                 <option value="phone">Phone</option>
@@ -832,11 +837,11 @@ function CFModal({ onClose, onSave }) {
               </label>
             </div>
           </div>
-    
+
           {f.type === "select" && (
             <div>
               <label className="gg-label">Options (comma separated)</label>
-              <input className="gg-input" placeholder="e.g., Hot, Warm, Cold" value={f.optionsText} onChange={(e) => setF((s) => ({ ...s, optionsText: e.target.value }))} />
+              <input className="gg-input h-10" placeholder="e.g., Hot, Warm, Cold" value={f.optionsText} onChange={(e) => setF((s) => ({ ...s, optionsText: e.target.value }))} />
             </div>
           )}
         </div>
@@ -851,4 +856,6 @@ function CFModal({ onClose, onSave }) {
   );
 }
 
-function cap(s){ return String(s||"").charAt(0).toUpperCase() + String(s||"").slice(1); }
+function cap(s) {
+  return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
+}
