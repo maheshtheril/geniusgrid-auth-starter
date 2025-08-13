@@ -27,21 +27,22 @@ function safeNextMode(theme, current) {
   if (typeof libNextMode === "function") return libNextMode(theme, current);
   const order = Object.keys(theme?.modes || {}).length
     ? Object.keys(theme.modes)
-    : ["light", "dark", "night"];
+    : ["dark", "light", "night"]; // prefer dark-first cycle
   const idx = Math.max(0, order.indexOf(current));
   return order[(idx + 1) % order.length];
 }
 
+const VALID = new Set(["dark", "light", "night"]);
+
 export default function ThemeToggle() {
-  // SSR-safe initial value, default "dark"
+  // Force dark as the initial visual state unless user explicitly saved a value.
   const initial = (() => {
     try {
       if (typeof window !== "undefined") {
-        return (
-          localStorage.getItem("theme") ||
-          document.documentElement.getAttribute("data-theme") ||
-          "dark"
-        );
+        const ls = localStorage.getItem("theme");
+        if (ls && VALID.has(ls)) return ls;
+        const dom = document.documentElement.getAttribute("data-theme");
+        if (dom && VALID.has(dom)) return dom;
       }
     } catch {}
     return "dark";
@@ -53,22 +54,40 @@ export default function ThemeToggle() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      // Decide desired mode ONCE: if nothing saved, default to dark (your requirement)
+      let desired = "dark";
       try {
-        const cfg = window.__GG_THEME || (await uiApi.getTheme()) || FALLBACK_THEME;
-        if (!alive) return;
-        setTheme(cfg);
-        applyTheme(cfg, mode);
-        document.documentElement.setAttribute("data-theme", mode);
+        const saved = localStorage.getItem("theme");
+        if (saved && VALID.has(saved)) desired = saved;
+      } catch {}
+
+      // Load tokens (server → fallback) WITHOUT overriding desired
+      let cfg = null;
+      try {
+        cfg = window.__GG_THEME || (await uiApi.getTheme()) || FALLBACK_THEME;
       } catch {
-        if (!alive) return;
-        setTheme(FALLBACK_THEME);
-        applyTheme(FALLBACK_THEME, mode);
-        document.documentElement.setAttribute("data-theme", mode);
+        cfg = FALLBACK_THEME;
       }
-      localStorage.setItem("theme", mode);
+      if (!alive) return;
+
+      setTheme(cfg);
+
+      // Apply chosen mode firmly
+      try {
+        applyTheme(cfg, desired);
+      } catch {
+        // fallback: still ensure data-theme is set
+        document.documentElement.setAttribute("data-theme", desired);
+      }
+      document.documentElement.setAttribute("data-theme", desired);
+      try { localStorage.setItem("theme", desired); } catch {}
+
+      // Keep state in sync so the label is correct
+      setMode(desired);
     })();
+
     return () => { alive = false; };
-    // mount once
+    // mount once only
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -78,17 +97,16 @@ export default function ThemeToggle() {
     setMode(next);
     applyTheme(cfg, next);
     document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
+    try { localStorage.setItem("theme", next); } catch {}
     uiApi?.setTheme?.({ theme: next }); // fire-and-forget
   };
 
-const label =
-  mode === "light"
-    ? "☀️ Light"
-    : mode === "dark"
-    ? "🌌 Dark"
-    : "🌙 Night";
-
+  const label =
+    mode === "light"
+      ? "☀️ Light"
+      : mode === "dark"
+      ? "🌌 Dark"
+      : "🌙 Night";
 
   return (
     <button
