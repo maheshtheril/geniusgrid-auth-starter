@@ -9,10 +9,14 @@ import App from "./App.jsx";
 
 // Optional deps — app still boots if these fail to import
 let uiApi = null;
-try { uiApi = (await import("@/api/ui")).uiApi || null; } catch {}
+try {
+  uiApi = (await import("@/api/ui")).uiApi || null;
+} catch {}
 
 let applyTheme = null;
-try { applyTheme = (await import("@/theme/applyTheme")).applyTheme || null; } catch {}
+try {
+  applyTheme = (await import("@/theme/applyTheme")).applyTheme || null;
+} catch {}
 
 // Fallback theme tokens (light/dark/night)
 const FALLBACK_THEME = {
@@ -35,7 +39,8 @@ const FALLBACK_THEME = {
   }
 };
 
-const THEMES = ["light","dark","night"];
+// Validation list (and preferred order) — dark → light → night
+const THEMES = ["dark","light","night"];
 const LS_KEYS = ["gg.theme", "theme"]; // read/write both for compatibility
 
 function readSavedMode() {
@@ -50,15 +55,13 @@ function saveMode(mode) {
 }
 function applyDomMode(mode) {
   document.documentElement.setAttribute("data-theme", mode);
-  document.body?.setAttribute?.("data-theme", mode);
+  if (document.body) document.body.setAttribute("data-theme", mode);
 }
+// Default to dark unless user explicitly saved something
 function chooseInitialMode() {
-  // 1) user-saved
   const saved = readSavedMode();
   if (saved) return saved;
-  // 2) OS preference
-  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
-  return prefersDark ? "dark" : "light";
+  return "dark";
 }
 
 const rootEl = document.getElementById("root");
@@ -86,9 +89,6 @@ const rootEl = document.getElementById("root");
   try {
     if (typeof applyTheme === "function") {
       applyTheme(themeConfig, initialMode);
-    } else {
-      // If your applyTheme module wasn’t available, tokens in CSS still work via data-theme.
-      // No-op here; the ThemeToggle will keep things in sync.
     }
   } catch {
     // Silently ignore token application errors; data-theme still controls CSS variables.
@@ -106,12 +106,15 @@ const rootEl = document.getElementById("root");
   );
 
   // === 4) Cross-tab sync: if another tab changes theme, reflect it here ===
-  window.addEventListener("storage", (e) => {
-    if (!LS_KEYS.includes(e.key)) return;
+  window.addEventListener("storage", () => {
     const next = readSavedMode();
     if (next && THEMES.includes(next)) {
       applyDomMode(next);
-      try { if (typeof applyTheme === "function") applyTheme(window.__GG_THEME || FALLBACK_THEME, next); } catch {}
+      try {
+        if (typeof applyTheme === "function") {
+          applyTheme(window.__GG_THEME || FALLBACK_THEME, next);
+        }
+      } catch {}
     }
   });
 })();
