@@ -38,7 +38,8 @@ import leadsImportsRoutes from "./routes/leads.imports.routes.js";
 import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js";
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
-import adminCronRoutes from "./routes/admin.cron.routes.js";
+//import adminCronRoutes from "./routes/admin.cron.routes.js";
+
 
 /* ---------- App ---------- */
 const app = express();
@@ -233,6 +234,8 @@ app.use("/api", requireAuth, leadsModule);
 
 /* Imports — use the newer plural router ONLY */
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
+
+
 
 /* Real AI prospect endpoints (only if mock is OFF) */
 if (!useMockAi) {
