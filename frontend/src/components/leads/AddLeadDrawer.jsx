@@ -192,7 +192,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
         type="button"
         ref={btnRef}
         disabled={disabled}
-        className={`gg-input h-10 md:h-11 w-44 flex items-center gap-2 justify-between ${
+        className={`gg-input h-10 md:h-11 w-32 flex items-center gap-2 justify-between ${
           disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
         }`}
         aria-haspopup="listbox"
@@ -587,114 +587,25 @@ export default function AddLeadDrawer({
 
         {/* Body */}
         <form onSubmit={submit} className="flex-1 overflow-auto">
-          <div className="p-4 md:p-5 space-y-5">
+          <div className=\"p-4 md:p-5 pt-6 space-y-5\">
             {/* GENERAL */}
-            <Section title="General" subtitle="Core information to create the lead.">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <Field label="Lead Name" required htmlFor="lead-name" error={problems.name}>
-                  <div className="relative">
-                    <Input id="lead-name" value={form.name} onChange={update("name")} placeholder="e.g., Priya Sharma" invalid={!!problems.name} />
-                    <User2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-                  </div>
-                </Field>
-
-                <Field label="Email" htmlFor="lead-email" error={problems.email}>
-                  <div className="relative">
-                    <Input id="lead-email" value={form.email} onChange={update("email")} placeholder="you@company.com" invalid={!!problems.email} />
-                    <Mail className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-                  </div>
-                </Field>
-
-                <Field label="Mobile" required htmlFor="lead-mobile" hint={dupMobile === true ? undefined : "Duplicate numbers are checked automatically."} error={problems.mobile}>
-                  <div className="flex gap-2 items-stretch">
-                    <CountrySelect options={countryOpts} value={form.mobile_country} onChange={onCountryPicked} disabled={countriesLoading || !countryOpts.length} />
-                    <input readOnly className="gg-input h-10 md:h-11 w-24 text-center" value={form.mobile_code} aria-label="Dial code" />
-                    <div className="relative flex-1">
-                      <Input id="lead-mobile" value={form.mobile} onChange={update("mobile")} placeholder="Enter mobile number" invalid={!!problems.mobile} />
-                      <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-                    </div>
-                  </div>
-                  {dupMobile === true && (
-                    <div className="inline-flex items-center gap-1 mt-1 text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
-                      <Info className="w-3 h-3" /> Duplicate number — will be sent for approval
-                    </div>
-                  )}
-                </Field>
-
-                <Field label="Expected Revenue" htmlFor="lead-revenue">
-                  <Input id="lead-revenue" type="number" inputMode="decimal" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="e.g., 50000" />
-                </Field>
-
-                <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
-                  <div className="relative">
-                    <Input id="lead-follow" type="date" value={form.follow_up_date} onChange={update("follow_up_date")} invalid={!!problems.follow_up_date} />
-                    <CalendarDays className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-                  </div>
-                </Field>
-
-                <Field label="Profession" htmlFor="lead-profession">
-                  <Input id="lead-profession" value={form.profession} onChange={update("profession")} placeholder="e.g., Architect" />
-                </Field>
-
-                <Field label="Lead Stage" required htmlFor="lead-stage" error={problems.stage}>
-                  <Select id="lead-stage" value={form.stage} onChange={update("stage")} invalid={!!problems.stage}>
-                    {stages.map((s) => (
-                      <option key={s} value={s}>
-                        {cap(s)}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-
-                <Field label="Source" required htmlFor="lead-source" error={problems.source}>
-                  <Select id="lead-source" value={form.source} onChange={update("source")} invalid={!!problems.source}>
-                    <option value="">Select a Source</option>
-                    {sources.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </Select>
-                </Field>
-              </div>
-
-              {/* GENERAL custom fields */}
-              {generalCF.length > 0 && (
-                <div className="pt-1">
-                  <div className="text-sm font-medium mb-2">Custom fields — General</div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{generalCF.map(renderCF)}</div>
-                </div>
-              )}
-            </Section>
-
-            {/* ADVANCE */}
             <Section
-              title="Advance"
-              subtitle="Optional details and attachments."
+              title=\"Custom fields — Advance\"
               right={
                 <button
-                  type="button"
-                  className="gg-btn gg-btn-sm"
+                  type=\"button\"
+                  className=\"gg-btn gg-btn-sm\"
                   onClick={() => (onManageCustomFields ? onManageCustomFields() : setShowCFModal(true))}
                 >
-                  <Plus className="w-4 h-4 mr-1" /> Manage / Add custom fields
+                  <Plus className=\"w-4 h-4 mr-1\" /> Add custom field
                 </button>
               }
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="md:col-span-2">
-                  <Field label="Detailed information" htmlFor="lead-details">
-                    <textarea id="lead-details" className="gg-input w-full h-28" value={form.details} onChange={update("details")} placeholder="Notes or context" />
-                  </Field>
-                </div>
-              </div>
-
-              <div>
-                <div className="text-sm font-medium mb-2">Custom fields — Advance</div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {advanceCF.length > 0 ? advanceCF.map(renderCF) : <EmptyCustomGroup onAdd={() => (onManageCustomFields ? onManageCustomFields() : setShowCFModal(true))} />}
-                </div>
-              </div>
+              {advanceCF.length > 0 ? (
+                <div className=\"grid grid-cols-1 md:grid-cols-2 gap-4\">{advanceCF.map(renderCF)}</div>
+              ) : (
+                <div className=\"gg-card p-3 text-sm text-[color:var(--muted)]\">No custom fields yet.</div>
+              )}
             </Section>
 
             {error && (
