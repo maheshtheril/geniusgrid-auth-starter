@@ -3,6 +3,77 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api.js"; // shared API (baseURL + credentials)
 
+// ✅ Flip this to false to go back to real API
+const USE_FRONTEND_MOCK = true;
+
+// Simple Indian mock data for the inline preview table
+function makeIndianPreview(size = 5) {
+  const base = [
+    {
+      id: "IN-001",
+      name: "Priya Sharma",
+      title: "Procurement Manager",
+      company: "Aarav Auto Components Pvt Ltd",
+      email: "priya.sharma@aaravauto.in",
+    },
+    {
+      id: "IN-002",
+      name: "Rohan Iyer",
+      title: "Finance Controller",
+      company: "Kaveri Textiles Ltd",
+      email: "rohan.iyer@kaveritextiles.in",
+    },
+    {
+      id: "IN-003",
+      name: "Neha Gupta",
+      title: "Operations Head",
+      company: "Vistara Foods Pvt Ltd",
+      email: "neha.gupta@vistarafoods.in",
+    },
+    {
+      id: "IN-004",
+      name: "Arjun Mehta",
+      title: "Supply Chain Lead",
+      company: "Indus Machinery Works",
+      email: "arjun.mehta@indusmw.in",
+    },
+    {
+      id: "IN-005",
+      name: "Ananya Rao",
+      title: "Plant Admin",
+      company: "Sahyadri Ceramics",
+      email: "ananya.rao@sahyadri-ceramics.in",
+    },
+  ];
+  // repeat/trim to requested size
+  const out = [];
+  for (let i = 0; i < size; i++) {
+    const t = base[i % base.length];
+    out.push({
+      ...t,
+      id: `${t.id}-${Math.floor(i / base.length) + 1}`,
+    });
+  }
+  return out.slice(0, size);
+}
+
+// Simple mock event list (what your UI shows in the left column)
+function makeMockEvents() {
+  const now = Date.now();
+  const mk = (ms, level, message) => ({
+    id: String(now + ms),
+    ts: new Date(now + ms).toISOString(),
+    level,
+    message,
+  });
+  return [
+    mk(0, "info", "Queued: discovering Indian mid-market manufacturers"),
+    mk(600, "info", "Running: searching procurement, finance & operations titles"),
+    mk(1400, "info", "Enriching leads with email & company metadata"),
+    mk(2200, "success", "Completed: mock data ready to review"),
+  ];
+}
+
 export default function DiscoverLeads() {
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState(50);
@@ -15,21 +86,54 @@ export default function DiscoverLeads() {
   async function start() {
     if (!prompt.trim()) return; // guard
 
-    const { data } = await api.post("/ai/prospect/jobs", {
-      prompt,
-      size,
-      providers: ["pdl"],
-      filters: {},
-    });
+    // ---------------- FRONTEND MOCK: no server, just show Indian data ----------------
+    if (USE_FRONTEND_MOCK) {
+      clearTimeout(pollTimer.current);
+      setEvents([]);
+      setPreview([]);
+      sinceRef.current = null;
 
-    const j = data?.data || data;
-    setJob(j);
-    setEvents([]);
-    setPreview([]);
-    sinceRef.current = null;
+      // simulate a short delay so it feels "AI-ish"
+      const mockJobId = "mock-job-IND-1";
+      setJob({ id: mockJobId, status: "queued", import_job_id: "mock-import-IND-1" });
 
-    clearTimeout(pollTimer.current);
-    tick(j.id);
+      // emit staged events and final data
+      const evs = makeMockEvents();
+      // progressively show events
+      evs.forEach((e, idx) => {
+        setTimeout(() => {
+          setEvents((prev) => [...prev, e]);
+          setJob((j) => ({ ...(j || {}), status: idx < evs.length - 1 ? "running" : "completed" }));
+        }, idx * 500);
+      });
+
+      // inline preview of first few items (from India)
+      setTimeout(() => {
+        const firstFive = makeIndianPreview(5);
+        setPreview(firstFive);
+        // mark job as completed at the end
+        setJob({ id: mockJobId, status: "completed", import_job_id: "mock-import-IND-1" });
+      }, 1700);
+
+      return; // <-- stop here; do not call the backend
+    }
+    // ---------------- END FRONTEND MOCK ----------------
+
+    // ---------------- ORIGINAL NETWORK CODE (kept, just commented) ----------------
+    // const { data } = await api.post("/ai/prospect/jobs", {
+    //   prompt,
+    //   size,
+    //   providers: ["pdl"],
+    //   filters: {},
+    // });
+    // const j = data?.data || data;
+    // setJob(j);
+    // setEvents([]);
+    // setPreview([]);
+    // sinceRef.current = null;
+    // clearTimeout(pollTimer.current);
+    // tick(j.id);
+    // ---------------- END ORIGINAL ----------------
   }
 
   async function tick(jobId) {
