@@ -309,7 +309,7 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {/* Tenant */}
+              {/* Tenant
               {tenantLocked ? (
                 <div className="form-col">
                   <label className="form-label">Tenant</label>
@@ -355,7 +355,7 @@ export default function LoginPage() {
                     Tip: add <code>?tenant=yourcode</code> to the URL or use a tenant subdomain.
                   </div>
                 </div>
-              )}
+              )} */}
 
               {error && (
                 <div className="rounded-lg" style={{ background: "rgba(244, 63, 94, .12)", color: "#fecdd3", padding: "8px 12px", fontSize: ".9rem" }}>
