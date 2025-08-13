@@ -73,19 +73,23 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    const fromUrl = new URLSearchParams(window.location.search).get("tenant");
-    if (fromUrl) {
-      setTenant(fromUrl.trim().toLowerCase());
-      setTenantLocked(true);
-      return;
-    }
-    if (detectedTenant) {
-      setTenant(detectedTenant);
-      setTenantLocked(true);
-      return;
-    }
-    const saved = localStorage.getItem("__gg_last_tenant");
-    if (saved) setTenant(saved);
+    // const fromUrl = new URLSearchParams(window.location.search).get("tenant");
+    // if (fromUrl) {
+    //   setTenant(fromUrl.trim().toLowerCase());
+    //   setTenantLocked(true);
+    //   return;
+    // }
+    // if (detectedTenant) {
+    //   setTenant(detectedTenant);
+    //   setTenantLocked(true);
+    //   return;
+    // }
+    // const saved = localStorage.getItem("__gg_last_tenant");
+    // if (saved) setTenant(saved);
+
+     setTenant("demo");
+  setTenantLocked(true); // lock so users can’t change
+
   }, [detectedTenant]);
 
   function validate() {
@@ -208,8 +212,8 @@ export default function LoginPage() {
               <img
                 src={logoUrl}
                 alt="GeniusGrid"
-                width="40"
-                height="40"
+                width="80"
+                height="80"
                 style={{ borderRadius: 8 }}
               />
               <div>
@@ -232,7 +236,7 @@ export default function LoginPage() {
               <span className="gg-chip">Audit Logs</span>
             </div>
 
-            <div style={{ marginTop: 24 }}>
+            {/* <div style={{ marginTop: 24 }}>
               <div className="gg-surface p-3 rounded-lg" style={{ display: "grid", gap: 8 }}>
                 <div className="gg-muted" style={{ fontSize: ".85rem" }}>
                   Need an account?
@@ -241,7 +245,7 @@ export default function LoginPage() {
                   Create account
                 </a>
               </div>
-            </div>
+            </div> */}
           </div>
         </aside>
 
@@ -332,9 +336,9 @@ export default function LoginPage() {
                       Change
                     </button>
                   </div>
-                  <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
+                  {/* <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
                     Detected from subdomain. Click Change to use a different tenant.
-                  </div>
+                  </div> */}
                 </div>
               ) : (
                 <div className="form-col">
