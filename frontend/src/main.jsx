@@ -17,7 +17,12 @@ let applyTheme = null;
 try {
   applyTheme = (await import("@/theme/applyTheme")).applyTheme || null;
 } catch {}
-
+const savedTheme = localStorage.getItem("theme");
+if (!savedTheme) {
+  applyTheme("dark");
+} else {
+  applyTheme(savedTheme);
+}
 // Fallback theme tokens (light/dark/night)
 const FALLBACK_THEME = {
   modes: {
