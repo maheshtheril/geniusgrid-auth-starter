@@ -8,7 +8,9 @@
     "migrate": "node scripts/migrate.js",
     "start": "npm run migrate && node src/server.js",
     "seed:countries": "node scripts/seed-countries.cjs",
-    "seed\\:countries": "node scripts/seed-countries.cjs"
+    "seed\\:countries": "node scripts/seed-countries.cjs",
+    "worker:prospect": "node src/workers/prospect.worker.js"
+
   },
   "dependencies": {
     "@fast-csv/parse": "^5.0.5",

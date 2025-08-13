@@ -36,6 +36,9 @@ import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js"
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 import adminCronRoutes from "./routes/admin.cron.routes.js";
+import aiProspectRoutes from "./routes/aiProspect.routes.js";
+  
+
 
 
 
@@ -195,6 +198,7 @@ app.use("/api/leads", requireAuth, leadsMergeRoutes);
 app.use("/api/admin/cron", adminCronRoutes);
 app.use("/api/leads", requireAuth, leadsImportRoutes);
 app.use("/api", requireAuth, leadsImportRoutes);
+app.use("/api", aiProspectRoutes);    // AI prospecting endpoints
 
 // ---------------- 404 & Errors ----------------
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
