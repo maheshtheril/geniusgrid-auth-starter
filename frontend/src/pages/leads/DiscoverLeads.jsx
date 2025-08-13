@@ -3,11 +3,21 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api.js"; // shared API (baseURL + credentials)
 
-// 🚀 LIVE MODE: hit backend (PDL) — set to true only if you want the old fake UI.
+// 🚀 LIVE MODE: hit backend (PDL). Flip to true only if you want the old fake UI.
 const USE_FRONTEND_MOCK = false;
 
-/* Optional: tiny mock helpers kept around for quick local demos.
-   They won't run while USE_FRONTEND_MOCK === false. */
+/* ---------- helpers ---------- */
+
+// Normalize various API array shapes to a plain array
+function asArray(x) {
+  if (Array.isArray(x)) return x;
+  if (Array.isArray(x?.data)) return x.data;
+  if (Array.isArray(x?.items)) return x.items;
+  if (Array.isArray(x?.events)) return x.events;
+  return [];
+}
+
+/* Optional: tiny mock helpers for quick local demos (unused in live mode). */
 function makeIndianPreview(size = 5) {
   const base = [
     { id: "IN-001", name: "Priya Sharma", title: "Procurement Manager", company: "Aarav Auto Components Pvt Ltd", email: "priya.sharma@aaravauto.in" },
@@ -34,6 +44,8 @@ function makeMockEvents() {
   ];
 }
 
+/* ---------- component ---------- */
+
 export default function DiscoverLeads() {
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState(50);
@@ -56,7 +68,7 @@ export default function DiscoverLeads() {
     setError("");
     cancelled.current = false;
 
-    // ---------------- FRONTEND MOCK (off when USE_FRONTEND_MOCK=false) ----------------
+    // ---------------- FRONTEND MOCK ----------------
     if (USE_FRONTEND_MOCK) {
       clearTimeout(pollTimer.current);
       setEvents([]);
@@ -78,7 +90,6 @@ export default function DiscoverLeads() {
         setPreview(makeIndianPreview(5));
         setJob({ id: mockJobId, status: "completed", import_job_id: "mock-import-IND-1" });
       }, 1700);
-
       return;
     }
     // ---------------- END FRONTEND MOCK ----------------
@@ -86,12 +97,11 @@ export default function DiscoverLeads() {
     // Live call to backend (uses your PDL_API_KEY server-side)
     try {
       setBusy(true);
-      // Start job
       const { data } = await api.post("/ai/prospect/jobs", {
         prompt,
         size,
         providers: ["pdl"], // People Data Labs provider
-        filters: {},        // put any backend-supported filters here
+        filters: {},        // add backend-supported filters here if needed
       });
 
       const j = data?.data || data;
@@ -118,23 +128,46 @@ export default function DiscoverLeads() {
       const jd = st?.data?.data || st?.data || {};
       setJob(jd);
 
-      // 2) fetch events (delta by ts)
+      // 2) fetch events (delta by ts), with backfill if since-filter returns empty
+      let evd = [];
       const qs = sinceRef.current ? `?since=${encodeURIComponent(sinceRef.current)}` : "";
-      const ev = await api.get(`/ai/prospect/jobs/${jobId}/events${qs}`);
-      const evd = ev?.data?.data || ev?.data || [];
-      if (Array.isArray(evd) && evd.length) {
-        setEvents((prev) => [...prev, ...evd]);
-        sinceRef.current = evd[evd.length - 1].ts;
+      try {
+        const ev = await api.get(`/ai/prospect/jobs/${jobId}/events${qs}`);
+        evd = asArray(ev?.data ?? ev);
+        if (!evd.length && sinceRef.current) {
+          const ev0 = await api.get(`/ai/prospect/jobs/${jobId}/events`);
+          evd = asArray(ev0?.data ?? ev0);
+        }
+      } catch {
+        // non-fatal; job can still complete and preview can still load
       }
 
-      // 3) inline preview when import available
-      if (jd.import_job_id) {
+      if (evd.length) {
+        setEvents((prev) => [...prev, ...evd]);
+        const last = evd[evd.length - 1];
+        if (last?.ts) sinceRef.current = last.ts;
+      }
+
+      // 3) inline preview when import available (retry once after completion if needed)
+      const tryPreview = async (importId) => {
+        if (!importId) return;
         try {
-          const pv = await api.get(`/leads/imports/${jd.import_job_id}/items?limit=5`);
-          setPreview(pv?.data?.data || pv?.data || []);
-        } catch {
-          // ignore preview fetch errors
-        }
+          const pv = await api.get(`/leads/imports/${importId}/items?limit=5`);
+          setPreview(asArray(pv?.data ?? pv));
+        } catch {}
+      };
+
+      if (jd.import_job_id) {
+        await tryPreview(jd.import_job_id);
+      } else if (jd.status === "completed") {
+        setTimeout(async () => {
+          try {
+            const st2 = await api.get(`/ai/prospect/jobs/${jobId}`);
+            const jd2 = st2?.data?.data || st2?.data || {};
+            setJob(jd2);
+            if (jd2.import_job_id) await tryPreview(jd2.import_job_id);
+          } catch {}
+        }, 800);
       }
 
       // 4) continue polling while queued/running
@@ -143,7 +176,7 @@ export default function DiscoverLeads() {
       } else {
         setBusy(false);
       }
-    } catch (e) {
+    } catch {
       // transient errors: back off and retry unless cancelled
       if (!cancelled.current) {
         pollTimer.current = setTimeout(() => tick(jobId), 2000);
@@ -242,16 +275,20 @@ export default function DiscoverLeads() {
               <div className="gg-muted text-sm mb-1">Events</div>
               <div className="mt-1" style={{ maxHeight: 300, overflow: "auto" }}>
                 {events.length ? (
-                  events.map((e) => (
-                    <div key={e.id} className="text-sm">
+                  events.map((e, idx) => (
+                    <div key={e.id || e.ts || idx} className="text-sm">
                       <span className="gg-muted">
-                        {new Date(e.ts).toLocaleTimeString()} • {e.level}
+                        {e.ts ? new Date(e.ts).toLocaleTimeString() : "—"} • {e.level || "info"}
                       </span>{" "}
-                      — {e.message}
+                      — {e.message || e.text || (typeof e === "string" ? e : JSON.stringify(e))}
                     </div>
                   ))
                 ) : (
-                  <div className="gg-muted text-sm">No events yet…</div>
+                  <div className="gg-muted text-sm">
+                    {job?.status === "completed"
+                      ? "Job completed but no events were returned by the server."
+                      : "No events yet…"}
+                  </div>
                 )}
               </div>
             </div>
