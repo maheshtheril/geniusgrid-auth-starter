@@ -1,5 +1,5 @@
 // -----------------------------------------------
-// src/components/Sidebar.jsx (redesigned + AI gate)
+// src/components/Sidebar.jsx (redesigned + AI gate + debug + env force)
 // -----------------------------------------------
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
@@ -113,16 +113,36 @@ function ItemLink({ node, depth = 0 }) {
 
 export default function Sidebar() {
   const { menus } = useEnv();                   // server-provided menus (id, name, path, icon, parent_id, order?)
-  const { ent } = useEntitlements();           // { features: { ai_prospecting: true }, ... }
-  const hasAI = !!(ent?.features && ent.features.ai_prospecting);
+  const { ent } = useEntitlements();           // { features, capabilities? }
+
+  // --- Debug + force switches (remove in prod if you’d like)
+  const DEBUG = true;
+  const forceAi = String(import.meta.env.VITE_FORCE_AI_MENU || "") === "1";
+  if (DEBUG) {
+    // See what the sidebar actually receives
+    // eslint-disable-next-line no-console
+    console.log("[Sidebar] ent:", ent);
+    // eslint-disable-next-line no-console
+    console.log("[Sidebar] menus:", menus);
+  }
+
+  // Accept either features boolean or capabilities list, or env force
+  const hasAI =
+    forceAi ||
+    !!(ent?.features && ent.features.ai_prospecting) ||
+    (Array.isArray(ent?.capabilities) && ent.capabilities.includes("leads:discover"));
 
   // Merge a gated "Discover (AI)" entry if entitlement present and not already in menus
   const mergedMenus = useMemo(() => {
     const base = Array.isArray(menus) ? [...menus] : [];
+
+    // Only add if allowed and not present
     if (hasAI && !base.some((i) => i.path === "/app/leads/discover")) {
+      // Try to find a sensible parent: explicit path first, then by name, then CRM bucket
       const leadsParent =
-        base.find((i) => i.path === "/app/leads") ||
-        base.find((i) => /leads/i.test(i.name || ""));
+        base.find((i) => i.path?.startsWith?.("/app/leads")) ||
+        base.find((i) => /(^|\s)leads?(\s|$)/i.test(i.name || "")) ||
+        base.find((i) => /crm/i.test(i.name || ""));
 
       base.push({
         id: "nav_ai_prospecting",
@@ -130,7 +150,7 @@ export default function Sidebar() {
         path: "/app/leads/discover",
         icon: "sparkles",
         parent_id: leadsParent?.id || null,
-        order: Number.isFinite(leadsParent?.order) ? (leadsParent.order + 1) : undefined,
+        order: Number.isFinite(leadsParent?.order) ? leadsParent.order + 1 : undefined,
       });
     }
     return base;
