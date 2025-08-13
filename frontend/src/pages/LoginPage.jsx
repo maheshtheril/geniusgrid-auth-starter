@@ -232,7 +232,7 @@ export default function LoginPage() {
               <span className="gg-chip">Audit Logs</span>
             </div>
 
-            {/* <div style={{ marginTop: 24 }}>
+            <div style={{ marginTop: 24 }}>
               <div className="gg-surface p-3 rounded-lg" style={{ display: "grid", gap: 8 }}>
                 <div className="gg-muted" style={{ fontSize: ".85rem" }}>
                   Need an account?
@@ -241,7 +241,7 @@ export default function LoginPage() {
                   Create account
                 </a>
               </div>
-            </div> */}
+            </div>
           </div>
         </aside>
 
@@ -320,8 +320,8 @@ export default function LoginPage() {
                       padding: "8px 12px"
                     }}
                   >
-                    {/* <span className="lowercase">{tenant}</span> */}
-                    <span className="lowercase">demo</span>
+                    <span className="lowercase">{tenant}</span> 
+                   
                     <button
                       type="button"
                       className="gg-btn gg-btn-ghost"
