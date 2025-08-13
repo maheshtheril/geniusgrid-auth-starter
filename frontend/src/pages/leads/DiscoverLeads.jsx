@@ -3,69 +3,29 @@ import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api.js"; // shared API (baseURL + credentials)
 
-// ✅ Flip this to false to go back to real API
-const USE_FRONTEND_MOCK = true;
+// 🚀 LIVE MODE: hit backend (PDL) — set to true only if you want the old fake UI.
+const USE_FRONTEND_MOCK = false;
 
-// Simple Indian mock data for the inline preview table
+/* Optional: tiny mock helpers kept around for quick local demos.
+   They won't run while USE_FRONTEND_MOCK === false. */
 function makeIndianPreview(size = 5) {
   const base = [
-    {
-      id: "IN-001",
-      name: "Priya Sharma",
-      title: "Procurement Manager",
-      company: "Aarav Auto Components Pvt Ltd",
-      email: "priya.sharma@aaravauto.in",
-    },
-    {
-      id: "IN-002",
-      name: "Rohan Iyer",
-      title: "Finance Controller",
-      company: "Kaveri Textiles Ltd",
-      email: "rohan.iyer@kaveritextiles.in",
-    },
-    {
-      id: "IN-003",
-      name: "Neha Gupta",
-      title: "Operations Head",
-      company: "Vistara Foods Pvt Ltd",
-      email: "neha.gupta@vistarafoods.in",
-    },
-    {
-      id: "IN-004",
-      name: "Arjun Mehta",
-      title: "Supply Chain Lead",
-      company: "Indus Machinery Works",
-      email: "arjun.mehta@indusmw.in",
-    },
-    {
-      id: "IN-005",
-      name: "Ananya Rao",
-      title: "Plant Admin",
-      company: "Sahyadri Ceramics",
-      email: "ananya.rao@sahyadri-ceramics.in",
-    },
+    { id: "IN-001", name: "Priya Sharma", title: "Procurement Manager", company: "Aarav Auto Components Pvt Ltd", email: "priya.sharma@aaravauto.in" },
+    { id: "IN-002", name: "Rohan Iyer",   title: "Finance Controller",  company: "Kaveri Textiles Ltd",          email: "rohan.iyer@kaveritextiles.in" },
+    { id: "IN-003", name: "Neha Gupta",   title: "Operations Head",      company: "Vistara Foods Pvt Ltd",        email: "neha.gupta@vistarafoods.in" },
+    { id: "IN-004", name: "Arjun Mehta",  title: "Supply Chain Lead",    company: "Indus Machinery Works",        email: "arjun.mehta@indusmw.in" },
+    { id: "IN-005", name: "Ananya Rao",   title: "Plant Admin",          company: "Sahyadri Ceramics",            email: "ananya.rao@sahyadri-ceramics.in" },
   ];
-  // repeat/trim to requested size
   const out = [];
   for (let i = 0; i < size; i++) {
     const t = base[i % base.length];
-    out.push({
-      ...t,
-      id: `${t.id}-${Math.floor(i / base.length) + 1}`,
-    });
+    out.push({ ...t, id: `${t.id}-${Math.floor(i / base.length) + 1}` });
   }
   return out.slice(0, size);
 }
-
-// Simple mock event list (what your UI shows in the left column)
 function makeMockEvents() {
   const now = Date.now();
-  const mk = (ms, level, message) => ({
-    id: String(now + ms),
-    ts: new Date(now + ms).toISOString(),
-    level,
-    message,
-  });
+  const mk = (ms, level, message) => ({ id: String(now + ms), ts: new Date(now + ms).toISOString(), level, message });
   return [
     mk(0, "info", "Queued: discovering Indian mid-market manufacturers"),
     mk(600, "info", "Running: searching procurement, finance & operations titles"),
@@ -77,29 +37,36 @@ function makeMockEvents() {
 export default function DiscoverLeads() {
   const [prompt, setPrompt] = useState("");
   const [size, setSize] = useState(50);
+
   const [job, setJob] = useState(null);
   const [events, setEvents] = useState([]);
   const [preview, setPreview] = useState([]); // inline preview of discovered items
+
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
   const sinceRef = useRef(null);
   const pollTimer = useRef(null);
+  const cancelled = useRef(false);
+
+  useEffect(() => () => clearTimeout(pollTimer.current), []);
 
   async function start() {
-    if (!prompt.trim()) return; // guard
+    if (!prompt.trim()) return;
+    setError("");
+    cancelled.current = false;
 
-    // ---------------- FRONTEND MOCK: no server, just show Indian data ----------------
+    // ---------------- FRONTEND MOCK (off when USE_FRONTEND_MOCK=false) ----------------
     if (USE_FRONTEND_MOCK) {
       clearTimeout(pollTimer.current);
       setEvents([]);
       setPreview([]);
       sinceRef.current = null;
 
-      // simulate a short delay so it feels "AI-ish"
       const mockJobId = "mock-job-IND-1";
       setJob({ id: mockJobId, status: "queued", import_job_id: "mock-import-IND-1" });
 
-      // emit staged events and final data
       const evs = makeMockEvents();
-      // progressively show events
       evs.forEach((e, idx) => {
         setTimeout(() => {
           setEvents((prev) => [...prev, e]);
@@ -107,37 +74,43 @@ export default function DiscoverLeads() {
         }, idx * 500);
       });
 
-      // inline preview of first few items (from India)
       setTimeout(() => {
-        const firstFive = makeIndianPreview(5);
-        setPreview(firstFive);
-        // mark job as completed at the end
+        setPreview(makeIndianPreview(5));
         setJob({ id: mockJobId, status: "completed", import_job_id: "mock-import-IND-1" });
       }, 1700);
 
-      return; // <-- stop here; do not call the backend
+      return;
     }
     // ---------------- END FRONTEND MOCK ----------------
 
-    // ---------------- ORIGINAL NETWORK CODE (kept, just commented) ----------------
-    // const { data } = await api.post("/ai/prospect/jobs", {
-    //   prompt,
-    //   size,
-    //   providers: ["pdl"],
-    //   filters: {},
-    // });
-    // const j = data?.data || data;
-    // setJob(j);
-    // setEvents([]);
-    // setPreview([]);
-    // sinceRef.current = null;
-    // clearTimeout(pollTimer.current);
-    // tick(j.id);
-    // ---------------- END ORIGINAL ----------------
+    // Live call to backend (uses your PDL_API_KEY server-side)
+    try {
+      setBusy(true);
+      // Start job
+      const { data } = await api.post("/ai/prospect/jobs", {
+        prompt,
+        size,
+        providers: ["pdl"], // People Data Labs provider
+        filters: {},        // put any backend-supported filters here
+      });
+
+      const j = data?.data || data;
+      setJob(j);
+      setEvents([]);
+      setPreview([]);
+      sinceRef.current = null;
+
+      clearTimeout(pollTimer.current);
+      tick(j.id);
+    } catch (e) {
+      const msg = e?.response?.data?.error || e?.message || "Failed to start discovery";
+      setError(msg);
+      setBusy(false);
+    }
   }
 
   async function tick(jobId) {
-    if (!jobId) return;
+    if (!jobId || cancelled.current) return;
 
     try {
       // 1) fetch job status
@@ -154,30 +127,38 @@ export default function DiscoverLeads() {
         sinceRef.current = evd[evd.length - 1].ts;
       }
 
-      // 3) when import is ready, show a small inline preview
+      // 3) inline preview when import available
       if (jd.import_job_id) {
         try {
           const pv = await api.get(`/leads/imports/${jd.import_job_id}/items?limit=5`);
           setPreview(pv?.data?.data || pv?.data || []);
         } catch {
-          // ignore preview errors; user can still click through to full review
+          // ignore preview fetch errors
         }
       }
 
-      // 4) continue while queued/running
+      // 4) continue polling while queued/running
       if (jd?.status === "queued" || jd?.status === "running") {
         pollTimer.current = setTimeout(() => tick(jobId), 1500);
+      } else {
+        setBusy(false);
       }
-    } catch {
-      // transient errors: back off and retry
-      pollTimer.current = setTimeout(() => tick(jobId), 2000);
+    } catch (e) {
+      // transient errors: back off and retry unless cancelled
+      if (!cancelled.current) {
+        pollTimer.current = setTimeout(() => tick(jobId), 2000);
+      }
     }
   }
 
-  useEffect(() => () => clearTimeout(pollTimer.current), []);
-
   const goReview = () =>
     job?.import_job_id && (window.location.href = `/leads/imports/${job.import_job_id}`);
+
+  const cancelPolling = () => {
+    cancelled.current = true;
+    clearTimeout(pollTimer.current);
+    setBusy(false);
+  };
 
   return (
     <div className="space-y-3">
@@ -206,12 +187,29 @@ export default function DiscoverLeads() {
           />
           <button
             className="gg-btn gg-btn-primary"
-            disabled={!prompt.trim()}
+            disabled={!prompt.trim() || busy}
             onClick={start}
+            title={USE_FRONTEND_MOCK ? "Mock mode" : "Live (PDL) mode"}
           >
-            ✨ Find Leads
+            {busy ? "Finding…" : "✨ Find Leads"}
           </button>
+          {busy && (
+            <button className="gg-btn gg-btn-ghost" onClick={cancelPolling}>
+              Cancel
+            </button>
+          )}
+          {!USE_FRONTEND_MOCK ? (
+            <span className="text-xs gg-muted">Live mode (PDL)</span>
+          ) : (
+            <span className="text-xs gg-muted">Frontend mock</span>
+          )}
         </div>
+
+        {error && (
+          <div className="mt-2 text-rose-400 text-sm">
+            {error}
+          </div>
+        )}
       </div>
 
       {/* Job + events + preview */}
