@@ -1,3 +1,4 @@
+// src/pages/LoginPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "../styles.css";
 
@@ -55,7 +56,7 @@ export default function LoginPage() {
   );
 
   // If your app’s first screen is Leads, this is safer than /dashboard
-  const NEXT = "/app/crm/leads"; // change to "/dashboard" if you prefer
+  const NEXT = "/app/crm/leads";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -125,7 +126,6 @@ export default function LoginPage() {
         }),
       });
 
-      // If CORS blocks, fetch rejects (caught below). If 4xx/5xx, we handle here.
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -136,7 +136,6 @@ export default function LoginPage() {
       }
 
       setMessage("Login successful. Redirecting…");
-      // Use location.assign to avoid SPA state weirdness
       setTimeout(() => window.location.assign(NEXT), 500);
     } catch (err) {
       console.error("Login error:", err);
@@ -148,139 +147,241 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-[100dvh] grid grid-cols-1 md:grid-cols-2 bg-[var(--bg)] text-[color:var(--text)]">
-      {/* LEFT */}
-      <div className="hidden md:block">
-        <div className="h-full p-10 flex flex-col justify-center">
-          <div className="mb-8">
-            <img
-              src="/images/company-logo.png"
-              alt="Company Logo"
-              className="h-10 w-auto"
-              loading="eager"
-            />
-          </div>
+    <>
+      {/* Scoped CSS to enforce two-column layout without Tailwind */}
+      <style>{`
+        .login-shell{
+          min-height:100dvh;
+          display:grid;
+          grid-template-columns: 1fr; /* mobile: stack */
+          background: var(--bg);
+          color: var(--text);
+        }
+        @media (min-width: 768px){
+          .login-shell{
+            grid-template-columns: 1fr 1fr; /* md+: two panels */
+          }
+          .login-left{ display:flex; }
+        }
+        .login-left{
+          display:none; /* shown at md+ via media query */
+          flex-direction: column;
+          justify-content: center;
+          padding: 40px;
+          background: linear-gradient(180deg,
+            color-mix(in oklab, var(--panel) 92%, transparent),
+            var(--panel)
+          );
+          border-right: 1px solid var(--border);
+        }
+        .login-right{
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding: 24px;
+        }
+        .login-card{
+          width: 100%;
+          max-width: 420px;
+          border-radius: var(--radius-lg);
+        }
+        .brand-row{
+          display:flex; align-items:center; gap:12px; margin-bottom:24px;
+        }
+        .brand-title{ font-weight:800; letter-spacing:.02em; }
+        .brand-sub{ color: var(--muted); font-size:.9rem }
+        .feature-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
+        .help-row{
+          display:flex; align-items:center; justify-content:space-between;
+          padding: 12px 16px; border-top:1px solid var(--border);
+          color: var(--muted); font-size:.9rem;
+        }
+      `}</style>
 
-          <h1 className="text-3xl font-semibold">
-            Operate at <span className="text-[color:var(--primary)]">enterprise speed</span>
-          </h1>
-          <p className="mt-3 text-[color:var(--muted)]">
-            Real-time pipelines. Role-based control. Effortless login with secure sessions.
-          </p>
-
-          <ul className="mt-6 space-y-2 text-sm text-[color:var(--muted)]">
-            <li>• Multi-tenant & RBAC</li>
-            <li>• AES-256 at rest</li>
-            <li>• Uptime 99.99%</li>
-          </ul>
-        </div>
-      </div>
-
-      {/* RIGHT */}
-      <div className="flex items-center justify-center p-6 md:p-10">
-        <div className="w-full max-w-sm rounded-2xl gg-panel p-6">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="text-2xl">🔐</div>
-            <div>
-              <div className="text-lg font-semibold">Welcome back</div>
-              <div className="text-sm text-[color:var(--muted)]">Sign in to continue</div>
-            </div>
-          </div>
-
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <label className="mb-1 block text-sm text-[color:var(--muted)]">Email</label>
-              <input
-                type="email"
-                placeholder="you@example.com"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                className="gg-input w-full rounded-md px-3 py-2"
-                required
+      <div className="login-shell">
+        {/* LEFT: Brand / Logo panel */}
+        <aside className="login-left">
+          <div>
+            <div className="brand-row">
+              {/* 🔁 Replace src with your actual logo path */}
+              <img
+                src="/images/geniusgrid-logo.png"
+                alt="GeniusGrid"
+                width="40"
+                height="40"
+                style={{ borderRadius: 8 }}
               />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm text-[color:var(--muted)]">Password</label>
-              <div className="relative">
-                <input
-                  className="gg-input w-full rounded-md px-3 py-2 pr-10"
-                  type={showPw ? "text" : "password"}
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md px-2 py-1 text-sm text-[color:var(--muted)] hover:bg-[color:var(--border)]/30"
-                  aria-label={showPw ? "Hide password" : "Show password"}
-                  onClick={() => setShowPw((s) => !s)}
-                >
-                  {showPw ? "🙈" : "👁️"}
-                </button>
+              <div>
+                <div className="brand-title">GeniusGrid</div>
+                <div className="brand-sub">AI‑Powered ERP Suite</div>
               </div>
             </div>
 
-            {/* Tenant */}
-            {tenantLocked ? (
+            <h1 style={{ fontSize: "1.8rem", fontWeight: 700, lineHeight: 1.2 }}>
+              Operate at <span style={{ color: "var(--primary)" }}>enterprise speed</span>
+            </h1>
+            <p style={{ marginTop: 10, color: "var(--muted)" }}>
+              Real-time pipelines. Role-based control. Effortless login with secure sessions.
+            </p>
+
+            <div className="feature-chips">
+              <span className="gg-chip">Multi‑tenant</span>
+              <span className="gg-chip">AI Insights</span>
+              <span className="gg-chip">Real‑time</span>
+              <span className="gg-chip">Audit Logs</span>
+            </div>
+
+            <div style={{ marginTop: 24 }}>
+              <div className="gg-surface p-3 rounded-lg" style={{ display: "grid", gap: 8 }}>
+                <div className="gg-muted" style={{ fontSize: ".85rem" }}>
+                  Need an account?
+                </div>
+                <a className="gg-btn gg-btn-primary" href="/signup" style={{ height: 40, width: "fit-content" }}>
+                  Create account
+                </a>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        {/* RIGHT: Form panel */}
+        <main className="login-right">
+          <div className="gg-panel login-card p-6">
+            <div className="mb-4" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 22 }}>🔐</div>
               <div>
-                <label className="mb-1 block text-sm text-[color:var(--muted)]">Tenant</label>
-                <div className="flex items-center justify-between rounded-lg border border-[color:var(--border)] bg-[color:var(--panel)] px-3 py-2">
-                  <span className="lowercase">{tenant}</span>
+                <div style={{ fontWeight: 700 }}>Welcome back</div>
+                <div className="gg-muted" style={{ fontSize: ".9rem" }}>Sign in to continue</div>
+              </div>
+            </div>
+
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              {/* Email */}
+              <div className="form-col">
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="gg-input w-full"
+                  required
+                />
+              </div>
+
+              {/* Password */}
+              <div className="form-col">
+                <label className="form-label">Password</label>
+                <div style={{ position: "relative" }}>
+                  <input
+                    className="gg-input w-full"
+                    style={{ paddingRight: 44 }}
+                    type={showPw ? "text" : "password"}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
                   <button
                     type="button"
-                    className="gg-btn gg-btn-ghost border border-[color:var(--border)] px-3 py-1 rounded-md"
-                    onClick={() => setTenantLocked(false)}
-                    aria-label="Change tenant"
+                    style={{
+                      position: "absolute",
+                      right: 6,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      borderRadius: 8,
+                      padding: "4px 8px",
+                      color: "var(--muted)"
+                    }}
+                    className="gg-btn-ghost"
+                    aria-label={showPw ? "Hide password" : "Show password"}
+                    onClick={() => setShowPw((s) => !s)}
                   >
-                    Change
+                    {showPw ? "🙈" : "👁️"}
                   </button>
                 </div>
-                <div className="mt-1 text-xs text-[color:var(--muted)]">
-                  Detected from subdomain. Click Change to use a different tenant.
-                </div>
               </div>
-            ) : (
-              <div>
-                <label className="mb-1 block text-sm text-[color:var(--muted)]">Tenant</label>
-                <input
-                  type="text"
-                  placeholder="e.g., tenant1"
-                  value={tenant}
-                  onChange={(e) => setTenant(e.target.value.trim())}
-                  className="gg-input w-full rounded-md px-3 py-2"
-                  required
-                />
-                <div className="mt-1 text-xs text-[color:var(--muted)]">
-                  Tip: add <code>?tenant=yourcode</code> to the URL or use a tenant subdomain.
+
+              {/* Tenant */}
+              {tenantLocked ? (
+                <div className="form-col">
+                  <label className="form-label">Tenant</label>
+                  <div
+                    className="rounded-lg"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      border: "1px solid var(--border)",
+                      background: "var(--panel)",
+                      padding: "8px 12px"
+                    }}
+                  >
+                    <span className="lowercase">{tenant}</span>
+                    <button
+                      type="button"
+                      className="gg-btn gg-btn-ghost"
+                      style={{ padding: "6px 10px" }}
+                      onClick={() => setTenantLocked(false)}
+                      aria-label="Change tenant"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
+                    Detected from subdomain. Click Change to use a different tenant.
+                  </div>
                 </div>
-              </div>
-            )}
+              ) : (
+                <div className="form-col">
+                  <label className="form-label">Tenant</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., tenant1"
+                    value={tenant}
+                    onChange={(e) => setTenant(e.target.value.trim())}
+                    className="gg-input w-full"
+                    required
+                  />
+                  <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
+                    Tip: add <code>?tenant=yourcode</code> to the URL or use a tenant subdomain.
+                  </div>
+                </div>
+              )}
 
-            {error && <div className="rounded-lg bg-rose-500/10 px-3 py-2 text-sm text-rose-300">{error}</div>}
-            {message && <div className="rounded-lg bg-emerald-500/10 px-3 py-2 text-sm text-emerald-300">{message}</div>}
+              {error && (
+                <div className="rounded-lg" style={{ background: "rgba(244, 63, 94, .12)", color: "#fecdd3", padding: "8px 12px", fontSize: ".9rem" }}>
+                  {error}
+                </div>
+              )}
+              {message && (
+                <div className="rounded-lg" style={{ background: "rgba(16, 185, 129, .12)", color: "#a7f3d0", padding: "8px 12px", fontSize: ".9rem" }}>
+                  {message}
+                </div>
+              )}
 
-            <button
-              className="gg-btn w-full rounded-lg bg-[color:var(--primary)] px-4 py-2 text-white disabled:opacity-60"
-              type="submit"
-              disabled={loading}
-              aria-busy={loading}
-            >
-              {loading ? "Signing in…" : "Sign in"}
-            </button>
-          </form>
+              <button
+                className="gg-btn gg-btn-primary w-full"
+                style={{ height: 40 }}
+                type="submit"
+                disabled={loading}
+                aria-busy={loading}
+              >
+                {loading ? "Signing in…" : "Sign in"}
+              </button>
+            </form>
 
-          <div className="mt-5 flex items-center justify-between text-sm text-[color:var(--muted)]">
-            <a href="#" className="hover:underline">Forgot password?</a>
-            <span>
-              New here? <a className="text-[color:var(--text)] hover:underline" href="/signup">Create account</a>
-            </span>
+            <div className="help-row">
+              <a href="/forgot-password" className="hover:underline">Forgot password?</a>
+              <span>
+                New here? <a className="hover:underline" href="/signup" style={{ color: "var(--text)" }}>Create account</a>
+              </span>
+            </div>
           </div>
-        </div>
+        </main>
       </div>
-    </div>
+    </>
   );
 }
