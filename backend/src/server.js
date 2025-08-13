@@ -233,13 +233,13 @@ app.use("/api/leads", requireAuth, leadsMergeRoutes);
 app.use("/api", requireAuth, leadsModule);
 
 /* Imports — use the newer plural router ONLY */
-app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
+app.use("/api/leads/imports", leadsImportsRoutes);
 
 
 
 /* Real AI prospect endpoints (only if mock is OFF) */
 if (!useMockAi) {
-  app.use("/api/ai/prospect", requireAuth, aiProspectRoutes);
+  app.use("/api/ai/prospect", aiProspectRoutes);
 }
 
 /* ---------- 404 & Errors ---------- */
