@@ -13,7 +13,7 @@ import DashboardPage from "./pages/DashboardPage.jsx";
 import LeadsPage from "./pages/LeadsPage.jsx";
 import CompaniesPage from "./pages/CompaniesPage.jsx";
 import LeadCreate from "@/pages/LeadCreate.jsx"; // needs vite alias "@"
-import DiscoverLeads from "@/pages/leads/DiscoverLeads.jsx";
+import DiscoverLeads from "@/pages/DiscoverLeads.jsx";
 import ImportReview from "@/pages/leads/ImportReview.jsx";
 
 class ErrorBoundary extends React.Component {
