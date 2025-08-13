@@ -1,9 +1,14 @@
 // src/pages/LoginPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "../styles.css";
-import logoUrl from "../assets/geniusgrid-logo.png";
+import logoUrl from "../assets/geniusgrid-logo.png"; // <-- BUNDLED ASSET
 
-// --- unchanged helper ---
+/**
+ * Multi-tenant login page
+ * - Auto-detect tenant from subdomain or ?tenant=
+ * - Posts to /api/auth/login with credentials: "include"
+ */
+
 function getSubdomainTenant() {
   try {
     const urlTenant = new URLSearchParams(window.location.search).get("tenant");
@@ -51,17 +56,16 @@ export default function LoginPage() {
     []
   );
 
+  // If your app’s first screen is Leads, this is safer than /dashboard
   const NEXT = "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  // 🔒 hidden but validated tenant
+  // Tenant detection & control
   const detectedTenant = useMemo(() => getSubdomainTenant(), []);
-  const DEFAULT_TENANT =
-    (import.meta.env.VITE_DEFAULT_TENANT || "").toLowerCase(); // note: may be ""
-
-  const [tenant, setTenant] = useState(""); // start empty → validation will catch if unresolved
+  const [tenant, setTenant] = useState("");
+  const [tenantLocked, setTenantLocked] = useState(false);
 
   const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -69,23 +73,28 @@ export default function LoginPage() {
   const [message, setMessage] = useState("");
 
   useEffect(() => {
-    // Resolution order: ?tenant / subdomain / env default
-    const resolved =
-      (detectedTenant || DEFAULT_TENANT || "").toLowerCase().trim();
-    if (resolved) {
-      setTenant(resolved);
-      try { localStorage.setItem("__gg_last_tenant", resolved); } catch {}
-    } else {
-      // leave tenant empty so validation blocks (same behavior as visible field before)
-      setTenant("");
-    }
+    // const fromUrl = new URLSearchParams(window.location.search).get("tenant");
+    // if (fromUrl) {
+    //   setTenant(fromUrl.trim().toLowerCase());
+    //   setTenantLocked(true);
+    //   return;
+    // }
+    // if (detectedTenant) {
+    //   setTenant(detectedTenant);
+    //   setTenantLocked(true);
+    //   return;
+    // }
+    // const saved = localStorage.getItem("__gg_last_tenant");
+    // if (saved) setTenant(saved);
+
+    setTenant("demo");
+    setTenantLocked(true); // lock so users can’t change
   }, [detectedTenant]);
 
   function validate() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return "Enter a valid email";
     if (password.trim().length < 4) return "Password is required";
-    // ✅ Tenant validation NOT affected (still required)
-    if (!tenant || !tenant.trim()) return "Tenant code is required";
+    if (!tenant.trim()) return "Tenant code is required";
     return null;
   }
 
@@ -101,10 +110,14 @@ export default function LoginPage() {
     }
 
     setLoading(true);
+
+    // Prevent “stuck forever”: abort after 15s
     const ctrl = new AbortController();
     const timeout = setTimeout(() => ctrl.abort("timeout"), 15000);
 
     try {
+      localStorage.setItem("__gg_last_tenant", tenant);
+
       const res = await fetch(`${API_BASE}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -113,11 +126,12 @@ export default function LoginPage() {
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
-          tenant: tenant.trim().toLowerCase(), // 🔐 still sent
+          tenant: tenant.trim().toLowerCase(),
         }),
       });
 
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         if (res.status === 401) setError(data?.message || "Invalid credentials or inactive user");
         else if (res.status === 400) setError(data?.message || "Missing fields");
@@ -138,29 +152,71 @@ export default function LoginPage() {
 
   return (
     <>
+      {/* Scoped CSS to enforce two-column layout without Tailwind */}
       <style>{`
-        .login-shell{ min-height:100dvh; display:grid; grid-template-columns: 1fr; background: var(--bg); color: var(--text); }
-        @media (min-width: 768px){ .login-shell{ grid-template-columns: 1fr 1fr; } .login-left{ display:flex; } }
-        .login-left{ display:none; flex-direction: column; justify-content: center; padding: 40px;
-          background: linear-gradient(180deg, color-mix(in oklab, var(--panel) 92%, transparent), var(--panel));
-          border-right: 1px solid var(--border); }
-        .login-right{ display:flex; align-items:center; justify-content:center; padding: 24px; }
-        .login-card{ width: 100%; max-width: 420px; border-radius: var(--radius-lg); }
-        .brand-row{ display:flex; align-items:center; gap:12px; margin-bottom:24px; }
+        .login-shell{
+          min-height:100dvh;
+          display:grid;
+          grid-template-columns: 1fr; /* mobile: stack */
+          background: var(--bg);
+          color: var(--text);
+        }
+        @media (min-width: 768px){
+          .login-shell{
+            grid-template-columns: 1fr 1fr; /* md+: two panels */
+          }
+          .login-left{ display:flex; }
+        }
+        .login-left{
+          display:none; /* shown at md+ via media query */
+          flex-direction: column;
+          justify-content: center;
+          padding: 40px;
+          background: linear-gradient(180deg,
+            color-mix(in oklab, var(--panel) 92%, transparent),
+            var(--panel)
+          );
+          border-right: 1px solid var(--border);
+        }
+        .login-right{
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          padding: 24px;
+        }
+        .login-card{
+          width: 100%;
+          max-width: 420px;
+          border-radius: var(--radius-lg);
+        }
+        .brand-row{
+          display:flex; align-items:center; gap:12px; margin-bottom:24px;
+        }
         .brand-title{ font-weight:800; letter-spacing:.02em; }
         .brand-sub{ color: var(--muted); font-size:.9rem }
         .feature-chips{ display:flex; flex-wrap:wrap; gap:8px; margin-top:16px; }
-        .help-row{ display:flex; align-items:center; justify-content:space-between; padding: 12px 16px; border-top:1px solid var(--border); color: var(--muted); font-size:.9rem; }
+        .help-row{
+          display:flex; align-items:center; justify-content:space-between;
+          padding: 12px 16px; border-top:1px solid var(--border);
+          color: var(--muted); font-size:.9rem;
+        }
       `}</style>
 
       <div className="login-shell">
+        {/* LEFT: Brand / Logo panel */}
         <aside className="login-left">
           <div>
             <div className="brand-row">
-              <img src={logoUrl} alt="GeniusGrid" width="80" height="80" style={{ borderRadius: 8 }} />
+              <img
+                src={logoUrl}
+                alt="GeniusGrid"
+                width="80"
+                height="80"
+                style={{ borderRadius: 8 }}
+              />
               <div>
                 <div className="brand-title">GeniusGrid</div>
-                <div className="brand-sub">AI‑Powered ERP Suite</div>
+                <div className="brand-sub">AI-Powered ERP Suite</div>
               </div>
             </div>
 
@@ -172,14 +228,15 @@ export default function LoginPage() {
             </p>
 
             <div className="feature-chips">
-              <span className="gg-chip">Multi‑tenant</span>
+              <span className="gg-chip">Multi-tenant</span>
               <span className="gg-chip">AI Insights</span>
-              <span className="gg-chip">Real‑time</span>
+              <span className="gg-chip">Real-time</span>
               <span className="gg-chip">Audit Logs</span>
             </div>
           </div>
         </aside>
 
+        {/* RIGHT: Form panel */}
         <main className="login-right">
           <div className="gg-panel login-card p-6">
             <div className="mb-4" style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -191,9 +248,7 @@ export default function LoginPage() {
             </div>
 
             <form className="space-y-4" onSubmit={handleSubmit}>
-              {/* Hidden but present → validation + submit unaffected */}
-              <input type="hidden" name="tenant" value={tenant} />
-
+              {/* Email */}
               <div className="form-col">
                 <label className="form-label">Email</label>
                 <input
@@ -207,6 +262,7 @@ export default function LoginPage() {
                 />
               </div>
 
+              {/* Password */}
               <div className="form-col">
                 <label className="form-label">Password</label>
                 <div style={{ position: "relative" }}>
@@ -222,8 +278,15 @@ export default function LoginPage() {
                   />
                   <button
                     type="button"
-                    style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)",
-                      borderRadius: 8, padding: "4px 8px", color: "var(--muted)" }}
+                    style={{
+                      position: "absolute",
+                      right: 6,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      borderRadius: 8,
+                      padding: "4px 8px",
+                      color: "var(--muted)"
+                    }}
                     className="gg-btn-ghost"
                     aria-label={showPw ? "Hide password" : "Show password"}
                     onClick={() => setShowPw((s) => !s)}
@@ -232,6 +295,59 @@ export default function LoginPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Tenant UI commented out */}
+              {/*
+              Tenant
+              {tenantLocked ? (
+                <div className="form-col">
+                  <label className="form-label">Tenant</label>
+                  <div
+                    className="rounded-lg"
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      border: "1px solid var(--border)",
+                      background: "var(--panel)",
+                      padding: "8px 12px"
+                    }}
+                  >
+                    <span className="lowercase">{tenant}</span> 
+                    <button
+                      type="button"
+                      className="gg-btn gg-btn-ghost"
+                      style={{ padding: "6px 10px" }}
+                      onClick={() => setTenantLocked(false)}
+                      aria-label="Change tenant"
+                    >
+                      Change
+                    </button>
+                  </div>
+                  <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
+                    Detected from subdomain. Click Change to use a different tenant.
+                  </div>
+                </div>
+              ) : (
+                <div className="form-col">
+                  <label className="form-label">Tenant</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., tenant1"
+                    value={tenant}
+                    onChange={(e) => setTenant(e.target.value.trim())}
+                    className="gg-input w-full"
+                    required
+                  />
+                  <div className="gg-muted" style={{ fontSize: ".8rem", marginTop: 6 }}>
+                    Tip: add <code>?tenant=yourcode</code> to the URL or use a tenant subdomain.
+                  </div>
+                </div>
+              )}
+              */}
+
+              {/* Hidden tenant field so it's still submitted */}
+              <input type="hidden" name="tenant" value={tenant} />
 
               {error && (
                 <div className="rounded-lg" style={{ background: "rgba(244, 63, 94, .12)", color: "#fecdd3", padding: "8px 12px", fontSize: ".9rem" }}>
