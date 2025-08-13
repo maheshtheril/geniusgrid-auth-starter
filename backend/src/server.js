@@ -32,8 +32,8 @@ import leadsCheckMobile from "./routes/leads.checkMobile.js";
 
 /* keep this (new) AI routes; remove older duplicates */
 import leadsAiRoutes from "./routes/leads.ai.routes.js";
-import aiProspectRoutes from "./routes/ai.prospect.routes.js";
-import leadsImportsRoutes from "./routes/leads.imports.routes.js";
+import aiProspectRoutes from "./store/ai.prospect.routes.js";
+import leadsImportsRoutes from "./store/leads.imports.routes.js";
 
 import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js";
