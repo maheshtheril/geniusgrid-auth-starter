@@ -1,7 +1,8 @@
-// src/components/leads/AddLeadDrawer.jsx — world‑class UI (full, updated)
-// Focus: phone input is maximum width; country dropdown & dial code are compact.
-// Backend fix: normalized E.164 phone, stringified custom_fields for JSON, always include details key.
-// Sections: clean; Advance shows only custom fields with a single "Add custom field" button.
+// src/components/leads/AddLeadDrawer.jsx — refined UI + robust backend payload
+// - Phone input takes max width; country dropdown & dial code are compact
+// - Backend hardening: E.164-ish phone, stringified custom_fields in FormData/JSON
+// - Include company_id when available (multi-tenant safety)
+// - Surfaces server error message to the user
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -211,12 +212,17 @@ function CountrySelect({ options, value, onChange, disabled }) {
 }
 /* ------------------------------- end CountrySelect ------------------------------- */
 
-// Helper: make +cc + digits only, no spaces (E.164-ish)
+// Helpers
 const normalizePhone = (code, number) => {
   const clean = String(number || "").replace(/\D/g, "");
   const cleanCode = String(code || "").trim();
-  return `${cleanCode}${clean}`;
+  return `${cleanCode}${clean}`; // "+91" + digits
 };
+
+const getActiveCompanyId = () =>
+  (globalThis?.BOOTSTRAP?.activeCompanyId) ||
+  (globalThis?.__BOOTSTRAP?.activeCompanyId) ||
+  localStorage.getItem("activeCompanyId") || null;
 
 export default function AddLeadDrawer({
   onClose,
@@ -225,7 +231,7 @@ export default function AddLeadDrawer({
   stages = ["new", "prospect", "proposal", "negotiation", "closed"],
   sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
   customFields = [],
-  variant = "full", // kept for compatibility; we always show all fields
+  variant = "full",
   onManageCustomFields,
   onCreateCustomField,
 }) {
@@ -273,7 +279,7 @@ export default function AddLeadDrawer({
     setCustom({});
     setCfList((Array.isArray(customFields) ? customFields : []).map((f) => ({ ...f, group: f?.group === "advance" ? "advance" : "general" })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount only
+  }, []);
 
   // sync dial code once countries arrive
   useEffect(() => {
@@ -384,9 +390,21 @@ export default function AddLeadDrawer({
       }
     }
 
+    const company_id = getActiveCompanyId();
+
+    const digitsOnly = String(form.mobile || "").replace(/\D/g, "");
+    const e164 = normalizePhone(form.mobile_code, form.mobile);
+
     const base = {
       name: String(form.name || "").trim(),
-      mobile: normalizePhone(form.mobile_code, form.mobile),
+      // keep multiple shapes for compatibility
+      mobile: e164,
+      phone: e164,
+      mobile_code: form.mobile_code,
+      mobile_number: digitsOnly,
+      mobile_country: form.mobile_country,
+      country_iso2: form.mobile_country,
+
       email: form.email?.trim() || null,
       expected_revenue: form.expected_revenue !== "" && form.expected_revenue !== null ? Number(form.expected_revenue) : null,
       follow_up_date: form.follow_up_date,
@@ -395,18 +413,24 @@ export default function AddLeadDrawer({
       status: form.status || "new",
       source: form.source,
       details: "", // keep key for backend compatibility
-      custom_fields: customForJson,
+      company_id: company_id || undefined,
+      // IMPORTANT: for FormData we will send custom_fields as a STRING below
+      // to avoid backend parsers choking on [object Object]
     };
 
-    const baseJson = { ...base, custom_fields: JSON.stringify(customForJson) };
-
+    // Build FormData
     const fd = new FormData();
     for (const [k, v] of Object.entries(base)) {
+      if (v === undefined) continue;
       fd.append(k, typeof v === "object" ? JSON.stringify(v) : v ?? "");
     }
+    fd.append("custom_fields", JSON.stringify(customForJson));
     for (const [k, f] of Object.entries(files)) {
       if (f) fd.append(k, f);
     }
+
+    // JSON fallback payload (custom_fields stringified)
+    const baseJson = { ...base, custom_fields: JSON.stringify(customForJson) };
 
     const hasFiles = Object.keys(files).length > 0;
     return { base, baseJson, fd, hasFiles };
@@ -428,6 +452,7 @@ export default function AddLeadDrawer({
       const { baseJson, fd } = buildPayload();
       let created;
 
+      // Prefer multipart for compatibility (works with/without files)
       if (api.createLeadMultipart) {
         created = await api.createLeadMultipart(fd);
       } else {
@@ -714,7 +739,7 @@ function CFModal({ onClose, onSave }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="gg-label">Type</label>
-              <select className="gg-input h-10" value={f.type} onChange={(e) => setF((s) => ({ ...s, type: e.target value }))}>
+              <select className="gg-input h-10" value={f.type} onChange={(e) => setF((s) => ({ ...s, type: e.target.value }))}>
                 <option value="text">Text</option>
                 <option value="email">Email</option>
                 <option value="phone">Phone</option>
