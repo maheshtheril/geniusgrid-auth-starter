@@ -1,15 +1,11 @@
 // src/theme/applyTheme.js
 const RUNTIME_STYLE_ID = "gg-theme-runtime";
-// Default cycle order now: dark → light → night
 const DEFAULT_ORDER = ["dark", "light", "night"];
 
-/** Return the order of modes we should cycle through */
 function getOrder(cfg) {
   const modes = cfg?.modes && Object.keys(cfg.modes);
   return Array.isArray(modes) && modes.length ? modes : DEFAULT_ORDER;
 }
-
-/** Build CSS text from a variables map: { "--bg": "#000", ... } */
 function varsToCss(vars = {}) {
   const lines = [":root{"];
   for (const [k, v] of Object.entries(vars)) {
@@ -20,8 +16,6 @@ function varsToCss(vars = {}) {
   lines.push("}");
   return lines.join("");
 }
-
-/** Ensure a single style element exists and return it */
 function ensureRuntimeStyleEl() {
   if (typeof document === "undefined") return null;
   let el = document.getElementById(RUNTIME_STYLE_ID);
@@ -34,88 +28,70 @@ function ensureRuntimeStyleEl() {
 }
 
 /**
- * Apply a theme mode at runtime (non-breaking signature).
- * @param {object} themeConfig - { modes: { light: {...}, dark: {...}, night: {...} } }
- * @param {string} mode
+ * applyTheme: supports BOTH signatures
+ * 1) applyTheme(themeConfig, mode)  // runtime CSS vars + data-theme
+ * 2) applyTheme(mode)               // just set data-theme + persist
  */
-export function applyTheme(themeConfig, mode) {
+export function applyTheme(themeOrConfig, maybeMode) {
   if (typeof document === "undefined") return;
 
+  // Signature 2: applyTheme("dark" | "light" | "night")
+  if (typeof themeOrConfig === "string" && !maybeMode) {
+    const modeOnly = themeOrConfig || "dark";
+    document.documentElement.setAttribute("data-theme", modeOnly);
+    try { localStorage.setItem("theme", modeOnly); } catch {}
+    return modeOnly;
+  }
+
+  // Signature 1: applyTheme(themeConfig, mode)
+  const themeConfig = themeOrConfig || {};
   const modes = themeConfig?.modes || {};
   const order = getOrder(themeConfig);
 
-  // Choose a safe mode:
-  // 1) if requested mode exists → use it
-  // 2) else if localStorage has a known mode → use it
-  // 3) else first available from order
-  // 4) fallback to "dark"
-  let safeMode = null;
-
-  // prefer explicit mode first
-  if (mode && modes[mode]) safeMode = mode;
-
-  // then stored preference
-  if (!safeMode) {
+  let mode = maybeMode;
+  if (!mode) {
     try {
       const stored = localStorage.getItem("theme");
-      if (stored && modes[stored]) safeMode = stored;
+      if (stored && (modes[stored] || DEFAULT_ORDER.includes(stored))) mode = stored;
     } catch {}
   }
+  if (!mode) mode = order.find((m) => modes[m]) || "dark";
 
-  // then first available from declared order
-  if (!safeMode) {
-    safeMode = order.find((m) => modes[m]) || null;
-  }
-
-  // final fallback
-  if (!safeMode) safeMode = "dark";
-
-  const vars = modes[safeMode] || {};
+  const vars = modes[mode] || {};
   const css = varsToCss(vars);
-
   const el = ensureRuntimeStyleEl();
   if (el) el.textContent = css;
 
-  document.documentElement.setAttribute("data-theme", safeMode);
-
-  // persist choice (safe, no-throw)
-  try {
-    localStorage.setItem("theme", safeMode);
-  } catch {}
+  document.documentElement.setAttribute("data-theme", mode);
+  try { localStorage.setItem("theme", mode); } catch {}
+  return mode;
 }
 
-/** Decide the next mode to cycle to (non-breaking signature) */
 export function nextMode(themeConfig, current) {
   const order = getOrder(themeConfig);
   const i = order.indexOf(current);
-  const idx = i >= 0 ? i : 0;
-
-  // pick next that actually exists in config.modes (skip missing ones)
+  const from = i >= 0 ? i : 0;
   for (let step = 1; step <= order.length; step++) {
-    const candidate = order[(idx + step) % order.length];
-    if (!themeConfig?.modes || themeConfig.modes[candidate]) {
-      return candidate;
-    }
+    const candidate = order[(from + step) % order.length];
+    if (!themeConfig?.modes || themeConfig.modes[candidate]) return candidate;
   }
-  // fallback
   return "dark";
 }
 
-/**
- * Optional: set initial theme at app bootstrap (non-breaking signature).
- * Respects stored preference; defaults to "dark" if none.
- * Call early (e.g., in src/main.jsx) with your themeConfig.
- */
 export function initTheme(themeConfig, preferred) {
-  let initial = "dark"; // default
+  let initial = preferred || "dark";
   try {
     const stored = localStorage.getItem("theme");
-    if (stored && themeConfig?.modes?.[stored]) {
+    if (stored && (themeConfig?.modes?.[stored] || DEFAULT_ORDER.includes(stored))) {
       initial = stored;
-    } else if (preferred && themeConfig?.modes?.[preferred]) {
-      initial = preferred;
     }
   } catch {}
-
   applyTheme(themeConfig, initial);
+}
+
+/* 🔌 Expose globals for legacy calls that don't import it */
+if (typeof window !== "undefined") {
+  // only set if not already present
+  if (!("applyTheme" in window)) window.applyTheme = applyTheme;
+  if (!("nextMode" in window)) window.nextMode = nextMode;
 }
