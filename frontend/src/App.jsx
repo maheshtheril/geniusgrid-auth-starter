@@ -78,9 +78,11 @@ export default function App() {
             <Route index element={<Navigate to="crm/leads" replace />} />
             <Route path="crm/leads" element={<LeadsPage />} />
             <Route path="crm/leads/new" element={<LeadCreate />} />
+            {/* ⬇️ AI pages now inside the shell */}
+            <Route path="leads/discover" element={<DiscoverLeads />} />
+            <Route path="leads/imports/:id" element={<ImportReview />} />
           </Route>
-          <Route path="/app/leads/discover" element={<DiscoverLeads />} />
-          <Route path="/leads/imports/:id" element={<ImportReview />} />
+
           {/* Redirects */}
           <Route path="/dashboard/app/*" element={<Navigate to="/app" replace />} />
           <Route path="*" element={<Navigate to="/health" replace />} />
