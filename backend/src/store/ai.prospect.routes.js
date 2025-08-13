@@ -1,10 +1,13 @@
-// src/routes/ai.prospect.routes.js
+// src/store/ai.prospect.routes.js
 import express from "express";
-import { JOBS, EVENTS, IMPORTS, uid, pushEvent, setStatus, attachImport } from "../store/prospect.store.js";
+import {
+  JOBS, EVENTS, IMPORTS, uid,
+  pushEvent, setStatus, attachImport
+} from "./prospect.store.js";
 
 const router = express.Router();
 
-// Simple mock lead generator (replace later with real PDL results)
+/* --- minimal demo data (swap with real provider later) --- */
 function makeLeads(count = 10) {
   const base = [
     { name: "Priya Sharma",  title: "Procurement Manager", company: "Aarav Auto Components Pvt Ltd", email: "priya.sharma@aaravauto.in" },
@@ -21,17 +24,15 @@ function makeLeads(count = 10) {
   return out;
 }
 
-// Fire-and-forget worker that simulates provider + import
 async function runProspectJob(jobId, payload) {
   try {
     setStatus(jobId, "running");
     pushEvent(jobId, "info", "Starting provider query…");
 
-    // TODO: call your real PDL path here with payload
+    // TODO: replace with real PDL call using payload.prompt/size/filters
     await new Promise((r) => setTimeout(r, 500));
     pushEvent(jobId, "info", "Enriching results…");
 
-    // Create an import with mock items so the UI preview works now
     const importId = uid();
     const size = Math.max(5, Math.min(Number(payload?.size) || 50, 200));
     IMPORTS.set(importId, makeLeads(size));
@@ -45,10 +46,12 @@ async function runProspectJob(jobId, payload) {
   }
 }
 
-/* POST /api/ai/prospect/jobs  {prompt,size,providers,filters} */
+/* POST /api/ai/prospect/jobs  -> { id, status, import_job_id? } */
 router.post("/jobs", (req, res) => {
   const { prompt, size = 50, providers = ["pdl"], filters = {} } = req.body || {};
-  if (!prompt || !String(prompt).trim()) return res.status(400).json({ error: "prompt is required" });
+  if (!prompt || !String(prompt).trim()) {
+    return res.status(400).json({ error: "prompt is required" });
+  }
 
   const id = uid();
   const job = { id, status: "queued", import_job_id: null, created_at: new Date().toISOString() };
