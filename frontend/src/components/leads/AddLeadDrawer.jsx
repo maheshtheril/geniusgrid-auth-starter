@@ -1,20 +1,21 @@
-// src/components/leads/AddLeadDrawer.jsx (refined, world‑class layout)
-// — Visual upgrades: airy spacing, consistent field heights, clear sectioning,
-//   elegant labels, helper text, sticky actions, accessible validation,
-//   polished Country selector, and subtle animations.
+// src/components/leads/AddLeadDrawer.jsx — world‑class UI (full, updated)
+// Notes:
+// - Country selector compact (w-28), dial code compact (w-14), phone input flex-1 (max width)
+// - "General" section has extra top padding for visibility
+// - Advance section shows only custom fields (no hard-coded textarea), single "Add custom field" button
+// - One action area (sticky footer), accessible validation, subtle animations
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Globe2, FileText, Plus, Info } from "lucide-react";
+import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Plus, Info } from "lucide-react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
 import "flag-icons/css/flag-icons.min.css"; // SVG flags
 
 /** Turn "IN" -> 🇮🇳 (emoji fallback if DB doesn’t provide one) */
-const flagFromIso2 = (iso2 = "") =>
-  iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+const flagFromIso2 = (iso2 = "") => iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 
-/** Robustly normalize "maybe-array" into a real array */
+/** Normalize "maybe-array" into a real array */
 function normalizeToArray(maybe) {
   if (Array.isArray(maybe)) return maybe;
   if (Array.isArray(maybe?.data)) return maybe.data;
@@ -39,8 +40,6 @@ const INIT = {
   stage: "new",
   status: "new",
   source: "",
-  // advance
-  details: "",
 };
 
 /* --------------------------------- UI Primitives --------------------------------- */
@@ -50,9 +49,7 @@ function Section({ title, subtitle, children, right }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-base md:text-lg font-semibold leading-tight">{title}</div>
-          {subtitle && (
-            <p className="gg-muted text-xs md:text-sm mt-0.5 leading-snug">{subtitle}</p>
-          )}
+          {subtitle && <p className="gg-muted text-xs md:text-sm mt-0.5 leading-snug">{subtitle}</p>}
         </div>
         {right}
       </div>
@@ -115,23 +112,16 @@ function CountrySelect({ options, value, onChange, disabled }) {
 
   const lower = (s) => String(s || "").toLowerCase();
 
-  const selected = useMemo(
-    () => options.find((o) => lower(o.cc) === lower(value)) || null,
-    [options, value]
-  );
+  const selected = useMemo(() => options.find((o) => lower(o.cc) === lower(value)) || null, [options, value]);
 
   const filtered = useMemo(() => {
     const q = lower(query).trim();
     if (!q) return options;
     return options.filter(
-      (o) =>
-        lower(o.name).includes(q) ||
-        lower(o.cc).includes(q) ||
-        String(o.code).replace("+", "").includes(q.replace("+", ""))
+      (o) => lower(o.name).includes(q) || lower(o.cc).includes(q) || String(o.code).replace("+", "").includes(q.replace("+", ""))
     );
   }, [options, query]);
 
-  // close on outside click
   useEffect(() => {
     function onDoc(e) {
       if (!open) return;
@@ -192,9 +182,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
         type="button"
         ref={btnRef}
         disabled={disabled}
-        className={`gg-input h-10 md:h-11 w-32 flex items-center gap-2 justify-between ${
-          disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-        }`}
+        className={`gg-input h-10 md:h-11 w-28 flex items-center gap-2 justify-between ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => !disabled && setOpen((o) => !o)}
@@ -213,10 +201,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
       </button>
 
       {open && (
-        <div
-          className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)] bg-[var(--surface)] border border-[color:var(--border)] rounded-2xl shadow-2xl p-2"
-          role="dialog"
-        >
+        <div className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)] bg-[var(--surface)] border border-[color:var(--border)] rounded-2xl shadow-2xl p-2" role="dialog">
           <div className="flex items-center gap-2 mb-2 px-1">
             <Flag className="w-4 h-4 opacity-70" />
             <input
@@ -234,9 +219,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
                 key={o.cc}
                 role="option"
                 aria-selected={o.cc === value}
-                className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${
-                  idx === hi ? "bg-[color:var(--hover)]" : ""
-                }`}
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${idx === hi ? "bg-[color:var(--hover)]" : ""}`}
                 onMouseEnter={() => setHi(idx)}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => choose(o.cc)}
@@ -247,9 +230,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
                 <span className="ml-auto text-sm font-medium">{o.code}</span>
               </li>
             ))}
-            {filtered.length === 0 && (
-              <li className="px-2 py-2 text-sm opacity-70">No matches</li>
-            )}
+            {filtered.length === 0 && <li className="px-2 py-2 text-sm opacity-70">No matches</li>}
           </ul>
         </div>
       )}
@@ -305,21 +286,13 @@ export default function AddLeadDrawer({
   const submittingRef = useRef(false);
 
   // dial code map from DB
-  const codeByCc = useMemo(
-    () => Object.fromEntries(countryOpts.map((c) => [String(c.cc).toUpperCase(), c.code])),
-    [countryOpts]
-  );
+  const codeByCc = useMemo(() => Object.fromEntries(countryOpts.map((c) => [String(c.cc).toUpperCase(), c.code])), [countryOpts]);
 
   // hard reset on mount
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
-    setCfList(
-      (Array.isArray(customFields) ? customFields : []).map((f) => ({
-        ...f,
-        group: f?.group === "advance" ? "advance" : "general",
-      }))
-    );
+    setCfList((Array.isArray(customFields) ? customFields : []).map((f) => ({ ...f, group: f?.group === "advance" ? "advance" : "general" })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only
 
@@ -384,8 +357,7 @@ export default function AddLeadDrawer({
 
   // ---- GROUPED CUSTOM FIELDS ----
   const { generalCF, advanceCF } = useMemo(() => {
-    const g = [],
-      a = [];
+    const g = [], a = [];
     for (const f of cfList) (f.group === "advance" ? a : g).push(f);
     return { generalCF: g, advanceCF: a };
   }, [cfList]);
@@ -442,14 +414,12 @@ export default function AddLeadDrawer({
       name: String(form.name || "").trim(),
       mobile: `${form.mobile_code} ${String(form.mobile || "").trim()}`,
       email: form.email?.trim() || null,
-      expected_revenue:
-        form.expected_revenue !== "" && form.expected_revenue !== null ? Number(form.expected_revenue) : null,
+      expected_revenue: form.expected_revenue !== "" && form.expected_revenue !== null ? Number(form.expected_revenue) : null,
       follow_up_date: form.follow_up_date,
       profession: form.profession || null,
       stage: form.stage,
       status: form.status || "new",
       source: form.source,
-      details: form.details || null,
       custom_fields: customForJson,
     };
 
@@ -510,9 +480,7 @@ export default function AddLeadDrawer({
 
     const wrap = (control) => (
       <div key={cf.id || key} className="space-y-1.5">
-        {cf.type !== "checkbox" && (
-          <label className="text-xs md:text-sm gg-muted">{cf.label} {reqMark}</label>
-        )}
+        {cf.type !== "checkbox" && <label className="text-xs md:text-sm gg-muted">{cf.label} {reqMark}</label>}
         {control}
         {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-0.5">{problems[`cf:${key}`]}</div>}
       </div>
@@ -530,9 +498,7 @@ export default function AddLeadDrawer({
           <select className={base} value={val} onChange={(e) => set(e.target.value)}>
             <option value="">Select…</option>
             {(cf.options || []).map((opt) => (
-              <option key={String(opt)} value={opt}>
-                {opt}
-              </option>
+              <option key={String(opt)} value={opt}>{opt}</option>
             ))}
           </select>
         );
@@ -548,9 +514,7 @@ export default function AddLeadDrawer({
           <>
             <input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />
             {val instanceof File && (
-              <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>
-                Selected: {val.name}
-              </div>
+              <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>Selected: {val.name}</div>
             )}
           </>
         );
@@ -568,16 +532,12 @@ export default function AddLeadDrawer({
       {/* Drawer */}
       <aside
         className="absolute right-0 top-0 h-full w-full sm:w-[780px] bg-[var(--surface)] border-l border-[color:var(--border)] shadow-2xl animate-slideIn will-change-transform flex flex-col"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Add Lead"
+        role="dialog" aria-modal="true" aria-label="Add Lead"
       >
         {/* Header */}
         <div className="px-4 md:px-5 py-3 border-b border-[color:var(--border)] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl gg-surface flex items-center justify-center">
-              <User2 className="w-4 h-4" />
-            </div>
+            <div className="w-8 h-8 rounded-xl gg-surface flex items-center justify-center"><User2 className="w-4 h-4" /></div>
             <div>
               <h2 className="text-base md:text-lg font-semibold leading-tight">New Lead</h2>
               <div className="gg-muted text-xs">Fill in the details below</div>
@@ -587,30 +547,98 @@ export default function AddLeadDrawer({
 
         {/* Body */}
         <form onSubmit={submit} className="flex-1 overflow-auto">
-          <div className=\"p-4 md:p-5 pt-6 space-y-5\">
+          <div className="p-4 md:p-5 pt-6 space-y-5">
             {/* GENERAL */}
+            <Section title="General" subtitle="Core information to create the lead.">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label="Lead Name" required htmlFor="lead-name" error={problems.name}>
+                  <div className="relative">
+                    <Input id="lead-name" value={form.name} onChange={update("name")} placeholder="e.g., Priya Sharma" invalid={!!problems.name} />
+                    <User2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                  </div>
+                </Field>
+
+                <Field label="Email" htmlFor="lead-email" error={problems.email}>
+                  <div className="relative">
+                    <Input id="lead-email" value={form.email} onChange={update("email")} placeholder="you@company.com" invalid={!!problems.email} />
+                    <Mail className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                  </div>
+                </Field>
+
+                <Field label="Mobile" required htmlFor="lead-mobile" hint={dupMobile === true ? undefined : "Duplicate numbers are checked automatically."} error={problems.mobile}>
+                  <div className="flex gap-2 items-stretch">
+                    <CountrySelect options={countryOpts} value={form.mobile_country} onChange={onCountryPicked} disabled={countriesLoading || !countryOpts.length} />
+                    <input readOnly className="gg-input h-10 md:h-11 w-14 text-center" value={form.mobile_code} aria-label="Dial code" />
+                    <div className="relative flex-1">
+                      <Input id="lead-mobile" value={form.mobile} onChange={update("mobile")} placeholder="Enter mobile number" invalid={!!problems.mobile} />
+                      <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                    </div>
+                  </div>
+                  {dupMobile === true && (
+                    <div className="inline-flex items-center gap-1 mt-1 text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
+                      <Info className="w-3 h-3" /> Duplicate number — will be sent for approval
+                    </div>
+                  )}
+                </Field>
+
+                <Field label="Expected Revenue" htmlFor="lead-revenue">
+                  <Input id="lead-revenue" type="number" inputMode="decimal" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="e.g., 50000" />
+                </Field>
+
+                <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
+                  <div className="relative">
+                    <Input id="lead-follow" type="date" value={form.follow_up_date} onChange={update("follow_up_date")} invalid={!!problems.follow_up_date} />
+                    <CalendarDays className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                  </div>
+                </Field>
+
+                <Field label="Profession" htmlFor="lead-profession">
+                  <Input id="lead-profession" value={form.profession} onChange={update("profession")} placeholder="e.g., Architect" />
+                </Field>
+
+                <Field label="Lead Stage" required htmlFor="lead-stage" error={problems.stage}>
+                  <Select id="lead-stage" value={form.stage} onChange={update("stage")} invalid={!!problems.stage}>
+                    {stages.map((s) => (
+                      <option key={s} value={s}>{cap(s)}</option>
+                    ))}
+                  </Select>
+                </Field>
+
+                <Field label="Source" required htmlFor="lead-source" error={problems.source}>
+                  <Select id="lead-source" value={form.source} onChange={update("source")} invalid={!!problems.source}>
+                    <option value="">Select a Source</option>
+                    {sources.map((s) => (
+                      <option key={s} value={s}>{s}</option>
+                    ))}
+                  </Select>
+                </Field>
+              </div>
+
+              {generalCF.length > 0 && (
+                <div className="pt-1">
+                  <div className="text-sm font-medium mb-2">Custom fields — General</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{generalCF.map(renderCF)}</div>
+                </div>
+              )}
+            </Section>
+
+            {/* ADVANCE (only custom fields) */}
             <Section
-              title=\"Custom fields — Advance\"
+              title="Custom fields — Advance"
               right={
-                <button
-                  type=\"button\"
-                  className=\"gg-btn gg-btn-sm\"
-                  onClick={() => (onManageCustomFields ? onManageCustomFields() : setShowCFModal(true))}
-                >
-                  <Plus className=\"w-4 h-4 mr-1\" /> Add custom field
+                <button type="button" className="gg-btn gg-btn-sm" onClick={() => (onManageCustomFields ? onManageCustomFields() : setShowCFModal(true))}>
+                  <Plus className="w-4 h-4 mr-1" /> Add custom field
                 </button>
               }
             >
               {advanceCF.length > 0 ? (
-                <div className=\"grid grid-cols-1 md:grid-cols-2 gap-4\">{advanceCF.map(renderCF)}</div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{advanceCF.map(renderCF)}</div>
               ) : (
-                <div className=\"gg-card p-3 text-sm text-[color:var(--muted)]\">No custom fields yet.</div>
+                <div className="gg-card p-3 text-sm text-[color:var(--muted)]">No custom fields yet.</div>
               )}
             </Section>
 
-            {error && (
-              <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">{error}</div>
-            )}
+            {error && <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">{error}</div>}
           </div>
         </form>
 
@@ -621,9 +649,7 @@ export default function AddLeadDrawer({
             <span>Required fields marked with <span className="text-rose-400">*</span></span>
           </div>
           <div className="flex items-center gap-2">
-            <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>
-              Cancel
-            </button>
+            <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
             <button id="addlead-save" className="gg-btn gg-btn-primary" type="submit" onClick={submit} disabled={saving || !isValid} aria-disabled={saving || !isValid}>
               {saving ? "Saving…" : "Save Lead"}
             </button>
@@ -631,7 +657,7 @@ export default function AddLeadDrawer({
         </div>
       </aside>
 
-      {/* Inline Custom Field Modal (still available via Advance group button) */}
+      {/* Inline Custom Field Modal */}
       {showCFModal && (
         <CFModal
           onClose={() => setShowCFModal(false)}
@@ -652,11 +678,7 @@ export default function AddLeadDrawer({
       {/* Animations */}
       <style>{`
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
-        @keyframes slideIn {
-          0% { transform: translateX(28px); opacity: .0; }
-          60% { transform: translateX(-3px); opacity: 1; }
-          100% { transform: translateX(0); }
-        }
+        @keyframes slideIn { 0% { transform: translateX(28px); opacity: .0; } 60% { transform: translateX(-3px); opacity: 1; } 100% { transform: translateX(0); } }
         .animate-fadeIn { animation: fadeIn .18s ease-out both; }
         .animate-slideIn { animation: slideIn .22s cubic-bezier(.2,.8,.2,1) both; }
         .success-pulse { position: relative; }
@@ -673,9 +695,7 @@ function EmptyCustomGroup({ onAdd }) {
   return (
     <div className="gg-card flex items-center justify-between p-3">
       <div className="text-sm text-[color:var(--muted)]">No custom fields yet.</div>
-      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>
-        Add a custom field
-      </button>
+      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>Add a custom field</button>
     </div>
   );
 }
@@ -767,6 +787,4 @@ function CFModal({ onClose, onSave }) {
   );
 }
 
-function cap(s) {
-  return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
-}
+function cap(s) { return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1); }
