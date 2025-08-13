@@ -79,7 +79,7 @@ export default function App() {
             <Route path="crm/leads" element={<LeadsPage />} />
             <Route path="crm/leads/new" element={<LeadCreate />} />
             {/* ⬇️ AI pages now inside the shell */}
-            <Route path="leads/discover" element={<DiscoverLeads />} />
+            <Route path="crm/discover" element={<DiscoverLeads />} />
             <Route path="leads/imports/:id" element={<ImportReview />} />
           </Route>
 
