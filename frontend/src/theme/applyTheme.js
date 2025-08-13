@@ -1,11 +1,7 @@
 // src/theme/applyTheme.js
-// Single source of truth for runtime theme application.
-// - Applies ONLY the selected mode's variables
-// - Injects/updates a <style id="gg-theme-runtime"> so CSS wins immediately
-// - Also sets <html data-theme="..."> for your CSS tokens to key on
-
 const RUNTIME_STYLE_ID = "gg-theme-runtime";
-const DEFAULT_ORDER = ["light", "dark", "night"];
+// Default cycle order now: dark → light → night
+const DEFAULT_ORDER = ["dark", "light", "night"];
 
 /** Return the order of modes we should cycle through */
 function getOrder(cfg) {
@@ -15,10 +11,11 @@ function getOrder(cfg) {
 
 /** Build CSS text from a variables map: { "--bg": "#000", ... } */
 function varsToCss(vars = {}) {
-  const lines = [":root{"]; // deliberately unscoped so it overrides per mode
+  const lines = [":root{"];
   for (const [k, v] of Object.entries(vars)) {
     if (!String(k).startsWith("--")) continue;
-    lines.push(`${k}:${v};`);
+    if (v == null) continue;
+    lines.push(`${k}:${String(v)};`);
   }
   lines.push("}");
   return lines.join("");
@@ -38,22 +35,23 @@ function ensureRuntimeStyleEl() {
 
 /**
  * Apply a theme mode at runtime.
- * @param {object} themeConfig - { modes: { light: { --bg:..., ... }, dark: {...}, ... } }
- * @param {string} mode - "light" | "dark" | "night"
+ * @param {object} themeConfig - { modes: { light: {...}, dark: {...}, night: {...} } }
+ * @param {string} mode
  */
 export function applyTheme(themeConfig, mode) {
   if (typeof document === "undefined") return;
 
   const modes = themeConfig?.modes || {};
-  const vars = modes[mode] || {};
+  const order = getOrder(themeConfig);
+  const safeMode = modes[mode] ? mode : (order.find(m => modes[m]) || "dark");
+
+  const vars = modes[safeMode] || {};
   const css = varsToCss(vars);
 
   const el = ensureRuntimeStyleEl();
   if (el) el.textContent = css;
 
-  // Keep attribute for CSS that keys off data-theme
-  document.documentElement.setAttribute("data-theme", mode);
-  document.body?.setAttribute?.("data-theme", mode);
+  document.documentElement.setAttribute("data-theme", safeMode);
 }
 
 /** Decide the next mode to cycle to */
@@ -61,4 +59,11 @@ export function nextMode(themeConfig, current) {
   const order = getOrder(themeConfig);
   const i = Math.max(0, order.indexOf(current));
   return order[(i + 1) % order.length];
+}
+
+/** Optional: set initial theme at app bootstrap */
+export function initTheme(themeConfig, preferred) {
+  const stored = (typeof window !== "undefined" && localStorage.getItem("theme")) || null;
+  const initial = stored || preferred || "dark"; // dark as default
+  applyTheme(themeConfig, initial);
 }
