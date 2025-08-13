@@ -5,12 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GeniusGrid</title>
 
-    <!-- Default to dark theme on first paint -->
+    <!-- 🔒 Apply DARK at the earliest moment and seed minimal dark vars -->
+    <style id="gg-early-theme">
+      :root {
+        /* Minimal dark tokens used by login so it renders dark immediately */
+        --bg:#0B0D10;
+        --surface:#0F1318;
+        --panel:#131822;
+        --text:#E5E7EB;
+        --muted:#9AA5B1;
+        --border:rgba(255,255,255,.08);
+        --primary:#6E8BFF;
+        --ring:rgba(110,139,255,.35);
+      }
+      html, body {
+        background: var(--bg);
+        color: var(--text);
+      }
+    </style>
     <script>
       (function () {
-        var k = "theme";
-        var t = localStorage.getItem(k) || "dark"; // default
-        document.documentElement.setAttribute("data-theme", t);
+        try {
+          // Force dark as the default and persist it
+          localStorage.setItem('gg.theme', 'dark');
+          localStorage.setItem('theme', 'dark');
+        } catch (e) { /* ignore */ }
+        // Set data-theme before any CSS/JS runs
+        document.documentElement.setAttribute('data-theme', 'dark');
+        // In case body exists already (SSR/preload edge), mirror the attribute
+        if (document.body) document.body.setAttribute('data-theme', 'dark');
       })();
     </script>
   </head>
