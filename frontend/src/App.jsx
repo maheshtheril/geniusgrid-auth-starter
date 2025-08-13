@@ -16,6 +16,12 @@ import LeadCreate from "@/pages/LeadCreate.jsx"; // needs vite alias "@"
 import DiscoverLeads from "@/pages/leads/DiscoverLeads.jsx";
 import ImportReview from "@/pages/leads/ImportReview.jsx";
 
+const savedTheme = localStorage.getItem("theme");
+if (!savedTheme) {
+  applyTheme("dark");
+} else {
+  applyTheme(savedTheme);
+}
 class ErrorBoundary extends React.Component {
   constructor(p){ super(p); this.state = { error: null }; }
   static getDerivedStateFromError(error){ return { error }; }
