@@ -566,14 +566,40 @@ export default function AddLeadDrawer({
                 </Field>
 
                 <Field label="Mobile" required htmlFor="lead-mobile" hint={dupMobile === true ? undefined : "Duplicate numbers are checked automatically."} error={problems.mobile}>
-                  <div className="flex gap-2 items-stretch">
-                    <CountrySelect options={countryOpts} value={form.mobile_country} onChange={onCountryPicked} disabled={countriesLoading || !countryOpts.length} />
-                    <input readOnly className="gg-input h-10 md:h-11 w-14 text-center" value={form.mobile_code} aria-label="Dial code" />
-                    <div className="relative flex-1">
-                      <Input id="lead-mobile" value={form.mobile} onChange={update("mobile")} placeholder="Enter mobile number" invalid={!!problems.mobile} />
-                      <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-                    </div>
-                  </div>
+                <div className="flex gap-2 items-stretch">
+  <CountrySelect
+    options={countryOpts}
+    value={form.mobile_country}
+    onChange={onCountryPicked}
+    disabled={countriesLoading || !countryOpts.length}
+  />
+  <input
+    readOnly
+    className="gg-input h-10 md:h-11 w-16 text-center"
+    value={form.mobile_code}
+    aria-label="Dial code"
+  />
+  <div className="relative flex-1">
+    <Input
+      id="lead-mobile"
+      value={form.mobile}
+      onChange={update("mobile")}
+      placeholder="Enter mobile number"
+      invalid={!!problems.mobile}
+    />
+    <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+  </div>
+</div>
+<button type="button"
+  ref={btnRef}
+  disabled={disabled}
+  className={`gg-input h-10 md:h-11 w-28 flex items-center gap-2 justify-between ${
+    disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
+  }`}
+  aria-haspopup="listbox"
+  aria-expanded={open}
+  onClick={() => !disabled && setOpen((o) => !o)}></button>
+
                   {dupMobile === true && (
                     <div className="inline-flex items-center gap-1 mt-1 text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
                       <Info className="w-3 h-3" /> Duplicate number — will be sent for approval
