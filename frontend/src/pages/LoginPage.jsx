@@ -57,7 +57,7 @@ export default function LoginPage() {
   );
 
   // If your app’s first screen is Leads, this is safer than /dashboard
-  const NEXT = "/app/crm/leads";
+  const NEXT = "/dashboard";
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
