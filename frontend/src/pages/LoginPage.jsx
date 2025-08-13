@@ -1,6 +1,7 @@
 // src/pages/LoginPage.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import "../styles.css";
+import logoUrl from "../assets/geniusgrid-logo.png"; // <-- BUNDLED ASSET
 
 /**
  * Multi-tenant login page
@@ -205,7 +206,7 @@ export default function LoginPage() {
             <div className="brand-row">
               {/* 🔁 Replace src with your actual logo path */}
               <img
-                src="/images/geniusgrid-logo.png"
+                src={logoUrl}
                 alt="GeniusGrid"
                 width="40"
                 height="40"
