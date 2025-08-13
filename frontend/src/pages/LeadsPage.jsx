@@ -9,6 +9,8 @@ import LeadsCards from "@/components/leads/LeadsCards";
 import LeadDrawer from "@/components/leads/LeadDrawer";
 import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
 import { useEnv } from "@/store/useEnv";
+// 👇 NEW: icons for compact view toggles
+import { Table, KanbanSquare, Grid2x2 } from "lucide-react";
 
 const DEFAULT_COLUMNS = [
   { key: "name",         label: "Lead",     visible: true  },
@@ -20,6 +22,24 @@ const DEFAULT_COLUMNS = [
   { key: "priority",     label: "Priority", visible: false },
   { key: "created_at",   label: "Created",  visible: true  },
 ];
+
+// 👇 NEW: tiny reusable icon button
+function IconBtn({ title, active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      aria-pressed={active}
+      onClick={onClick}
+      className={`gg-btn h-9 w-9 p-0 flex items-center justify-center rounded-lg ${
+        active ? "gg-btn-primary" : ""
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function LeadsPage() {
   const api = useLeadsApi();
@@ -303,7 +323,7 @@ export default function LeadsPage() {
     if (mountedRef.current) setAiRefreshing(false);
   }, [api, rows]);
 
-  // Compact view selector for small screens
+  // Compact view selector for small screens (unchanged)
   const viewSelect = (
     <select
       aria-label="View"
@@ -330,12 +350,32 @@ export default function LeadsPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Mobile view select stays */}
               {viewSelect}
 
-              <div className="hidden md:inline-flex rounded-lg overflow-hidden border border-[color:var(--border)]">
-                <button className={`gg-btn ${view==='table' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('table')} aria-pressed={view==='table'}>Table</button>
-                <button className={`gg-btn ${view==='kanban' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('kanban')} aria-pressed={view==='kanban'}>Kanban</button>
-                <button className={`gg-btn ${view==='cards' ? 'gg-btn-primary' : ''}`} onClick={()=>setView('cards')} aria-pressed={view==='cards'}>Cards</button>
+              {/* 👇 NEW: compact icon toggles (desktop only) */}
+              <div className="hidden md:flex items-center gap-1">
+                <IconBtn
+                  title="Table view"
+                  active={view === "table"}
+                  onClick={() => setView("table")}
+                >
+                  <Table size={16} />
+                </IconBtn>
+                <IconBtn
+                  title="Kanban view"
+                  active={view === "kanban"}
+                  onClick={() => setView("kanban")}
+                >
+                  <KanbanSquare size={16} />
+                </IconBtn>
+                <IconBtn
+                  title="Card view"
+                  active={view === "cards"}
+                  onClick={() => setView("cards")}
+                >
+                  <Grid2x2 size={16} />
+                </IconBtn>
               </div>
 
               <button
@@ -439,7 +479,6 @@ export default function LeadsPage() {
               onPageSizeChange={setPageSize}
               onInlineUpdate={onInlineUpdate}
               onOpenLead={onOpenLead}
-
               // NEW: wire per-row AI refresh controls
               onAiRefreshRow={onAiRefreshRow}
               aiRefreshingIds={aiBusyIds}
