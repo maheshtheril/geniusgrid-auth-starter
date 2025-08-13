@@ -1,4 +1,14 @@
-// src/routes/leads.routes.js
+// src/routes/leads.routes.js — FULL
+// Express routes aligned to public.leads schema with RLS/tenant scoping
+// Endpoints:
+//   GET    /api/leads/ping
+//   GET    /api/leads                (list with filters, paging)
+//   GET    /api/leads/pipelines      (distinct stages as array)
+//   GET    /api/leads/stages         (alias of pipelines)
+//   GET    /api/leads/check-mobile   (?phone= or ?mobile=)
+//   POST   /api/leads                (create)
+//   PATCH  /api/leads/:id            (update selected fields)
+
 import express from "express";
 import { pool } from "../db/pool.js";
 
@@ -6,20 +16,26 @@ const router = express.Router();
 
 /* ---------------- helpers ---------------- */
 function getTenantId(req) {
-  return req.session?.tenantId || req.session?.tenant_id || null;
+  // Express lower-cases header names
+  return (
+    req.session?.tenantId ||
+    req.session?.tenant_id ||
+    req.get("x-tenant-id") ||
+    req.query.tenant_id ||
+    null
+  );
 }
 function getCompanyId(req) {
   return (
     req.session?.companyId ||
     req.session?.company_id ||
-    req.headers["x-company-id"] ||
-    req.headers["X-Company-ID"] ||
+    req.get("x-company-id") ||
     req.query.company_id ||
     null
   );
 }
 async function setTenant(client, tenantId) {
-  // NON-LOCAL so it persists on this connection (important for RLS/GUC)
+  // NON-LOCAL so it persists on this connection (critical for ensure_tenant_scope() + RLS)
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
@@ -54,7 +70,7 @@ router.get("/", async (req, res) => {
 
   const offset = (page - 1) * size;
 
-  // Alias to match your columns in the React table (company_name, owner_name, created_at)
+  // Alias to match typical UI columns
   const listSQL = `
     SELECT
       id,
@@ -65,6 +81,7 @@ router.get("/", async (req, res) => {
       company AS company_name,
       email,
       phone,
+      source,
       status,
       stage,
       owner   AS owner_name,
@@ -92,7 +109,7 @@ router.get("/", async (req, res) => {
       client.query(countSQL, params),
     ]);
 
-    const items = (list.rows || []).map(r => ({
+    const items = (list.rows || []).map((r) => ({
       ...r,
       ai_next: Array.isArray(r.ai_next)
         ? r.ai_next
@@ -110,10 +127,7 @@ router.get("/", async (req, res) => {
   }
 });
 
-/* ---------------- GET /api/leads/pipelines ----------------
-   MUST return an ARRAY so your UI's `stages.map(...)` works.
-   We compute distinct stage strings for this tenant/company.
------------------------------------------------------------- */
+/* ---------------- Distinct stages helper ---------------- */
 async function loadStageList(tenantId, companyId) {
   const params = [tenantId];
   let where = `WHERE tenant_id = $1 AND stage IS NOT NULL AND stage <> ''`;
@@ -125,7 +139,7 @@ async function loadStageList(tenantId, companyId) {
     `SELECT DISTINCT stage FROM public.leads ${where} ORDER BY stage ASC`,
     params
   );
-  const stages = rows.map(r => r.stage).filter(Boolean);
+  const stages = rows.map((r) => r.stage).filter(Boolean);
   return stages.length ? stages : ["new", "qualified", "proposal", "won", "lost"];
 }
 
@@ -135,17 +149,13 @@ router.get("/pipelines", async (req, res) => {
 
   try {
     const stages = await loadStageList(tenantId, getCompanyId(req));
-    // Return a plain array (critical for the UI)
-    res.json(stages);
+    res.json(stages); // plain array
   } catch (err) {
     console.error("GET /leads/pipelines error:", err);
     res.json(["new", "qualified", "proposal", "won", "lost"]);
   }
 });
 
-/* ---------------- GET /api/leads/stages ----------------
-   Alias to pipelines; also returns a plain array of strings.
---------------------------------------------------------- */
 router.get("/stages", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
@@ -156,6 +166,102 @@ router.get("/stages", async (req, res) => {
   } catch (err) {
     console.error("GET /leads/stages error:", err);
     res.json(["new", "qualified", "proposal", "won", "lost"]);
+  }
+});
+
+/* ---------------- GET /api/leads/check-mobile ----------------
+   Usage: /api/leads/check-mobile?phone=+91%209876543210
+-------------------------------------------------------------- */
+router.get("/check-mobile", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ exists: false, error: "No tenant" });
+
+  const raw = String(req.query.phone ?? req.query.mobile ?? "").trim();
+  if (!raw) return res.json({ exists: false, reason: "empty" });
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+
+    // Normalize using DB function to match stored leads
+    const normRes = await client.query("SELECT public.phone_to_norm($1) AS pn", [raw]);
+    const pn = normRes.rows?.[0]?.pn || null;
+
+    if (!pn) return res.json({ exists: false, reason: "invalid" });
+    if (pn.length < 6) return res.json({ exists: false, reason: "too_short", phone_norm: pn });
+
+    const { rows } = await client.query(
+      `SELECT id, name FROM public.leads
+       WHERE tenant_id = ensure_tenant_scope() AND phone_norm = $1
+       LIMIT 1`,
+      [pn]
+    );
+
+    return res.json({ exists: rows.length > 0, lead: rows[0] || null, phone_norm: pn });
+  } catch (err) {
+    console.error("GET /leads/check-mobile error:", err);
+    return res.status(500).json({ exists: false, error: "server_error" });
+  } finally {
+    client.release();
+  }
+});
+
+/* ---------------- POST /api/leads ----------------
+   Body: { name*, phone, email, source, status, stage, followup_at(ISO), custom(json) }
+   Uses tenant_id from session/header and optional company_id.
+--------------------------------------------------- */
+router.post("/", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  const companyId = getCompanyId(req);
+
+  const b = req.body || {};
+  const name = String(b.name || "").trim();
+  if (!name) return res.status(400).json({ error: "name is required" });
+
+  // Accept E.164-ish phone, DB will normalize via phone_to_norm()
+  const phone = b.phone ? String(b.phone).trim() : null;
+  const email = b.email ? String(b.email).trim() : null;
+  const source = b.source ? String(b.source).trim() : null;
+  const status = b.status ? String(b.status).trim() : "new";
+  const stage  = b.stage  ? String(b.stage).trim()  : null;
+
+  // Accept either ISO string or null
+  const followup_at = b.followup_at ? new Date(b.followup_at) : null;
+
+  // jsonb column
+  const custom = (b.custom && typeof b.custom === "object") ? b.custom : {};
+
+  const sql = `
+    INSERT INTO public.leads
+      (tenant_id, company_id, name, email, phone, source, status, stage, followup_at, custom)
+    VALUES
+      ($1,        $2,         $3,   $4,    $5,    $6,     $7,     $8,    $9,         $10)
+    RETURNING id, tenant_id, company_id, name, email, phone, source, status, stage, followup_at, created_at;
+  `;
+  const params = [tenantId, companyId, name, email, phone, source, status, stage, followup_at, custom];
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const { rows } = await client.query(sql, params);
+    return res.status(201).json(rows[0]);
+  } catch (err) {
+    console.error("POST /leads error:", err);
+
+    // Common Postgres error codes
+    if (err.code === "23514") {
+      // CHECK constraint (e.g., phone_norm too short)
+      return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
+    }
+    if (err.code === "23505") {
+      // UNIQUE violation (tenant+email or tenant+phone_norm)
+      return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
+    }
+    return res.status(500).json({ error: "Failed to create lead" });
+  } finally {
+    client.release();
   }
 });
 
@@ -217,102 +323,5 @@ router.patch("/:id", async (req, res) => {
     client.release();
   }
 });
-
-// GET /api/leads/check-mobile?phone=+91%209876543210
-router.get("/check-mobile", async (req, res, next) => {
-  try {
-    const { phone } = req.query;
-    if (!phone || String(phone).trim() === "") {
-      return res.json({ exists: false });
-    }
-
-    // Use DB function phone_to_norm() and tenant scope
-    const { rows } = await pool.query(
-      `
-      SELECT EXISTS (
-        SELECT 1
-        FROM public.leads
-        WHERE tenant_id = ensure_tenant_scope()
-          AND phone_norm = phone_to_norm($1)
-      ) AS exists
-      `,
-      [String(phone)]
-    );
-
-    res.json({ exists: rows?.[0]?.exists === true });
-  } catch (err) {
-    next(err);
-  }
-});
-// --- ADD THIS HANDLER (near other /leads routes) ---
-router.get("/check-mobile", async (req, res) => {
-  try {
-    const raw = String(req.query.phone || "").trim();
-    if (!raw) return res.json({ exists: false });
-
-    // normalize using DB function to match how leads are stored
-    const normRes = await pool.query(
-      "SELECT public.phone_to_norm($1) AS pn",
-      [raw]
-    );
-    const pn = normRes.rows?.[0]?.pn || null;
-    if (!pn) return res.json({ exists: false });
-
-    const q = `
-      SELECT id, name
-      FROM public.leads
-      WHERE tenant_id = ensure_tenant_scope()
-        AND phone_norm = $1
-      LIMIT 1
-    `;
-    const { rows } = await pool.query(q, [pn]);
-
-    return res.json({
-      exists: rows.length > 0,
-      lead: rows[0] || null,
-      phone_norm: pn, // handy for debugging
-    });
-  } catch (err) {
-    req.log?.error({ err }, "check-mobile failed");
-    return res.status(500).json({ exists: false, error: "server_error" });
-  }
-});
-
-// --- Check duplicate mobile (normalized & tenant-scoped) ---
-router.get("/check-mobile", async (req, res) => {
-  try {
-    const raw = String(req.query.phone ?? req.query.mobile ?? "").trim();
-    if (!raw) return res.json({ exists: false, reason: "empty" });
-
-    // Normalize like we store it
-    const { rows: nrows } = await pool.query(
-      "SELECT public.phone_to_norm($1) AS pn",
-      [raw]
-    );
-    const pn = nrows[0]?.pn || null;
-    if (!pn) return res.json({ exists: false, reason: "invalid" });
-    if (pn.length < 6) return res.json({ exists: false, reason: "too_short", phone_norm: pn });
-
-    // Look up within tenant
-    const { rows } = await pool.query(
-      `SELECT id, name
-         FROM public.leads
-        WHERE tenant_id = ensure_tenant_scope()
-          AND phone_norm = $1
-        LIMIT 1`,
-      [pn]
-    );
-
-    return res.json({
-      exists: rows.length > 0,
-      lead: rows[0] || null,
-      phone_norm: pn,
-    });
-  } catch (err) {
-    req.log?.error({ err }, "leads.check-mobile failed");
-    return res.status(500).json({ exists: false, error: "server_error" });
-  }
-});
-
 
 export default router;
