@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>GeniusGrid</title>
+
+    <!-- Default to dark theme on first paint -->
+    <script>
+      (function () {
+        var k = "theme";
+        var t = localStorage.getItem(k) || "dark"; // default
+        document.documentElement.setAttribute("data-theme", t);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
