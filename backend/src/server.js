@@ -40,8 +40,7 @@ import aiProspectRoutes from "./routes/aiProspect.routes.js";
   
 import aiProspectRouter from "./routes/aiProspect.js";
 import leadsImportsRouter from "./routes/leadsImports.js";
-// NOTE: we won't import the mock router file; we inline the mock handler below.
-// import mockAIProspect from "./routes/mock-ai-prospect.js";
+// NOTE: mock router kept inline below (no import)
 
 // --- Config ---
 const app = express();
@@ -91,7 +90,40 @@ app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-// ---------------- INLINE PUBLIC MOCK (mounted BEFORE ANY /api middleware) ----------------
+// ---------------- CORS (MUST come before any routes that need it, including the mock) ----------------
+app.use(
+  cors({
+    origin: ORIGINS,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "X-Requested-With",
+      "X-CSRF-Token",
+      "Authorization",
+      // allow both casings for company header
+      "X-Company-ID",
+      "X-Company-Id",
+      "x-company-id",
+    ],
+    exposedHeaders: ["X-Request-Id", "X-Version"],
+  })
+);
+// helps caches/proxies return the right variant
+app.use((req, res, next) => {
+  res.header("Vary", "Origin");
+  next();
+});
+app.options("*", cors({ origin: ORIGINS, credentials: true }));
+
+// Attach response headers (versioning & request id surfaced)
+app.use((req, res, next) => {
+  res.setHeader("X-Version", process.env.APP_VERSION || "v1");
+  res.setHeader("X-Request-Id", req.id);
+  next();
+});
+
+// ---------------- INLINE PUBLIC MOCK (after CORS; before any other /api middleware) ----------------
 if (process.env.USE_MOCK_AI === "1") {
   app.post("/api/ai/prospect/jobs", (req, res) => {
     console.log("[MOCK] HIT /api/ai/prospect/jobs");
@@ -127,41 +159,8 @@ if (process.env.USE_MOCK_AI === "1") {
   console.log("[MOCK] Public inline /api/ai/prospect/jobs is ENABLED");
 }
 
-// FIRST /api middleware after the mock
+// First /api middleware after CORS & mock
 app.use("/api", leadsCheckMobile);
-
-// ---------------- CORS (MUST be before any routes that need it) ----------------
-app.use(
-  cors({
-    origin: ORIGINS,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "X-Requested-With",
-      "X-CSRF-Token",
-      "Authorization",
-      // allow both casings for company header
-      "X-Company-ID",
-      "X-Company-Id",
-      "x-company-id",
-    ],
-    exposedHeaders: ["X-Request-Id", "X-Version"],
-  })
-);
-// helps caches/proxies return the right variant
-app.use((req, res, next) => {
-  res.header("Vary", "Origin");
-  next();
-});
-app.options("*", cors({ origin: ORIGINS, credentials: true }));
-
-// Attach response headers (versioning & request id surfaced)
-app.use((req, res, next) => {
-  res.setHeader("X-Version", process.env.APP_VERSION || "v1");
-  res.setHeader("X-Request-Id", req.id);
-  next();
-});
 
 // ---------------- PUBLIC HEALTH (no auth, no rate-limit) ----------------
 app.get("/healthz", (_req, res) => res.status(200).send("ok"));
@@ -241,8 +240,6 @@ app.use("/api", requireAuth, leadsImportRoutes);
 app.use("/api", aiProspectRoutes);    // AI prospecting endpoints
 app.use("/api", aiProspectRouter);
 app.use("/api", leadsImportsRouter);
-
-// (Removed the previous "mockAIProspect" mount at the bottom to prevent shadowing)
 
 // ---------------- 404 & Errors ----------------
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
