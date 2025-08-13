@@ -1,9 +1,6 @@
 // src/components/leads/AddLeadDrawer.jsx — world‑class UI (full, updated)
-// Notes:
-// - Country selector compact (w-28), dial code compact (w-14), phone input flex-1 (max width)
-// - "General" section has extra top padding for visibility
-// - Advance section shows only custom fields (no hard-coded textarea), single "Add custom field" button
-// - One action area (sticky footer), accessible validation, subtle animations
+// Focus: phone input is maximum width; country dropdown & dial code are compact.
+// Also: clean sections, single "Add custom field" in Advance, no hard-coded textarea.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -11,6 +8,8 @@ import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Plus, Info } from
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
 import "flag-icons/css/flag-icons.min.css"; // SVG flags
+
+const safeRandomId = () => (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
 
 /** Turn "IN" -> 🇮🇳 (emoji fallback if DB doesn’t provide one) */
 const flagFromIso2 = (iso2 = "") => iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
@@ -132,9 +131,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
 
-  useEffect(() => {
-    setHi(0);
-  }, [query, open]);
+  useEffect(() => { setHi(0); }, [query, open]);
 
   const choose = (cc) => {
     onChange?.(cc);
@@ -155,25 +152,14 @@ function CountrySelect({ options, value, onChange, disabled }) {
       }
       return;
     }
-    if (e.key === "Escape") {
-      setOpen(false);
-      btnRef.current?.focus();
-    }
+    if (e.key === "Escape") { setOpen(false); btnRef.current?.focus(); }
   };
 
   const onListKey = (e) => {
     if (!open) return;
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      setHi((h) => Math.min(h + 1, filtered.length - 1));
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      setHi((h) => Math.max(h - 1, 0));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      const o = filtered[hi];
-      if (o) choose(o.cc);
-    }
+    if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, filtered.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHi((h) => Math.max(h - 1, 0)); }
+    else if (e.key === "Enter") { e.preventDefault(); const o = filtered[hi]; if (o) choose(o.cc); }
   };
 
   return (
@@ -182,7 +168,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
         type="button"
         ref={btnRef}
         disabled={disabled}
-        className={`gg-input h-10 md:h-11 w-28 flex items-center gap-2 justify-between ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+        className={`gg-input h-10 md:h-11 w-24 sm:w-28 flex items-center gap-2 justify-between shrink-0 ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => !disabled && setOpen((o) => !o)}
@@ -204,26 +190,11 @@ function CountrySelect({ options, value, onChange, disabled }) {
         <div className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)] bg-[var(--surface)] border border-[color:var(--border)] rounded-2xl shadow-2xl p-2" role="dialog">
           <div className="flex items-center gap-2 mb-2 px-1">
             <Flag className="w-4 h-4 opacity-70" />
-            <input
-              type="text"
-              className="gg-input w-full h-10"
-              placeholder="Search country or code"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={onListKey}
-            />
+            <input type="text" className="gg-input w-full h-10" placeholder="Search country or code" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onListKey} />
           </div>
           <ul role="listbox" className="max-h-64 overflow-auto" tabIndex={-1} onKeyDown={onListKey}>
             {filtered.map((o, idx) => (
-              <li
-                key={o.cc}
-                role="option"
-                aria-selected={o.cc === value}
-                className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${idx === hi ? "bg-[color:var(--hover)]" : ""}`}
-                onMouseEnter={() => setHi(idx)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => choose(o.cc)}
-              >
+              <li key={o.cc} role="option" aria-selected={o.cc === value} className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${idx === hi ? "bg-[color:var(--hover)]" : ""}`} onMouseEnter={() => setHi(idx)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(o.cc)}>
                 <span className={`fi fi-${o.cc.toLowerCase()}`} aria-hidden />
                 <span className="truncate">{o.name}</span>
                 <span className="ml-2 text-xs opacity-70">{o.cc}</span>
@@ -349,10 +320,7 @@ export default function AddLeadDrawer({
         if (alive) setDupMobile(null);
       }
     }, 450);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
+    return () => { alive = false; clearTimeout(timer); };
   }, [form.mobile, form.mobile_code, api]);
 
   // ---- GROUPED CUSTOM FIELDS ----
@@ -365,9 +333,7 @@ export default function AddLeadDrawer({
   // validation
   const problems = useMemo(() => {
     const p = {};
-    const need = (k, msg) => {
-      if (!String(form[k] ?? "").trim()) p[k] = msg;
-    };
+    const need = (k, msg) => { if (!String(form[k] ?? "").trim()) p[k] = msg; };
 
     need("name", "Lead name is required");
     need("mobile", "Mobile is required");
@@ -511,15 +477,12 @@ export default function AddLeadDrawer({
         );
       case "file":
         return wrap(
-          <>
-            <input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />
-            {val instanceof File && (
-              <div className="text-xs mt-1" style={{ color: "var(--muted)" }}>Selected: {val.name}</div>
-            )}
-          </>
+          <input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />
         );
       default:
-        return wrap(<input className={base} value={val} onChange={(e) => set(e.target.value)} />);
+        return wrap(
+          <input className={base} value={val} onChange={(e) => set(e.target.value)} />
+        );
     }
   };
 
@@ -566,40 +529,14 @@ export default function AddLeadDrawer({
                 </Field>
 
                 <Field label="Mobile" required htmlFor="lead-mobile" hint={dupMobile === true ? undefined : "Duplicate numbers are checked automatically."} error={problems.mobile}>
-                <div className="flex gap-2 items-stretch">
-  <CountrySelect
-    options={countryOpts}
-    value={form.mobile_country}
-    onChange={onCountryPicked}
-    disabled={countriesLoading || !countryOpts.length}
-  />
-  <input
-    readOnly
-    className="gg-input h-10 md:h-11 w-16 text-center"
-    value={form.mobile_code}
-    aria-label="Dial code"
-  />
-  <div className="relative flex-1">
-    <Input
-      id="lead-mobile"
-      value={form.mobile}
-      onChange={update("mobile")}
-      placeholder="Enter mobile number"
-      invalid={!!problems.mobile}
-    />
-    <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-  </div>
-</div>
-<button type="button"
-  ref={btnRef}
-  disabled={disabled}
-  className={`gg-input h-10 md:h-11 w-28 flex items-center gap-2 justify-between ${
-    disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"
-  }`}
-  aria-haspopup="listbox"
-  aria-expanded={open}
-  onClick={() => !disabled && setOpen((o) => !o)}></button>
-
+                  <div className="flex gap-1.5 items-stretch">
+                    <CountrySelect options={countryOpts} value={form.mobile_country} onChange={onCountryPicked} disabled={countriesLoading || !countryOpts.length} />
+                    <input readOnly className="gg-input h-10 md:h-11 w-12 sm:w-14 text-center shrink-0" value={form.mobile_code} aria-label="Dial code" />
+                    <div className="relative flex-1 min-w-0">
+                      <Input id="lead-mobile" value={form.mobile} onChange={update("mobile")} placeholder="Enter mobile number" invalid={!!problems.mobile} />
+                      <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
+                    </div>
+                  </div>
                   {dupMobile === true && (
                     <div className="inline-flex items-center gap-1 mt-1 text-xs px-2 py-1 rounded-full bg-amber-500/15 text-amber-400">
                       <Info className="w-3 h-3" /> Duplicate number — will be sent for approval
@@ -717,15 +654,6 @@ export default function AddLeadDrawer({
   return createPortal(el, document.body);
 }
 
-function EmptyCustomGroup({ onAdd }) {
-  return (
-    <div className="gg-card flex items-center justify-between p-3">
-      <div className="text-sm text-[color:var(--muted)]">No custom fields yet.</div>
-      <button type="button" className="gg-btn gg-btn-link" onClick={onAdd}>Add a custom field</button>
-    </div>
-  );
-}
-
 function CFModal({ onClose, onSave }) {
   const [f, setF] = useState({ label: "", key: "", type: "text", group: "general", required: false, optionsText: "" });
 
@@ -733,7 +661,7 @@ function CFModal({ onClose, onSave }) {
     const key = (f.key || f.label).trim().toLowerCase().replace(/\s+/g, "_");
     if (!f.label.trim()) return;
     const field = {
-      id: crypto.randomUUID(),
+      id: safeRandomId(),
       label: f.label.trim(),
       key,
       type: f.type,
