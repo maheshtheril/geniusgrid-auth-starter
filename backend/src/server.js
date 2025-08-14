@@ -231,7 +231,7 @@ app.use("/api/leads", requireAuth, leadsAiRoutes);        // mount ONCE under /a
 app.use("/api/leads", requireAuth, leadsDupRoutes);
 app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
- app.use("/api", aiProspectRoutes); 
+ app.use("/api/ai", aiProspectRoutes); 
 /* Other modules */
 app.use("/api", requireAuth, leadsModule);
   app.use("/api", leadsImportsRoutes);   // exposes /api/leads/imports/…
