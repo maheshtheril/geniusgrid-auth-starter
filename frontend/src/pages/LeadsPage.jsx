@@ -22,7 +22,7 @@ const DEFAULT_COLUMNS = [
   { key: "created_at",   label: "Created",  visible: true  },
 ];
 
-// Tiny reusable icon button
+// Small icon button
 function IconBtn({ title, active, onClick, children }) {
   return (
     <button
@@ -40,9 +40,8 @@ function IconBtn({ title, active, onClick, children }) {
   );
 }
 
-/** YYYY-MM-DD for a given tz (defaults to Asia/Kolkata) */
+/** YYYY-MM-DD for a given tz (defaults Asia/Kolkata) */
 function todayInTZ(tz = "Asia/Kolkata") {
-  // en-CA gives YYYY-MM-DD format
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
     year: "numeric",
@@ -60,13 +59,7 @@ export default function LeadsPage() {
   const [query, setQuery]       = useState("");
   const [filters, setFilters]   = useState(() => {
     const today = todayInTZ();
-    return {
-      owner_id: "",
-      stage: "",
-      status: "",
-      date_from: today,   // NEW
-      date_to: today,     // NEW
-    };
+    return { owner_id: "", stage: "", status: "", date_from: today, date_to: today };
   });
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -76,7 +69,7 @@ export default function LeadsPage() {
   const [sortKey, setSortKey]   = useState(null);
   const [sortDir, setSortDir]   = useState("asc");
 
-  // Data + UI state
+  // Data + UI
   const [rows, setRows]         = useState([]);
   const [stages, setStages]     = useState([]);
   const [columns, setColumns]   = useState(() => {
@@ -89,18 +82,19 @@ export default function LeadsPage() {
   const [selected, setSelected]     = useState(null);
   const [openDrawer, setOpenDrawer] = useState(false);
 
-  // Remount Add drawer each open to clear form state
-  const [openAdd, setOpenAdd]       = useState(false);
-  const [addKey, setAddKey]         = useState(0);
+  // Add drawer (remount to clear form state)
+  const [openAdd, setOpenAdd]   = useState(false);
+  const [addKey, setAddKey]     = useState(0);
 
-  const [loading, setLoading]       = useState(false);
+  const [loading, setLoading]   = useState(false);
 
-  // AI refresh state (page-scope)
+  // AI refresh state
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const [aiProgress, setAiProgress] = useState({ done: 0, total: 0 });
-
-  // per-row busy ids for inline AI refresh button
   const [aiBusyIds, setAiBusyIds] = useState(() => new Set());
+
+  // Export state
+  const [exporting, setExporting] = useState(false);
 
   // Mounted guard
   const mountedRef = useRef(false);
@@ -125,7 +119,7 @@ export default function LeadsPage() {
 
   const visibleColumns = useMemo(() => columns.filter(c => c.visible), [columns]);
 
-  // Params (legacy + premium)
+  // Build params for API (supports both legacy + premium keys)
   const params = useMemo(() => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -134,7 +128,6 @@ export default function LeadsPage() {
       filter_stage:  filters.stage || undefined,
       filter_status: filters.status || undefined,
       filter_owner_id: filters.owner_id || undefined,
-      // NEW: date range filters
       filter_date_from: filters.date_from || undefined,
       filter_date_to: filters.date_to || undefined,
 
@@ -154,7 +147,6 @@ export default function LeadsPage() {
       stage: filters.stage || undefined,
       status: filters.status || undefined,
       owner_id: filters.owner_id || undefined,
-      // pass-through for older APIs too (harmless if ignored)
       date_from: filters.date_from || undefined,
       date_to: filters.date_to || undefined,
 
@@ -187,10 +179,10 @@ export default function LeadsPage() {
       const data = await api.listPipelines();
       if (!mountedRef.current) return;
       setStages(data.stages || data || []);
-    } catch {/* swallow */}
+    } catch {}
   }, [api]);
 
-  // Fetch lead custom fields once (normalize group -> 'general')
+  // Lead custom fields once
   const fetchLeadCustomFields = useCallback(async () => {
     try {
       const res = await axios.get("/api/crm/custom-fields", {
@@ -347,7 +339,131 @@ export default function LeadsPage() {
     if (mountedRef.current) setAiRefreshing(false);
   }, [api, rows]);
 
-  // Compact view selector for small screens (unchanged)
+  // ----- Export helpers -----
+  const exportFileBase = () => {
+    const from = (filters.date_from || "all");
+    const to   = (filters.date_to   || "all");
+    return `leads_${from}_to_${to}`;
+  };
+
+  const fetchAllForExport = async () => {
+    const pageSize = 5000;
+    let pageNum = 1;
+    let all = [];
+    while (true) {
+      const data = await api.listLeads({ ...params, page_number: pageNum, page_size: pageSize });
+      const items = data.items || data.rows || [];
+      all = all.concat(items);
+      const total = Number(data.total ?? data.totalCount ?? all.length);
+      if (all.length >= total || items.length < pageSize) break;
+      pageNum += 1;
+    }
+    return all;
+  };
+
+  const buildExportRows = (rowsArg) => {
+    const cols = visibleColumns;
+    const header = cols.map(c => c.label);
+    const records = rowsArg.map(r =>
+      cols.map(c => {
+        const v = r[c.key];
+        if (v == null) return "";
+        if (c.key.includes("date") || c.key.includes("created")) {
+          const t = new Date(v);
+          return Number.isNaN(t.getTime()) ? String(v) : t.toLocaleString();
+        }
+        return typeof v === "object" ? JSON.stringify(v) : String(v);
+      })
+    );
+    return { header, records };
+  };
+
+  const exportExcel = async () => {
+    setExporting(true);
+    try {
+      const all = await fetchAllForExport();
+      const { header, records } = buildExportRows(all);
+
+      try {
+        const XLSX = await import("xlsx");
+        const sheetData = [header, ...records];
+        const ws = XLSX.utils.aoa_to_sheet(sheetData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Leads");
+        XLSX.writeFile(wb, `${exportFileBase()}.xlsx`);
+        return;
+      } catch {
+        const esc = (s) => `"${String(s).replace(/"/g, '""')}"`;
+        const csv = [header.map(esc).join(","), ...records.map(row => row.map(esc).join(","))].join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${exportFileBase()}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportPDF = async () => {
+    setExporting(true);
+    try {
+      const all = await fetchAllForExport();
+      const { header, records } = buildExportRows(all);
+      const title = `Leads (${filters.date_from || "all"} → ${filters.date_to || "all"})`;
+
+      try {
+        const { jsPDF } = await import("jspdf");
+        await import("jspdf-autotable");
+        const doc = new jsPDF({ orientation: "landscape" });
+        doc.setFontSize(12);
+        doc.text(title, 14, 12);
+        doc.autoTable({
+          head: [header],
+          body: records,
+          startY: 18,
+          styles: { fontSize: 8, cellPadding: 2 },
+          headStyles: { fillColor: [33, 150, 243] },
+        });
+        doc.save(`${exportFileBase()}.pdf`);
+        return;
+      } catch {
+        const html = `
+          <html>
+            <head>
+              <title>${title}</title>
+              <style>
+                body { font-family: system-ui, sans-serif; padding: 16px; }
+                table { border-collapse: collapse; width: 100%; font-size: 12px; }
+                th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+                th { background: #f2f2f2; }
+              </style>
+            </head>
+            <body>
+              <h3>${title}</h3>
+              <table>
+                <thead><tr>${header.map(h => `<th>${h}</th>`).join("")}</tr></thead>
+                <tbody>
+                  ${records.map(row => `<tr>${row.map(c => `<td>${String(c).replace(/&/g,"&amp;").replace(/</g,"&lt;")}</td>`).join("")}</tr>`).join("")}
+                </tbody>
+              </table>
+              <script>window.onload = () => { window.print(); }</script>
+            </body>
+          </html>`;
+        const w = window.open("", "_blank");
+        if (w) { w.document.write(html); w.document.close(); }
+      }
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Compact view selector for small screens
   const viewSelect = (
     <select
       aria-label="View"
@@ -361,7 +477,6 @@ export default function LeadsPage() {
     </select>
   );
 
-  // Quick helper to set "today" back into the date filters
   const setTodayRange = () => {
     const today = todayInTZ();
     setFilters(f => ({ ...f, date_from: today, date_to: today }));
@@ -381,10 +496,8 @@ export default function LeadsPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Mobile view select stays */}
               {viewSelect}
 
-              {/* Compact icon toggles — visible at all breakpoints now */}
               <div className="flex items-center gap-1" role="group" aria-label="Change leads view">
                 <IconBtn title="Table view"  active={view === "table"}  onClick={() => setView("table")}><Table2 size={16} /></IconBtn>
                 <IconBtn title="Kanban view" active={view === "kanban"} onClick={() => setView("kanban")}><KanbanSquare size={16} /></IconBtn>
@@ -412,7 +525,7 @@ export default function LeadsPage() {
         {/* Filters */}
         <div className="gg-surface p-3 rounded-2xl">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            {/* NEW: Date range controls (default to today) */}
+            {/* Date range */}
             <div className="flex gap-2 flex-wrap">
               <label className="flex items-center gap-2">
                 <span className="text-xs text-[color:var(--muted)]">From</span>
@@ -473,6 +586,26 @@ export default function LeadsPage() {
             </div>
 
             <div className="flex items-center gap-2 lg:ml-auto">
+              {/* Export buttons */}
+              <button
+                type="button"
+                className="gg-btn"
+                onClick={exportExcel}
+                disabled={exporting}
+                title="Export all filtered leads to Excel"
+              >
+                {exporting ? "Exporting…" : "Export Excel"}
+              </button>
+              <button
+                type="button"
+                className="gg-btn"
+                onClick={exportPDF}
+                disabled={exporting}
+                title="Export all filtered leads to PDF"
+              >
+                {exporting ? "Exporting…" : "Export PDF"}
+              </button>
+
               <button
                 className="gg-btn gg-btn-ghost"
                 onClick={() => {
@@ -497,7 +630,7 @@ export default function LeadsPage() {
                           onChange={() => toggleColumn(c.key)}
                           className="accent-[var(--primary)]"
                         />
-                        <span className="text-sm">{c.label}</span>
+                          <span className="text-sm">{c.label}</span>
                       </label>
                     </li>
                   ))}
