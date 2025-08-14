@@ -37,6 +37,7 @@ import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 /* ✅ AI Prospect + Imports (store namespace) */
 import aiProspectRoutes from "./store/ai.prospect.routes.js";
 import leadsImportsRoutes from "./store/leads.imports.routes.js";
+import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 
 const app = express();
 const PgStore = pgSimple(session);
@@ -181,6 +182,8 @@ app.use("/api/leads", requireAuth, leadsAiRoutes);
 app.use("/api/leads", requireAuth, leadsDupRoutes);
 app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
+
+app.use("/api", leadsCustomFieldsRoutes);
 
 /* Imports (scoped) */
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);

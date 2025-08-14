@@ -1,20 +1,65 @@
+// 📁 src/components/leads/AddCustomFieldModal.jsx
 import React, { useState } from "react";
 import { http } from "@/lib/http";
+
+function slugify(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 64);
+}
 
 export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
   const [label, setLabel] = useState("");
   const [type, setType] = useState("text");
   const [required, setRequired] = useState(false);
+
+  // optional but useful (backend can ignore if not used)
+  const [section, setSection] = useState("General"); // "General" | "Advance"
+  const [optionsText, setOptionsText] = useState(""); // for 'select' (comma-separated)
   const [saving, setSaving] = useState(false);
+  const [errMsg, setErrMsg] = useState("");
 
   async function handleSave() {
+    setErrMsg("");
+    if (!label.trim()) {
+      setErrMsg("Please enter a label.");
+      return;
+    }
     try {
       setSaving(true);
-      await http.post("/leads/custom-fields", { label, type, required });
-      onSuccess();
-      onClose();
+
+      const key = slugify(label);
+      const options =
+        type === "select"
+          ? optionsText
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : [];
+
+      // ✅ NOTE: /api prefix
+      const res = await http.post("/api/leads/custom-fields", {
+        label,
+        key,          // many backends require a stable key/code
+        type,         // "text" | "number" | "date" | "select" | "file"
+        required,
+        section,      // optional; backend can default to "General"
+        options,      // optional jsonb []
+      });
+
+      onSuccess?.(res?.data);
+      onClose?.();
     } catch (err) {
       console.error("Error adding custom field", err);
+      const msg =
+        err?.response?.data?.message ||
+        err?.response?.data?.error ||
+        err?.message ||
+        "Failed to save custom field.";
+      setErrMsg(msg);
     } finally {
       setSaving(false);
     }
@@ -26,6 +71,7 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
     <div className="modal modal-open">
       <div className="modal-box max-w-md">
         <h3 className="font-bold text-lg">Add Custom Field</h3>
+
         <div className="mt-4 space-y-3">
           <input
             type="text"
@@ -34,6 +80,7 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
             onChange={(e) => setLabel(e.target.value)}
             className="input input-bordered w-full"
           />
+
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
@@ -45,21 +92,49 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
             <option value="select">Select</option>
             <option value="file">File</option>
           </select>
-          <label className="flex items-center gap-2">
+
+          {type === "select" && (
+            <input
+              type="text"
+              placeholder="Options (comma separated)"
+              value={optionsText}
+              onChange={(e) => setOptionsText(e.target.value)}
+              className="input input-bordered w-full"
+            />
+          )}
+
+          <div className="flex items-center gap-2">
             <input
               type="checkbox"
               checked={required}
               onChange={(e) => setRequired(e.target.checked)}
               className="checkbox"
+              id="cf-required"
             />
-            Required
-          </label>
+            <label htmlFor="cf-required">Required</label>
+          </div>
+
+          {/* optional section selector; harmless if backend ignores */}
+          <select
+            value={section}
+            onChange={(e) => setSection(e.target.value)}
+            className="select select-bordered w-full"
+          >
+            <option value="General">General</option>
+            <option value="Advance">Advance</option>
+          </select>
+
+          {errMsg && (
+            <div className="text-sm text-rose-500">{errMsg}</div>
+          )}
         </div>
+
         <div className="modal-action">
           <button className="btn" onClick={onClose}>Cancel</button>
           <button
             className={`btn btn-primary ${saving ? "loading" : ""}`}
             onClick={handleSave}
+            disabled={saving}
           >
             Save
           </button>
