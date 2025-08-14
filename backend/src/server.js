@@ -15,7 +15,7 @@ import rateLimit from "express-rate-limit";
 import { pool } from "./db/pool.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 
-/* ---------- Routes (keep only one of each) ---------- */
+/* ---------- Routes ---------- */
 import uiRoutes from "./routes/ui.routes.js";
 import metaRoutes from "./routes/meta.routes.js";
 import countriesRouter from "./routes/countries.js";
@@ -29,22 +29,15 @@ import leadsRoutes from "./routes/leads.routes.js";
 import leadsModule from "./routes/leadsModule.routes.js";
 import customFieldsRoutes from "./routes/customFields.routes.js";
 import leadsCheckMobile from "./routes/leads.checkMobile.js";
-
-/* keep this (new) AI routes; remove older duplicates */
 import leadsAiRoutes from "./routes/leads.ai.routes.js";
-import aiProspectRoutes from "./store/ai.prospect.routes.js";
-import leadsImportsRoutes from "./store/leads.imports.routes.js";
-
 import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js";
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 
+/* ✅ AI Prospect + Imports (store namespace) */
+import aiProspectRoutes from "./store/ai.prospect.routes.js";
+import leadsImportsRoutes from "./store/leads.imports.routes.js";
 
-
-//import adminCronRoutes from "./routes/admin.cron.routes.js";
-
-
-/* ---------- App ---------- */
 const app = express();
 const PgStore = pgSimple(session);
 const isProd = process.env.NODE_ENV === "production";
@@ -52,16 +45,13 @@ const PORT = Number(process.env.PORT || 4000);
 const APP_URL =
   process.env.APP_URL ||
   (isProd ? "https://your-api.onrender.com" : "http://localhost:4000");
-const useMockAi = process.env.USE_MOCK_AI === "1";
 
-/* Allowed frontend origins */
+/* ---------- CORS ---------- */
 const ORIGINS = [
   "http://localhost:5173",
   "https://geniusgrid-web.onrender.com",
   ...(process.env.FRONTEND_ORIGINS ? process.env.FRONTEND_ORIGINS.split(",") : []),
-]
-  .map((s) => s.trim())
-  .filter(Boolean);
+].map((s) => s.trim()).filter(Boolean);
 
 /* ---------- Logger ---------- */
 const logger = pino({
@@ -89,7 +79,7 @@ app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-/* ---------- CORS (before any routes) ---------- */
+/* ---------- CORS (before routes) ---------- */
 app.use(
   cors({
     origin: ORIGINS,
@@ -107,10 +97,7 @@ app.use(
     exposedHeaders: ["X-Request-Id", "X-Version"],
   })
 );
-app.use((req, res, next) => {
-  res.header("Vary", "Origin");
-  next();
-});
+app.use((req, res, next) => { res.header("Vary", "Origin"); next(); });
 app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
 /* ---------- Version headers ---------- */
@@ -120,50 +107,12 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ---------- INLINE PUBLIC MOCK (exclusive with real AI routes) ---------- */
-if (useMockAi) {
-  app.post("/api/ai/prospect/jobs", (req, res) => {
-    console.log("[MOCK] HIT /api/ai/prospect/jobs");
-    const body = req.body || {};
-    const prompt = String(body.prompt ?? "");
-    const n = Math.max(1, Math.min(parseInt(body.count ?? 10, 10) || 10, 200));
-    const filters = body.filters || {};
-
-    const items = Array.from({ length: n }, (_, i) => ({
-      id: randomUUID(),
-      name: `Mock Lead ${i + 1}`,
-      company_name: `Mock Company ${((i % 10) + 1)}`,
-      email: `lead${i + 1}@example.com`,
-      phone: `+1-555-000-${1000 + i}`,
-      status: "new",
-      stage: "Prospect",
-      owner_name: "AI Bot",
-      score: Math.floor(Math.random() * 100),
-      created_at: new Date().toISOString(),
-      _prompt: prompt,
-      _filters: filters,
-    }));
-
-    return res.status(200).json({
-      ok: true,
-      jobId: randomUUID(),
-      status: "completed",
-      items,
-      total: items.length,
-    });
-  });
-
-  console.log("[MOCK] Public inline /api/ai/prospect/jobs is ENABLED");
-}
-
 /* ---------- Early utility routes ---------- */
 app.use("/api", leadsCheckMobile);
 
 /* ---------- Public health ---------- */
 app.get("/healthz", (_req, res) => res.status(200).send("ok"));
-app.get("/api/health", (_req, res) => {
-  res.status(200).json({ ok: true, ts: new Date().toISOString() });
-});
+app.get("/api/health", (_req, res) => res.status(200).json({ ok: true, ts: new Date().toISOString() }));
 app.head("/api/health", (_req, res) => res.sendStatus(200));
 app.head("/", (_req, res) => res.sendStatus(200));
 app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
@@ -185,7 +134,7 @@ app.use(
   })
 );
 
-/* ---------- Tenant GUC helper (no-op if no session) ---------- */
+/* ---------- Tenant GUC helper ---------- */
 app.use(async (req, _res, next) => {
   try {
     const tid = req.session?.tenantId || req.session?.tenant_id;
@@ -208,7 +157,7 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
-/* ---------- PUBLIC routes ---------- */
+/* ---------- PUBLIC routes (no auth) ---------- */
 app.use("/api/ui", uiRoutes);
 app.use("/api/meta", metaRoutes);
 app.use("/api/countries", countriesRouter);
@@ -217,28 +166,27 @@ app.use("/api/bootstrap", bootstrapRoutes);
 app.use("/api/auth", auth);
 app.use("/api/auth", authMe);
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
-app.use("/api/crm", /* requireAuth, */ customFieldsRoutes);
 
-/* ---------- PROTECTED routes ---------- */
+/* ✅ PUBLIC: AI prospect namespace (correct path & order) */
+app.use("/api/ai/prospect", aiProspectRoutes);          // -> /api/ai/prospect/ping, /api/ai/prospect/jobs
+
+/* ---------- PROTECTED routes (scoped; no broad '/api' wall) ---------- */
 app.use("/api/admin", requireAuth, adminUsers);
-app.use("/api", requireAuth, dashboardRoutes);
+app.use("/api/dashboard", requireAuth, dashboardRoutes);
+app.use("/api/crm", requireAuth, customFieldsRoutes);
 
-/* Core Leads */
+/* Leads core + utilities */
 app.use("/api/leads", requireAuth, leadsRoutes);
-app.use("/api/leads", requireAuth, leadsAiRoutes);        // mount ONCE under /api/leads
-
-/* Lead utilities */
+app.use("/api/leads", requireAuth, leadsAiRoutes);
 app.use("/api/leads", requireAuth, leadsDupRoutes);
 app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
- app.use("/api/ai", aiProspectRoutes); 
-/* Other modules */
-app.use("/api", requireAuth, leadsModule);
-  app.use("/api", leadsImportsRoutes);   // exposes /api/leads/imports/…
-//if (!useMockAi) {
-      // exposes /api/ai/prospect/…
- 
-//}
+
+/* Imports (scoped) */
+app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
+
+/* Other modules (scoped) */
+app.use("/api/leads-module", requireAuth, leadsModule);
 
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
@@ -256,18 +204,12 @@ app.use((err, req, res, _next) => {
 
 /* ---------- Start & Shutdown ---------- */
 const server = app.listen(PORT, "0.0.0.0", () => {
-  logger.info(
-    { port: PORT, deploy_env: isProd ? "prod" : "dev", url: APP_URL },
-    "API listening"
-  );
+  logger.info({ port: PORT, deploy_env: isProd ? "prod" : "dev", url: APP_URL }, "API listening");
 });
-
 function shutdown(sig) {
   logger.warn({ sig }, "Shutting down...");
   server.close(async () => {
-    try {
-      await pool.end();
-    } catch {}
+    try { await pool.end(); } catch {}
     logger.warn("Closed HTTP & PG pool. Bye.");
     process.exit(0);
   });
