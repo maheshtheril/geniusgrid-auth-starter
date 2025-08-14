@@ -56,22 +56,19 @@ function ActionIcon({ title, onClick, disabled, children }) {
   );
 }
 
-// Compact date field with inline label + calendar icon
-function DateField({ label, value, onChange, ariaLabel }) {
+// Compact date input (NO labels, NO "Today" button)
+function DateInput({ value, onChange, ariaLabel }) {
   return (
-    <label className="inline-flex items-center gap-2">
-      <span className="w-10 text-xs text-[color:var(--muted)]">{label}</span>
-      <div className="relative">
-        <input
-          type="date"
-          className="gg-input h-9 w-[150px] pr-9"
-          value={value}
-          onChange={onChange}
-          aria-label={ariaLabel || label}
-        />
-        <CalendarDays className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 opacity-60 pointer-events-none" />
-      </div>
-    </label>
+    <div className="relative">
+      <input
+        type="date"
+        className="gg-input h-9 w-[150px] pr-9"
+        value={value}
+        onChange={onChange}
+        aria-label={ariaLabel}
+      />
+      <CalendarDays className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 opacity-60 pointer-events-none" />
+    </div>
   );
 }
 
@@ -530,12 +527,6 @@ export default function LeadsPage() {
 
   /* ------------------------ Misc small helpers ------------------------ */
 
-  const setTodayRange = () => {
-    const today = todayInTZ();
-    setFilters(f => ({ ...f, date_from: today, date_to: today }));
-    setPage(1);
-  };
-
   // Compact view selector for small screens
   const viewSelect = (
     <select
@@ -594,22 +585,19 @@ export default function LeadsPage() {
         {/* Filters */}
         <div className="gg-surface p-3 rounded-2xl">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            {/* Neat date range */}
+            {/* Date range — NO labels, NO Today */}
             <div className="flex items-center gap-3 flex-wrap">
-              <DateField
-                label="From"
+              <DateInput
                 value={filters.date_from}
                 onChange={(e) => { setFilters(f => ({ ...f, date_from: e.target.value })); setPage(1); }}
+                ariaLabel="From date"
               />
               <span className="opacity-40">–</span>
-              <DateField
-                label="To"
+              <DateInput
                 value={filters.date_to}
                 onChange={(e) => { setFilters(f => ({ ...f, date_to: e.target.value })); setPage(1); }}
+                ariaLabel="To date"
               />
-              <button type="button" className="gg-btn gg-btn-ghost h-9" onClick={setTodayRange}>
-                Today
-              </button>
             </div>
 
             {/* Search */}
