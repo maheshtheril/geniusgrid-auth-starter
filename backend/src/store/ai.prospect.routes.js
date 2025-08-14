@@ -1,5 +1,5 @@
 // backend/src/store/ai.prospect.routes.js
-// Live (PDL-backed) or graceful-fallback prospecting with a tiny in-memory store.
+// Prospecting (PDL-backed) with graceful fallback + tiny in-memory stores.
 
 import express from "express";
 import { randomUUID } from "crypto";
@@ -18,7 +18,56 @@ function addEvent(job, level, message) {
   return e;
 }
 
-// Normalize PDL results into simple items
+/* ---------------- Normalization helpers ---------------- */
+
+/**
+ * Normalize "prompt" into an **inner** Elasticsearch query OBJECT.
+ * - If prompt is a JSON string and already wrapped like { "query": { ... } }, unwrap to inner .query
+ * - If prompt is a JSON string with { "bool": ... } or any ES clause, use it as-is
+ * - Otherwise treat prompt as free text via simple_query_string
+ */
+function normalizePrompt(prompt) {
+  if (typeof prompt !== "string") {
+    return { match_all: {} };
+  }
+  const s = prompt.trim();
+  if (!s) return { match_all: {} };
+
+  if (s.startsWith("{")) {
+    try {
+      const obj = JSON.parse(s);
+      if (obj && typeof obj === "object") {
+        if (obj.query && typeof obj.query === "object") {
+          // Already wrapped; unwrap once
+          return obj.query;
+        }
+        // Already an inner query (e.g., { "bool": {...} })
+        return obj;
+      }
+    } catch {
+      // fall through to text mode
+    }
+  }
+
+  // Text mode: use simple_query_string on relevant fields; AND semantics.
+  return {
+    simple_query_string: {
+      query: s,
+      default_operator: "and",
+      fields: [
+        "full_name^1",
+        "job_title^3",
+        "job_company_name^2",
+        "job_company_industry",
+        "summary",
+        "skills",
+      ],
+    },
+  };
+}
+
+/* ---------------- Mapping helpers ---------------- */
+
 function mapPDLItems(pdlJson = {}) {
   const arr = Array.isArray(pdlJson.data) ? pdlJson.data : [];
   return arr.slice(0, 200).map((p, i) => ({
@@ -33,34 +82,17 @@ function mapPDLItems(pdlJson = {}) {
   }));
 }
 
-// Call People Data Labs (if key configured)
-async function fetchPDL(prompt, size) {
+/* ---------------- External calls ---------------- */
+
+async function fetchPDL(esInnerQuery, size) {
   const key = process.env.PDL_API_KEY?.trim();
   if (!key) throw new Error("Missing PDL_API_KEY");
 
   const url = "https://api.peopledatalabs.com/v5/person/search";
 
-  // Build an Elasticsearch query that PDL accepts.
-  // Falls back to a reasonable default if prompt is empty.
-const es = {
-  bool: {
-    should: [
-      { match_phrase: { job_title: "procurement" } },
-      { match_phrase: { job_title: "finance" } },
-      { match_phrase: { job_title: "operations" } },
-      { match: { job_company_industry: "manufacturing" } },
-      { match: { job_company_name: "manufacturer" } },
-      { simple_query_string: { query: prompt || "", fields: ["job_title^2","job_company_name","job_company_industry","summary","skills"] } },
-    ],
-    minimum_should_match: 1,
-    filter: [{ term: { location_country: "India" } }],
-  },
-};
-
-
+  // Make sure we only wrap **once** at the body level
   const body = {
-    // IMPORTANT: PDL expects query to be a JSON STRING (stringified)
-    query: JSON.stringify(es),
+    query: JSON.stringify(esInnerQuery), // PDL expects a STRING here
     size: Math.max(1, Math.min(Number(size) || 25, 200)),
   };
 
@@ -80,27 +112,55 @@ const es = {
   return r.json();
 }
 
+/* ---------------- Mock generator ---------------- */
+
+function makeMock(esInnerQuery, size) {
+  const n = Math.max(1, Math.min(Number(size) || 10, 200));
+  const summary = (() => {
+    try {
+      return JSON.stringify(esInnerQuery);
+    } catch {
+      return String(esInnerQuery);
+    }
+  })();
+  const items = Array.from({ length: n }, (_, i) => ({
+    id: randomUUID(),
+    name: `Mock Lead ${i + 1}`,
+    title: "Procurement Manager",
+    company: `MockCo ${(i % 12) + 1}`,
+    email: `lead${i + 1}@mockco.example`,
+    _query: summary,
+  }));
+  return items;
+}
+
+/* ---------------- Routes ---------------- */
 
 // Health
 router.get("/ping", (_req, res) => res.json({ ok: true }));
 
 // Create job
 router.post("/jobs", async (req, res) => {
-  const { prompt = "", size = 50 } = req.body || {};
-  const id = randomUUID();
+  const { prompt = "", size = 50, provider: reqProvider } = req.body || {};
+  const useMock =
+    reqProvider === "mock" ||
+    process.env.USE_MOCK_AI === "1" ||
+    !process.env.PDL_API_KEY;
 
+  const id = randomUUID();
   const job = {
     id,
     status: "queued",
     import_job_id: null,
-    provider: "pdl",
+    provider: useMock ? "mock" : "pdl",
     events: [],
     created_at: nowISO(),
   };
   JOBS.set(id, job);
 
   addEvent(job, "info", "Queued job");
-  // respond immediately so the frontend can start polling
+
+  // respond immediately so the client can poll
   res.status(201).json({
     id: job.id,
     status: job.status,
@@ -108,26 +168,33 @@ router.post("/jobs", async (req, res) => {
     provider: job.provider,
   });
 
-  // run async work
+  // async processing
   (async () => {
     try {
       job.status = "running";
-      addEvent(job, "info", "Calling PDL…");
+
+      // Normalize prompt -> inner ES query object
+      const esInner = normalizePrompt(prompt);
 
       let items = [];
-      try {
-        const pdlJson = await fetchPDL(prompt, size);
-        addEvent(
-          job,
-          "success",
-          `PDL returned ${Array.isArray(pdlJson?.data) ? pdlJson.data.length : 0} results`
-        );
-        items = mapPDLItems(pdlJson);
-      } catch (e) {
-        // If PDL fails, keep job failed (or fallback to empty items).
-        job.status = "failed";
-        addEvent(job, "error", `PDL error: ${e?.message || String(e)}`);
-        return;
+      if (useMock) {
+        addEvent(job, "info", "Using mock provider");
+        items = makeMock(esInner, size);
+      } else {
+        addEvent(job, "info", "Calling PDL…");
+        try {
+          const pdlJson = await fetchPDL(esInner, size);
+          addEvent(
+            job,
+            "success",
+            `PDL returned ${Array.isArray(pdlJson?.data) ? pdlJson.data.length : 0} results`
+          );
+          items = mapPDLItems(pdlJson);
+        } catch (e) {
+          job.status = "failed";
+          addEvent(job, "error", `PDL error: ${e?.message || String(e)}`);
+          return;
+        }
       }
 
       const importId = randomUUID();
@@ -169,7 +236,7 @@ router.get("/jobs/:id/events", (req, res) => {
   res.json(out);
 });
 
-// ✅ Named export so imports router can read items
+// Export for imports router
 export function __getImport(importId) {
   return IMPORTS.get(importId) || null;
 }
