@@ -232,15 +232,10 @@ app.use("/api/leads", requireAuth, leadsMergeRoutes);
 /* Other modules */
 app.use("/api", requireAuth, leadsModule);
 
-/* Imports — use the newer plural router ONLY */
-app.use("/api/leads/imports", leadsImportsRoutes);
-
-
-
-/* Real AI prospect endpoints (only if mock is OFF) */
 if (!useMockAi) {
-  app.use("/api/ai/prospect", aiProspectRoutes);
-}
+   app.use("/api", aiProspectRoutes);     // exposes /api/ai/prospect/…
+   app.use("/api", leadsImportsRoutes);   // exposes /api/leads/imports/…
+ }
 
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
