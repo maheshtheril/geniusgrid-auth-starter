@@ -15,10 +15,6 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
   const [label, setLabel] = useState("");
   const [type, setType] = useState("text");
   const [required, setRequired] = useState(false);
-
-  // ⬇️ dropdown removed; always use "Advance"
-  const SECTION = "Advance";
-
   const [optionsText, setOptionsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [errMsg, setErrMsg] = useState("");
@@ -41,12 +37,12 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
               .filter(Boolean)
           : [];
 
+      // No section / group in payload
       const res = await http.post("/api/leads/custom-fields", {
         label,
         key,          // stable key/code
         type,         // "text" | "number" | "date" | "select" | "file"
         required,
-        section: SECTION, // ⬅️ always "Advance"
         options,
       });
 
@@ -113,9 +109,6 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
             />
             <label htmlFor="cf-required">Required</label>
           </div>
-
-          {/* ⬇️ Removed the General/Advance dropdown */}
-          {/* (section is always "Advance" now) */}
 
           {errMsg && <div className="text-sm text-rose-500">{errMsg}</div>}
         </div>
