@@ -31,19 +31,16 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
       const key = slugify(label);
       const options =
         type === "select"
-          ? optionsText
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean)
+          ? optionsText.split(",").map((s) => s.trim()).filter(Boolean)
           : [];
 
-      // No section / group in payload
+      // ✅ No section/group in payload
       const res = await http.post("/api/leads/custom-fields", {
         label,
-        key,          // stable key/code
-        type,         // "text" | "number" | "date" | "select" | "file"
+        key,        // stable key/code
+        type,       // "text" | "number" | "date" | "select" | "file"
         required,
-        options,
+        options,    // for "select"
       });
 
       onSuccess?.(res?.data);
