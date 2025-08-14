@@ -168,7 +168,7 @@ app.use("/api/auth", authMe);
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 
 /* ✅ PUBLIC: AI prospect namespace (correct path & order) */
-app.use("/api/ai/prospect", aiProspectRoutes);          // -> /api/ai/prospect/ping, /api/ai/prospect/jobs
+app.use("/api/ai/prospect",requireAuth, aiProspectRoutes);          // -> /api/ai/prospect/ping, /api/ai/prospect/jobs
 
 /* ---------- PROTECTED routes (scoped; no broad '/api' wall) ---------- */
 app.use("/api/admin", requireAuth, adminUsers);
