@@ -124,4 +124,13 @@ body.theme-light .priority-pill {
   color: #111 !important; /* near-black text */
   font-weight: 600;       /* make text thicker */
 }
+/* Light theme: make pill text darker */
+body.theme-light .gg-badge,
+body.theme-light .badge,
+body.theme-light .chip,
+body.theme-light .priority-pill {
+  color: #000 !important;    /* true black text for max contrast */
+  font-weight: 600 !important; /* slightly bolder for small text */
+  opacity: 1 !important;     /* ensure not faded */
+}
 
