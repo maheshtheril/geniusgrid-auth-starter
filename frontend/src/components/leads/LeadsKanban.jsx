@@ -1,14 +1,7 @@
+// 📁 src/components/leads/LeadsKanban.jsx
 import { useMemo, useState } from "react";
 
-/*
-  Stylish, theme-aware Kanban for Leads
-  - Drop-in replacement for your existing component
-  - No external libs; pure Tailwind + your CSS vars
-  - Keeps the same props & drag/drop API
-
-  Props:
-    loading, rows, stages, total, onMoveStage({ id, toStage }), onOpenLead(id)
-*/
+/* Props unchanged: loading, rows, stages, total, onMoveStage({id,toStage}), onOpenLead(id) */
 
 function KanbanSkeleton() {
   return (
@@ -25,44 +18,79 @@ function KanbanSkeleton() {
   );
 }
 
+// ✅ Stronger, unique tints for all common stages
 const stageStyles = (stage) => {
   const s = String(stage || "").toLowerCase();
+
   if (s.includes("won"))
     return {
       ring: "ring-emerald-400/50",
       chipBg: "bg-emerald-500/15",
-      chipText: "text-emerald-700 dark:text-emerald-300",
-      accent: "from-emerald-500/15 to-emerald-500/0",
+      chipText: "text-emerald-300", // bright in dark; light gets overridden by your light CSS
+      accent: "from-emerald-500/12 to-emerald-500/0",
       topBar: "bg-emerald-400/60",
     };
+
   if (s.includes("lost"))
     return {
       ring: "ring-rose-400/50",
       chipBg: "bg-rose-500/15",
-      chipText: "text-rose-700 dark:text-rose-300",
-      accent: "from-rose-500/15 to-rose-500/0",
+      chipText: "text-rose-300",
+      accent: "from-rose-500/12 to-rose-500/0",
       topBar: "bg-rose-400/60",
     };
+
   if (s.includes("proposal") || s.includes("negoti"))
     return {
       ring: "ring-blue-400/50",
       chipBg: "bg-blue-500/15",
-      chipText: "text-blue-700 dark:text-blue-300",
-      accent: "from-blue-500/15 to-blue-500/0",
+      chipText: "text-blue-300",
+      accent: "from-blue-500/12 to-blue-500/0",
       topBar: "bg-blue-400/60",
     };
+
   if (s.includes("qualif"))
     return {
       ring: "ring-sky-400/50",
       chipBg: "bg-sky-500/15",
-      chipText: "text-sky-700 dark:text-sky-300",
-      accent: "from-sky-500/15 to-sky-500/0",
+      chipText: "text-sky-300",
+      accent: "from-sky-500/12 to-sky-500/0",
       topBar: "bg-sky-400/60",
     };
+
+  // 🔥 NEW → give the “plain” ones proper color
+  if (s.includes("prospect"))
+    return {
+      ring: "ring-violet-400/50",
+      chipBg: "bg-violet-500/15",
+      chipText: "text-violet-300",
+      accent: "from-violet-500/12 to-violet-500/0",
+      topBar: "bg-violet-400/60",
+    };
+
+  if (s.includes("contact"))
+    return {
+      ring: "ring-cyan-400/50",
+      chipBg: "bg-cyan-500/15",
+      chipText: "text-cyan-300",
+      accent: "from-cyan-500/12 to-cyan-500/0",
+      topBar: "bg-cyan-400/60",
+    };
+
+  if (s.includes("new"))
+    return {
+      ring: "ring-indigo-400/50",
+      chipBg: "bg-indigo-500/15",
+      chipText: "text-indigo-300",
+      accent: "from-indigo-500/12 to-indigo-500/0",
+      topBar: "bg-indigo-400/60",
+    };
+
+  // default
   return {
     ring: "ring-slate-400/40",
     chipBg: "bg-slate-500/10",
-    chipText: "text-slate-700 dark:text-slate-300",
+    chipText: "text-slate-300",
     accent: "from-slate-500/10 to-slate-500/0",
     topBar: "bg-slate-400/50",
   };
@@ -79,9 +107,10 @@ export default function LeadsKanban({
   const [dragId, setDragId] = useState(null);
 
   const cols = useMemo(() => {
-    const list = (stages?.length
-      ? stages
-      : Array.from(new Set(rows.map((r) => r.stage).filter(Boolean))))?.map(String) || [];
+    const list =
+      (stages?.length
+        ? stages
+        : Array.from(new Set(rows.map((r) => r.stage).filter(Boolean))))?.map(String) || [];
     const grouped = Object.fromEntries(list.map((s) => [s, []]));
     rows.forEach((r) => {
       const s = r.stage || list[0] || "new";
@@ -99,7 +128,7 @@ export default function LeadsKanban({
   };
 
   return (
-    <div className="grid gap-5 md:grid-cols-3">
+    <div className="gg-kanban grid gap-5 md:grid-cols-3">
       {cols.order.map((stage) => {
         const S = stageStyles(stage);
         return (
@@ -153,6 +182,16 @@ export default function LeadsKanban({
           </div>
         );
       })}
+
+      {/* Scoped dark-theme readability for tiny text (no global side effects) */}
+      <style>{`
+        :root[data-theme="dark"] .gg-kanban [data-micro],
+        html.theme-dark .gg-kanban [data-micro],
+        body.theme-dark .gg-kanban [data-micro] {
+          color: #cbd5e1 !important; /* slate-300 */
+          opacity: 0.95 !important;
+        }
+      `}</style>
     </div>
   );
 }
@@ -179,7 +218,8 @@ function LeadCard({ lead, onOpenLead, setDragId, styleSet }) {
           >
             {lead.name || "(untitled)"}
           </button>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] ${chipBg} ${chipText} border border-[color:var(--border)]/40`}
+          <span
+            className={`rounded-full px-2 py-0.5 text-[10px] ${chipBg} ${chipText} border border-[color:var(--border)]/40`}
             title={`Status: ${lead.status || "new"}`}
           >
             {lead.status || "new"}
@@ -187,7 +227,7 @@ function LeadCard({ lead, onOpenLead, setDragId, styleSet }) {
         </div>
 
         {/* subline */}
-        <div className="mt-1 flex items-center justify-between text-[11px] text-[color:var(--muted)]">
+        <div className="mt-1 flex items-center justify-between text-[11px] text-[color:var(--muted)]" data-micro>
           <div className="inline-flex items-center gap-1 min-w-0">
             <Dot />
             <span className="truncate" title={lead.company_name || "-"}>{lead.company_name || "-"}</span>
@@ -199,13 +239,14 @@ function LeadCard({ lead, onOpenLead, setDragId, styleSet }) {
         </div>
 
         {/* footer chips */}
-        <div className="mt-2 flex items-center justify-between">
-          <div className="inline-flex items-center gap-2 text-[11px] text-[color:var(--muted)]">
+        <div className="mt-2 flex items-center justify-between" data-micro>
+          <div className="inline-flex items-center gap-2 text-[11px]">
             <Avatar text={lead.owner_name} size={7} />
             <span className="truncate max-w-[10rem]" title={lead.owner_name || "-"}>{lead.owner_name || "-"}</span>
           </div>
           {lead.priority && (
-            <span className={`rounded-full px-2 py-0.5 text-[10px] ${chipBg} ${chipText} border border-[color:var(--border)]/40`}
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] ${chipBg} ${chipText} border border-[color:var(--border)]/40`}
               title={`Priority: ${lead.priority}`}
             >
               {lead.priority}
@@ -238,9 +279,7 @@ function Avatar({ text = "", size = 8 }) {
 }
 
 function Dot() {
-  return (
-    <span className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--muted)]/60" />
-  );
+  return <span className="inline-block h-1.5 w-1.5 rounded-full bg-[color:var(--muted)]/60" />;
 }
 
 function Shield() {
