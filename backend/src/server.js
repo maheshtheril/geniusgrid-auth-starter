@@ -37,6 +37,8 @@ import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 /* ✅ AI Prospect + Imports (store namespace) */
 import aiProspectRoutes from "./store/ai.prospect.routes.js";
 import leadsImportsRoutes from "./store/leads.imports.routes.js";
+
+/* ✅ Custom fields (leads) */
 import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 
 const app = express();
@@ -52,7 +54,9 @@ const ORIGINS = [
   "http://localhost:5173",
   "https://geniusgrid-web.onrender.com",
   ...(process.env.FRONTEND_ORIGINS ? process.env.FRONTEND_ORIGINS.split(",") : []),
-].map((s) => s.trim()).filter(Boolean);
+]
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 /* ---------- Logger ---------- */
 const logger = pino({
@@ -98,7 +102,10 @@ app.use(
     exposedHeaders: ["X-Request-Id", "X-Version"],
   })
 );
-app.use((req, res, next) => { res.header("Vary", "Origin"); next(); });
+app.use((req, res, next) => {
+  res.header("Vary", "Origin");
+  next();
+});
 app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
 /* ---------- Version headers ---------- */
@@ -113,7 +120,9 @@ app.use("/api", leadsCheckMobile);
 
 /* ---------- Public health ---------- */
 app.get("/healthz", (_req, res) => res.status(200).send("ok"));
-app.get("/api/health", (_req, res) => res.status(200).json({ ok: true, ts: new Date().toISOString() }));
+app.get("/api/health", (_req, res) =>
+  res.status(200).json({ ok: true, ts: new Date().toISOString() })
+);
 app.head("/api/health", (_req, res) => res.sendStatus(200));
 app.head("/", (_req, res) => res.sendStatus(200));
 app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
@@ -168,13 +177,16 @@ app.use("/api/auth", auth);
 app.use("/api/auth", authMe);
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 
-/* ✅ PUBLIC: AI prospect namespace (correct path & order) */
-app.use("/api/ai/prospect",requireAuth, aiProspectRoutes);          // -> /api/ai/prospect/ping, /api/ai/prospect/jobs
+/* ✅ PROTECTED: AI prospect namespace (requires auth) */
+app.use("/api/ai/prospect", requireAuth, aiProspectRoutes); // /api/ai/prospect/jobs,...
 
 /* ---------- PROTECTED routes (scoped; no broad '/api' wall) ---------- */
 app.use("/api/admin", requireAuth, adminUsers);
 app.use("/api/dashboard", requireAuth, dashboardRoutes);
 app.use("/api/crm", requireAuth, customFieldsRoutes);
+
+/* ⚠️ Mount specific custom-fields BEFORE generic /api/leads to avoid :id collisions */
+app.use("/api", requireAuth, leadsCustomFieldsRoutes);
 
 /* Leads core + utilities */
 app.use("/api/leads", requireAuth, leadsRoutes);
@@ -182,8 +194,6 @@ app.use("/api/leads", requireAuth, leadsAiRoutes);
 app.use("/api/leads", requireAuth, leadsDupRoutes);
 app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
-
-app.use("/api", leadsCustomFieldsRoutes);
 
 /* Imports (scoped) */
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
@@ -207,12 +217,18 @@ app.use((err, req, res, _next) => {
 
 /* ---------- Start & Shutdown ---------- */
 const server = app.listen(PORT, "0.0.0.0", () => {
-  logger.info({ port: PORT, deploy_env: isProd ? "prod" : "dev", url: APP_URL }, "API listening");
+  logger.info(
+    { port: PORT, deploy_env: isProd ? "prod" : "dev", url: APP_URL },
+    "API listening"
+  );
 });
+
 function shutdown(sig) {
   logger.warn({ sig }, "Shutting down...");
   server.close(async () => {
-    try { await pool.end(); } catch {}
+    try {
+      await pool.end();
+    } catch {}
     logger.warn("Closed HTTP & PG pool. Bye.");
     process.exit(0);
   });
