@@ -1,7 +1,6 @@
 // 📄 src/controllers/leadsCustomFieldsController.js
 import {
-  findActiveLeadsFormVersionId,   // read-only (no inserts)
-  getActiveLeadsFormVersionId,    // create-if-missing (used on POST)
+  getActiveLeadsFormVersionId,   // create-if-missing (used for GET & POST)
   listFieldsByFormVersion,
   upsertCustomField,
   upsertLeadCustomValues,
@@ -15,12 +14,12 @@ const getTenantId = (req) =>
   req.headers["x-tenant-id"] ||
   null;
 
-// GET /api/leads/custom-fields   → read-only
+// GET /api/leads/custom-fields  → returns { formVersionId, fields: [] }
 export async function listFields(req, res) {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ message: "No tenant in session" });
 
-  // Optional: scope debug without touching tables
+  // Optional scope debug (no writes)
   if (req.query.__scope === "1") {
     try {
       const dbg = await getTenantDebugInfo(tenantId);
@@ -31,8 +30,8 @@ export async function listFields(req, res) {
   }
 
   try {
-    const formVersionId = await findActiveLeadsFormVersionId(tenantId); // READ ONLY
-    if (!formVersionId) return res.json({ formVersionId: null, fields: [] });
+    // ensure form & active version exist, then list fields
+    const formVersionId = await getActiveLeadsFormVersionId(tenantId);
     const fields = await listFieldsByFormVersion(tenantId, formVersionId);
     return res.json({ formVersionId, fields });
   } catch (e) {
@@ -41,7 +40,7 @@ export async function listFields(req, res) {
   }
 }
 
-// POST /api/leads/custom-fields  → create/upssert a field (bootstraps form/version)
+// POST /api/leads/custom-fields  → create/upssert a field
 export async function createField(req, res) {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ message: "No tenant in session" });
@@ -58,7 +57,8 @@ export async function createField(req, res) {
       .replace(/^_+|_+$/g, "")
       .slice(0, 64);
 
-    const formVersionId = await getActiveLeadsFormVersionId(tenantId); // create-if-missing
+    const formVersionId = await getActiveLeadsFormVersionId(tenantId);
+
     const field = await upsertCustomField({
       tenantId,
       formVersionId,
@@ -80,7 +80,7 @@ export async function createField(req, res) {
   }
 }
 
-// POST /api/leads/:leadId/custom-field-values  → save values
+// POST /api/leads/:leadId/custom-field-values  → save values for a lead
 export async function saveValuesForLead(req, res) {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ message: "No tenant in session" });
@@ -88,6 +88,7 @@ export async function saveValuesForLead(req, res) {
   try {
     const { leadId } = req.params;
     const { values } = req.body; // [{ code, value }...]
+
     if (!Array.isArray(values) || !values.length) {
       return res.status(422).json({ message: "values[] required" });
     }
@@ -108,5 +109,6 @@ export async function saveValuesForLead(req, res) {
   }
 }
 
-// Provide default export too (so the router can use either style)
+// Export both ways so your router works no matter how it imports
 export default { listFields, createField, saveValuesForLead };
+export { listFields, createField, saveValuesForLead };
