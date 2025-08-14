@@ -117,3 +117,9 @@ body.theme-light .gg-muted {
   color: var(--muted-text) !important;
   opacity: 1 !important;
 }
+/* Light theme only */
+body.theme-light .status-chip,
+body.theme-light .stage-chip,
+body.theme-light .priority-pill {
+  filter: brightness(85%); /* makes it a bit darker */
+}
