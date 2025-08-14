@@ -1,20 +1,15 @@
-
-// Minimal public Import Items stub (reads from in-memory IMPORTS)
+// backend/src/store/leads.imports.routes.js
 import express from "express";
-import { IMPORTS } from "./ai.prospect.routes.js";
+import { __getImport } from "./ai.prospect.routes.js";
 
 const router = express.Router();
 
-router.get("/leads/imports/:importId/items", (req, res) => {
-  const { importId } = req.params;
-  const limit = Math.max(1, Math.min(parseInt(req.query.limit ?? 5, 10) || 5, 200));
-
-  const bag = IMPORTS.get(importId);
-  if (!bag) return res.json([]);
-
-  const items = Array.isArray(bag.items) ? bag.items.slice(0, limit) : [];
-  res.json(items);
+// GET /api/leads/imports/:importId/items?limit=5
+router.get("/:importId/items", (req, res) => {
+  const rec = __getImport(req.params.importId);
+  if (!rec) return res.status(404).json({ message: "Import not found" });
+  const limit = Math.max(1, Math.min(Number(req.query.limit) || 5, 200));
+  res.json(rec.items.slice(0, limit));
 });
 
 export default router;
-
