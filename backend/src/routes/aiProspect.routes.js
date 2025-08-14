@@ -69,7 +69,7 @@ router.get("/ai/prospect/jobs/:id/events", requireAuth, async (req, res, next) =
 });
 
 /** POST /api/ai/prospect/jobs/:id/cancel */
-router.post("/ai/prospect/jobs/:id/cancel", requireAuth, async (req, res, next) => {
+router.post("/jobs/:id/cancel", requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
     const { rowCount } = await pool.query(
