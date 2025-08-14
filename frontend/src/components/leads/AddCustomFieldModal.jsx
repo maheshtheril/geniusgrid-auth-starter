@@ -16,9 +16,10 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
   const [type, setType] = useState("text");
   const [required, setRequired] = useState(false);
 
-  // optional but useful (backend can ignore if not used)
-  const [section, setSection] = useState("General"); // "General" | "Advance"
-  const [optionsText, setOptionsText] = useState(""); // for 'select' (comma-separated)
+  // ⬇️ dropdown removed; always use "Advance"
+  const SECTION = "Advance";
+
+  const [optionsText, setOptionsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [errMsg, setErrMsg] = useState("");
 
@@ -40,14 +41,13 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
               .filter(Boolean)
           : [];
 
-      // ✅ NOTE: /api prefix
       const res = await http.post("/api/leads/custom-fields", {
         label,
-        key,          // many backends require a stable key/code
+        key,          // stable key/code
         type,         // "text" | "number" | "date" | "select" | "file"
         required,
-        section,      // optional; backend can default to "General"
-        options,      // optional jsonb []
+        section: SECTION, // ⬅️ always "Advance"
+        options,
       });
 
       onSuccess?.(res?.data);
@@ -114,19 +114,10 @@ export default function AddCustomFieldModal({ open, onClose, onSuccess }) {
             <label htmlFor="cf-required">Required</label>
           </div>
 
-          {/* optional section selector; harmless if backend ignores */}
-          <select
-            value={section}
-            onChange={(e) => setSection(e.target.value)}
-            className="select select-bordered w-full"
-          >
-            <option value="General">General</option>
-            <option value="Advance">Advance</option>
-          </select>
+          {/* ⬇️ Removed the General/Advance dropdown */}
+          {/* (section is always "Advance" now) */}
 
-          {errMsg && (
-            <div className="text-sm text-rose-500">{errMsg}</div>
-          )}
+          {errMsg && <div className="text-sm text-rose-500">{errMsg}</div>}
         </div>
 
         <div className="modal-action">
