@@ -1,6 +1,6 @@
-// src/components/leads/AddLeadDrawer.jsx — world‑class UI (full, updated)
+// src/components/leads/AddLeadDrawer.jsx — world-class UI (full, updated)
 // Focus: phone input is maximum width; country dropdown & dial code are compact.
-// Also: clean sections, single "Add custom field" in Advance, no hard-coded textarea.
+// Also: clean sections, single "Add custom field" in Advance, no Group/Section picker anywhere.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -625,11 +625,12 @@ export default function AddLeadDrawer({
         <CFModal
           onClose={() => setShowCFModal(false)}
           onSave={async (field) => {
-            let newField = { ...field, group: field.group === "advance" ? "advance" : "general" };
+            // Force every new field into Advance group
+            let newField = { ...field, group: "advance" };
             if (onCreateCustomField) {
               try {
                 const persisted = await onCreateCustomField(newField);
-                if (persisted) newField = { ...newField, ...persisted };
+                if (persisted) newField = { ...newField, ...persisted, group: "advance" };
               } catch {}
             }
             setCfList((list) => [...list, newField]);
@@ -655,7 +656,8 @@ export default function AddLeadDrawer({
 }
 
 function CFModal({ onClose, onSave }) {
-  const [f, setF] = useState({ label: "", key: "", type: "text", group: "general", required: false, optionsText: "" });
+  // Removed group from state & UI; we'll always save as 'advance'
+  const [f, setF] = useState({ label: "", key: "", type: "text", required: false, optionsText: "" });
 
   const save = () => {
     const key = (f.key || f.label).trim().toLowerCase().replace(/\s+/g, "_");
@@ -665,7 +667,7 @@ function CFModal({ onClose, onSave }) {
       label: f.label.trim(),
       key,
       type: f.type,
-      group: f.group,
+      group: "advance", // <- forced to Advance
       required: !!f.required,
       options: f.type === "select" ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean) : [],
     };
@@ -686,18 +688,11 @@ function CFModal({ onClose, onSave }) {
             <label className="gg-label">Label *</label>
             <input className="gg-input h-10" value={f.label} onChange={(e) => setF((s) => ({ ...s, label: e.target.value }))} />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="gg-label">Key</label>
-              <input className="gg-input h-10" value={f.key} onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))} placeholder="auto from label if empty" />
-            </div>
-            <div>
-              <label className="gg-label">Group</label>
-              <select className="gg-input h-10" value={f.group} onChange={(e) => setF((s) => ({ ...s, group: e.target.value }))}>
-                <option value="general">General</option>
-                <option value="advance">Advance</option>
-              </select>
-            </div>
+
+          {/* Key only — Group selector removed */}
+          <div>
+            <label className="gg-label">Key</label>
+            <input className="gg-input h-10" value={f.key} onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))} placeholder="auto from label if empty" />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
