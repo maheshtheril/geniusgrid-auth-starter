@@ -38,6 +38,9 @@ import leadsImportsRoutes from "./store/leads.imports.routes.js";
 import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js";
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
+
+
+
 //import adminCronRoutes from "./routes/admin.cron.routes.js";
 
 
@@ -231,10 +234,10 @@ app.use("/api/leads", requireAuth, leadsMergeRoutes);
 
 /* Other modules */
 app.use("/api", requireAuth, leadsModule);
-
+  app.use("/api", leadsImportsRoutes);   // exposes /api/leads/imports/…
 if (!useMockAi) {
    app.use("/api", aiProspectRoutes);     // exposes /api/ai/prospect/…
-   app.use("/api", leadsImportsRoutes);   // exposes /api/leads/imports/…
+ 
  }
 
 /* ---------- 404 & Errors ---------- */
