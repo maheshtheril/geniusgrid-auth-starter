@@ -9,20 +9,18 @@ import LeadsCards from "@/components/leads/LeadsCards";
 import LeadDrawer from "@/components/leads/LeadDrawer";
 import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
 import { useEnv } from "@/store/useEnv";
-import { Table2, KanbanSquare, Grid2X2 } from "lucide-react";
+import {
+  Table2,
+  KanbanSquare,
+  Grid2X2,
+  FileSpreadsheet,
+  FileText,
+  CalendarDays,
+} from "lucide-react";
 
-const DEFAULT_COLUMNS = [
-  { key: "name",         label: "Lead",     visible: true  },
-  { key: "company_name", label: "Company",  visible: true  },
-  { key: "status",       label: "Status",   visible: true  },
-  { key: "stage",        label: "Stage",    visible: true  },
-  { key: "owner_name",   label: "Owner",    visible: true  },
-  { key: "score",        label: "AI Score", visible: true  },
-  { key: "priority",     label: "Priority", visible: false },
-  { key: "created_at",   label: "Created",  visible: true  },
-];
+/* ------------------------ Small UI helpers ------------------------ */
 
-// Small icon button
+// Tiny reusable icon button (for view toggles)
 function IconBtn({ title, active, onClick, children }) {
   return (
     <button
@@ -40,7 +38,57 @@ function IconBtn({ title, active, onClick, children }) {
   );
 }
 
-/** YYYY-MM-DD for a given tz (defaults Asia/Kolkata) */
+// Square image/icon button (for exports)
+function ActionIcon({ title, onClick, disabled, children }) {
+  return (
+    <button
+      type="button"
+      title={title}
+      aria-label={title}
+      onClick={onClick}
+      disabled={disabled}
+      className={`gg-btn h-9 w-9 p-0 flex items-center justify-center rounded-lg ${
+        disabled ? "opacity-60 cursor-not-allowed" : ""
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Compact date field with inline label + calendar icon
+function DateField({ label, value, onChange, ariaLabel }) {
+  return (
+    <label className="inline-flex items-center gap-2">
+      <span className="w-10 text-xs text-[color:var(--muted)]">{label}</span>
+      <div className="relative">
+        <input
+          type="date"
+          className="gg-input h-9 w-[150px] pr-9"
+          value={value}
+          onChange={onChange}
+          aria-label={ariaLabel || label}
+        />
+        <CalendarDays className="w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 opacity-60 pointer-events-none" />
+      </div>
+    </label>
+  );
+}
+
+/* ----------------------------- Constants ----------------------------- */
+
+const DEFAULT_COLUMNS = [
+  { key: "name",         label: "Lead",     visible: true  },
+  { key: "company_name", label: "Company",  visible: true  },
+  { key: "status",       label: "Status",   visible: true  },
+  { key: "stage",        label: "Stage",    visible: true  },
+  { key: "owner_name",   label: "Owner",    visible: true  },
+  { key: "score",        label: "AI Score", visible: true  },
+  { key: "priority",     label: "Priority", visible: false },
+  { key: "created_at",   label: "Created",  visible: true  },
+];
+
+// YYYY-MM-DD for timezone (default Asia/Kolkata)
 function todayInTZ(tz = "Asia/Kolkata") {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: tz,
@@ -49,6 +97,8 @@ function todayInTZ(tz = "Asia/Kolkata") {
     day: "2-digit",
   }).format(new Date());
 }
+
+/* ============================== Page ============================== */
 
 export default function LeadsPage() {
   const api = useLeadsApi();
@@ -69,7 +119,7 @@ export default function LeadsPage() {
   const [sortKey, setSortKey]   = useState(null);
   const [sortDir, setSortDir]   = useState("asc");
 
-  // Data + UI
+  // Data + UI state
   const [rows, setRows]         = useState([]);
   const [stages, setStages]     = useState([]);
   const [columns, setColumns]   = useState(() => {
@@ -82,15 +132,17 @@ export default function LeadsPage() {
   const [selected, setSelected]     = useState(null);
   const [openDrawer, setOpenDrawer] = useState(false);
 
-  // Add drawer (remount to clear form state)
-  const [openAdd, setOpenAdd]   = useState(false);
-  const [addKey, setAddKey]     = useState(0);
+  // Remount Add drawer each open to clear form state
+  const [openAdd, setOpenAdd]       = useState(false);
+  const [addKey, setAddKey]         = useState(0);
 
-  const [loading, setLoading]   = useState(false);
+  const [loading, setLoading]       = useState(false);
 
-  // AI refresh state
+  // AI refresh state (page-scope)
   const [aiRefreshing, setAiRefreshing] = useState(false);
   const [aiProgress, setAiProgress] = useState({ done: 0, total: 0 });
+
+  // per-row busy ids for inline AI refresh button
   const [aiBusyIds, setAiBusyIds] = useState(() => new Set());
 
   // Export state
@@ -160,7 +212,8 @@ export default function LeadsPage() {
     return Object.fromEntries(Object.entries(merged).filter(([,v]) => v !== undefined));
   }, [query, filters, page, pageSize, sortKey, sortDir, view, visibleColumns]);
 
-  // Fetchers
+  /* ------------------------------ Fetchers ------------------------------ */
+
   const fetchLeads = useCallback(async () => {
     setLoading(true);
     try {
@@ -179,10 +232,9 @@ export default function LeadsPage() {
       const data = await api.listPipelines();
       if (!mountedRef.current) return;
       setStages(data.stages || data || []);
-    } catch {}
+    } catch {/* ignore */}
   }, [api]);
 
-  // Lead custom fields once
   const fetchLeadCustomFields = useCallback(async () => {
     try {
       const res = await axios.get("/api/crm/custom-fields", {
@@ -211,7 +263,8 @@ export default function LeadsPage() {
   useEffect(() => { fetchLeads(); }, [fetchLeads]);
   useEffect(() => { fetchLeadCustomFields(); }, [fetchLeadCustomFields]);
 
-  // Client-side sorting (stable)
+  /* --------------------------- Client-side sort -------------------------- */
+
   const sortedRows = useMemo(() => {
     if (!sortKey) return rows;
     const normalize = (v) => {
@@ -234,15 +287,18 @@ export default function LeadsPage() {
     return arr;
   }, [rows, sortKey, sortDir]);
 
-  // Actions
+  /* ------------------------------ Actions ------------------------------- */
+
   const onInlineUpdate = async (id, patch) => {
     await api.updateLead(id, patch);
     setRows(prev => prev.map(r => (r.id === id ? { ...r, ...patch } : r)));
   };
+
   const onMoveStage = async ({ id, toStage }) => {
     await api.updateLead(id, { stage: toStage });
     setRows(prev => prev.map(r => (r.id === id ? { ...r, stage: toStage } : r)));
   };
+
   const onOpenLead = (id) => { setSelected(id); setOpenDrawer(true); };
 
   const onAddSuccess = (newLead) => {
@@ -339,13 +395,15 @@ export default function LeadsPage() {
     if (mountedRef.current) setAiRefreshing(false);
   }, [api, rows]);
 
-  // ----- Export helpers -----
+  /* ---------------------------- Export helpers --------------------------- */
+
   const exportFileBase = () => {
     const from = (filters.date_from || "all");
     const to   = (filters.date_to   || "all");
     return `leads_${from}_to_${to}`;
   };
 
+  // fetch ALL filtered rows (not just current page)
   const fetchAllForExport = async () => {
     const pageSize = 5000;
     let pageNum = 1;
@@ -378,6 +436,7 @@ export default function LeadsPage() {
     return { header, records };
   };
 
+  // Excel via CDN (fallback to CSV) — avoids bundling deps
   const exportExcel = async () => {
     setExporting(true);
     try {
@@ -385,7 +444,7 @@ export default function LeadsPage() {
       const { header, records } = buildExportRows(all);
 
       try {
-        const XLSX = await import("xlsx");
+        const XLSX = await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm");
         const sheetData = [header, ...records];
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
         const wb = XLSX.utils.book_new();
@@ -393,6 +452,7 @@ export default function LeadsPage() {
         XLSX.writeFile(wb, `${exportFileBase()}.xlsx`);
         return;
       } catch {
+        // Fallback: CSV
         const esc = (s) => `"${String(s).replace(/"/g, '""')}"`;
         const csv = [header.map(esc).join(","), ...records.map(row => row.map(esc).join(","))].join("\n");
         const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -410,6 +470,7 @@ export default function LeadsPage() {
     }
   };
 
+  // PDF via CDN (fallback to print-to-PDF)
   const exportPDF = async () => {
     setExporting(true);
     try {
@@ -418,12 +479,15 @@ export default function LeadsPage() {
       const title = `Leads (${filters.date_from || "all"} → ${filters.date_to || "all"})`;
 
       try {
-        const { jsPDF } = await import("jspdf");
-        await import("jspdf-autotable");
+        const jspdfMod = await import("https://cdn.jsdelivr.net/npm/jspdf@2.5.1/+esm");
+        const autoMod  = await import("https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/+esm");
+        const jsPDF    = jspdfMod.jsPDF || jspdfMod.default?.jsPDF || jspdfMod.default;
+        const autoTable = autoMod.default || autoMod;
+
         const doc = new jsPDF({ orientation: "landscape" });
         doc.setFontSize(12);
         doc.text(title, 14, 12);
-        doc.autoTable({
+        autoTable(doc, {
           head: [header],
           body: records,
           startY: 18,
@@ -433,6 +497,7 @@ export default function LeadsPage() {
         doc.save(`${exportFileBase()}.pdf`);
         return;
       } catch {
+        // Fallback: printable HTML
         const html = `
           <html>
             <head>
@@ -463,6 +528,14 @@ export default function LeadsPage() {
     }
   };
 
+  /* ------------------------ Misc small helpers ------------------------ */
+
+  const setTodayRange = () => {
+    const today = todayInTZ();
+    setFilters(f => ({ ...f, date_from: today, date_to: today }));
+    setPage(1);
+  };
+
   // Compact view selector for small screens
   const viewSelect = (
     <select
@@ -477,11 +550,7 @@ export default function LeadsPage() {
     </select>
   );
 
-  const setTodayRange = () => {
-    const today = todayInTZ();
-    setFilters(f => ({ ...f, date_from: today, date_to: today }));
-    setPage(1);
-  };
+  /* ------------------------------ Render ------------------------------ */
 
   return (
     <div className="min-h-[100dvh] bg-[var(--bg)] text-[color:var(--text)]">
@@ -525,33 +594,25 @@ export default function LeadsPage() {
         {/* Filters */}
         <div className="gg-surface p-3 rounded-2xl">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            {/* Date range */}
-            <div className="flex gap-2 flex-wrap">
-              <label className="flex items-center gap-2">
-                <span className="text-xs text-[color:var(--muted)]">From</span>
-                <input
-                  type="date"
-                  className="gg-input"
-                  value={filters.date_from}
-                  onChange={(e) => { setFilters(f => ({ ...f, date_from: e.target.value })); setPage(1); }}
-                  aria-label="From date"
-                />
-              </label>
-              <label className="flex items-center gap-2">
-                <span className="text-xs text-[color:var(--muted)]">To</span>
-                <input
-                  type="date"
-                  className="gg-input"
-                  value={filters.date_to}
-                  onChange={(e) => { setFilters(f => ({ ...f, date_to: e.target.value })); setPage(1); }}
-                  aria-label="To date"
-                />
-              </label>
-              <button type="button" className="gg-btn gg-btn-ghost" onClick={setTodayRange}>
+            {/* Neat date range */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <DateField
+                label="From"
+                value={filters.date_from}
+                onChange={(e) => { setFilters(f => ({ ...f, date_from: e.target.value })); setPage(1); }}
+              />
+              <span className="opacity-40">–</span>
+              <DateField
+                label="To"
+                value={filters.date_to}
+                onChange={(e) => { setFilters(f => ({ ...f, date_to: e.target.value })); setPage(1); }}
+              />
+              <button type="button" className="gg-btn gg-btn-ghost h-9" onClick={setTodayRange}>
                 Today
               </button>
             </div>
 
+            {/* Search */}
             <input
               value={query}
               onChange={(e) => { setQuery(e.target.value); setPage(1); }}
@@ -560,6 +621,7 @@ export default function LeadsPage() {
               aria-label="Search leads"
             />
 
+            {/* Stage & Status */}
             <div className="flex gap-3">
               <select
                 className="gg-input"
@@ -585,26 +647,15 @@ export default function LeadsPage() {
               </select>
             </div>
 
+            {/* Right controls */}
             <div className="flex items-center gap-2 lg:ml-auto">
-              {/* Export buttons */}
-              <button
-                type="button"
-                className="gg-btn"
-                onClick={exportExcel}
-                disabled={exporting}
-                title="Export all filtered leads to Excel"
-              >
-                {exporting ? "Exporting…" : "Export Excel"}
-              </button>
-              <button
-                type="button"
-                className="gg-btn"
-                onClick={exportPDF}
-                disabled={exporting}
-                title="Export all filtered leads to PDF"
-              >
-                {exporting ? "Exporting…" : "Export PDF"}
-              </button>
+              {/* Export as image/icon buttons */}
+              <ActionIcon title="Export Excel" onClick={exportExcel} disabled={exporting}>
+                <FileSpreadsheet size={18} />
+              </ActionIcon>
+              <ActionIcon title="Export PDF" onClick={exportPDF} disabled={exporting}>
+                <FileText size={18} />
+              </ActionIcon>
 
               <button
                 className="gg-btn gg-btn-ghost"
@@ -630,7 +681,7 @@ export default function LeadsPage() {
                           onChange={() => toggleColumn(c.key)}
                           className="accent-[var(--primary)]"
                         />
-                          <span className="text-sm">{c.label}</span>
+                        <span className="text-sm">{c.label}</span>
                       </label>
                     </li>
                   ))}
