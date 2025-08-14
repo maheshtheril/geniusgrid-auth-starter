@@ -1,10 +1,18 @@
 // src/controllers/leadsCustomFieldsController.js
 import { pool } from "../db/pool.js";
 
-/* Helper: ensure form + active version (no tricky SQL) */
+/* Set tenant scope (GUCs) on THIS connection */
+async function setTenantScope(client, tenantId) {
+  await client.query("select set_config('app.tenant_id', $1, true)", [tenantId]);
+  await client.query("select set_config('request.jwt.claims.tenant_id', $1, true)", [tenantId]);
+  await client.query("select set_config('request.tenant_id', $1, true)", [tenantId]);
+}
+
+/* Ensure form + active version */
 async function ensureFormAndActiveVersion(client, tenantId) {
-  // ensure form
-  let r = await client.query(
+  await setTenantScope(client, tenantId);
+
+  const form = await client.query(
     `insert into custom_forms (tenant_id, module_name, code, name)
      values ($1,'crm','leads','Leads Form')
      on conflict (tenant_id, module_name, code)
@@ -12,25 +20,23 @@ async function ensureFormAndActiveVersion(client, tenantId) {
      returning id`,
     [tenantId]
   );
-  const formId = r.rows[0].id;
+  const formId = form.rows[0].id;
 
-  // get active version if exists
-  r = await client.query(
+  const got = await client.query(
     `select id from custom_form_versions
      where tenant_id=$1 and form_id=$2 and status='active'
      order by version desc limit 1`,
     [tenantId, formId]
   );
-  if (r.rowCount) return r.rows[0].id;
+  if (got.rowCount) return got.rows[0].id;
 
-  // else create v1
-  const vr = await client.query(
+  const ins = await client.query(
     `insert into custom_form_versions (tenant_id, form_id, version, status)
      values ($1,$2,1,'active')
      returning id`,
     [tenantId, formId]
   );
-  return vr.rows[0].id;
+  return ins.rows[0].id;
 }
 
 /* GET /api/leads/custom-fields -> { formVersionId, fields: [...] } */
@@ -49,6 +55,18 @@ export async function listFields(req, res) {
        order by order_index, label`,
       [tenantId, formVersionId]
     );
+
+    // Optional debug: /api/leads/custom-fields?__dbg=1
+    if (req.query.__dbg) {
+      const dbg = await client.query(
+        `select
+           current_setting('app.tenant_id', true) as app_tenant_id,
+           current_setting('request.jwt.claims.tenant_id', true) as jwt_tenant_id,
+           current_setting('request.tenant_id', true) as req_tenant_id`
+      );
+      return res.json({ formVersionId, fields: rows, dbg: dbg.rows[0] });
+    }
+
     res.json({ formVersionId, fields: rows });
   } catch (err) {
     req.log?.error({ err }, "listFields failed");
@@ -71,9 +89,10 @@ export async function createField(req, res) {
   const client = await pool.connect();
   try {
     await client.query("begin");
+    await setTenantScope(client, tenantId); // <-- critical for RLS
+
     const formVersionId = await ensureFormAndActiveVersion(client, tenantId);
 
-    // next order index for inserts
     const oi = await client.query(
       `select coalesce(max(order_index),0)+1 as next
        from custom_fields where tenant_id=$1 and form_version_id=$2`,
@@ -99,12 +118,9 @@ export async function createField(req, res) {
     );
 
     await client.query("commit");
-    res.json({
-      formVersionId,
-      ...up.rows[0],
-    });
+    res.json({ formVersionId, ...up.rows[0] });
   } catch (err) {
-    await pool.query("rollback").catch(() => {});
+    await (async () => { try { await client.query("rollback"); } catch {} })();
     req.log?.error({ err }, "createField failed");
     res.status(500).json({ message: "Failed to save custom field" });
   } finally {
@@ -118,8 +134,7 @@ export async function saveValuesForLead(req, res) {
   if (!tenantId) return res.status(401).json({ message: "Unauthorized" });
 
   const leadId = req.params.leadId;
-  const valuesObj = req.body?.custom_fields || {}; // { key: value }
-
+  const valuesObj = req.body?.custom_fields || {};
   if (!leadId || typeof valuesObj !== "object") {
     return res.status(400).json({ message: "leadId and custom_fields required" });
   }
@@ -127,9 +142,10 @@ export async function saveValuesForLead(req, res) {
   const client = await pool.connect();
   try {
     await client.query("begin");
+    await setTenantScope(client, tenantId); // <-- critical for RLS
+
     const formVersionId = await ensureFormAndActiveVersion(client, tenantId);
 
-    // fetch fields map
     const { rows: fields } = await client.query(
       `select id, code, field_type
        from custom_fields
@@ -142,11 +158,11 @@ export async function saveValuesForLead(req, res) {
       const f = byCode.get(code);
       if (!f) continue;
 
-      let t = null, n = null, d = null, j = null, file = null;
+      let t=null, n=null, d=null, j=null, file=null;
       switch ((f.field_type || "").toLowerCase()) {
         case "number": n = value === "" || value == null ? null : Number(value); break;
         case "date":   d = value ? new Date(value) : null; break;
-        case "file":   file = value || null; break; // expects file_id uuid
+        case "file":   file = value || null; break;
         case "select":
         case "text":
         default:
@@ -170,15 +186,8 @@ export async function saveValuesForLead(req, res) {
            file_id      = excluded.file_id,
            updated_at   = now()`,
         [
-          tenantId,
-          formVersionId,
-          f.id,
-          leadId,
-          t,
-          n,
-          d,
-          j ? JSON.stringify(j) : null,
-          file,
+          tenantId, formVersionId, f.id, leadId,
+          t, n, d, j ? JSON.stringify(j) : null, file
         ]
       );
     }
@@ -186,7 +195,7 @@ export async function saveValuesForLead(req, res) {
     await client.query("commit");
     res.json({ ok: true });
   } catch (err) {
-    await pool.query("rollback").catch(() => {});
+    await (async () => { try { await client.query("rollback"); } catch {} })();
     req.log?.error({ err }, "saveValuesForLead failed");
     res.status(500).json({ message: "Failed to save custom field values" });
   } finally {
