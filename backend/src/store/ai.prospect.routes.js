@@ -1,81 +1,72 @@
-// src/store/ai.prospect.routes.js
+
+// Minimal public AI prospect stub (no DB, no auth)
 import express from "express";
-import {
-  JOBS, EVENTS, IMPORTS, uid,
-  pushEvent, setStatus, attachImport
-} from "./prospect.store.js";
+import { randomUUID } from "crypto";
 
 const router = express.Router();
 
-/* --- minimal demo data (swap with real provider later) --- */
-function makeLeads(count = 10) {
+// In-memory stores
+const JOBS = new Map();     // jobId -> { id, status, import_job_id, events: [] }
+const IMPORTS = new Map();  // importId -> { id, items: [] }
+
+function makeItems(n = 5) {
   const base = [
     { name: "Priya Sharma",  title: "Procurement Manager", company: "Aarav Auto Components Pvt Ltd", email: "priya.sharma@aaravauto.in" },
-    { name: "Rohan Iyer",    title: "Finance Controller",  company: "Kaveri Textiles Ltd",          email: "rohan.iyer@kaveritextiles.in" },
-    { name: "Neha Gupta",    title: "Operations Head",      company: "Vistara Foods Pvt Ltd",        email: "neha.gupta@vistarafoods.in" },
-    { name: "Arjun Mehta",   title: "Supply Chain Lead",    company: "Indus Machinery Works",        email: "arjun.mehta@indusmw.in" },
-    { name: "Ananya Rao",    title: "Plant Admin",          company: "Sahyadri Ceramics",            email: "ananya.rao@sahyadri-ceramics.in" },
+    { name: "Rohan Iyer",    title: "Finance Controller",  company: "Kaveri Textiles Ltd",           email: "rohan.iyer@kaveritextiles.in" },
+    { name: "Neha Gupta",    title: "Operations Head",     company: "Vistara Foods Pvt Ltd",         email: "neha.gupta@vistarafoods.in" },
+    { name: "Arjun Mehta",   title: "Supply Chain Lead",   company: "Indus Machinery Works",         email: "arjun.mehta@indusmw.in" },
+    { name: "Ananya Rao",    title: "Plant Admin",         company: "Sahyadri Ceramics",             email: "ananya.rao@sahyadri-ceramics.in" },
   ];
-  const out = [];
-  for (let i = 0; i < count; i++) {
+  const items = [];
+  for (let i = 0; i < n; i++) {
     const t = base[i % base.length];
-    out.push({ id: `${String(i + 1).padStart(3, "0")}`, ...t });
+    items.push({ id: randomUUID(), ...t });
   }
-  return out;
+  return items;
 }
 
-async function runProspectJob(jobId, payload) {
-  try {
-    setStatus(jobId, "running");
-    pushEvent(jobId, "info", "Starting provider query…");
+// Health
+router.get("/ai/prospect/ping", (_req, res) => res.json({ ok: true }));
 
-    // TODO: replace with real PDL call using payload.prompt/size/filters
-    await new Promise((r) => setTimeout(r, 500));
-    pushEvent(jobId, "info", "Enriching results…");
+// Create job
+router.post("/ai/prospect/jobs", (req, res) => {
+  const prompt = String(req.body?.prompt ?? "");
+  const size = Math.max(1, Math.min(parseInt(req.body?.size ?? 10, 10) || 10, 200));
 
-    const importId = uid();
-    const size = Math.max(5, Math.min(Number(payload?.size) || 50, 200));
-    IMPORTS.set(importId, makeLeads(size));
+  const jobId = randomUUID();
+  const importId = randomUUID();
+  const now = Date.now();
 
-    attachImport(jobId, importId);
-    pushEvent(jobId, "success", "Completed");
-    setStatus(jobId, "completed");
-  } catch (err) {
-    pushEvent(jobId, "error", err?.message || "Job failed");
-    setStatus(jobId, "failed");
-  }
-}
+  const events = [
+    { id: randomUUID(), ts: new Date(now).toISOString(),       level: "info",    message: "Queued: discovering" },
+    { id: randomUUID(), ts: new Date(now + 400).toISOString(), level: "info",    message: `Running: prompt "${prompt.slice(0,60)}"` },
+    { id: randomUUID(), ts: new Date(now + 900).toISOString(), level: "success", message: "Completed" },
+  ];
 
-/* POST /api/ai/prospect/jobs  -> { id, status, import_job_id? } */
-router.post("/jobs", (req, res) => {
-  const { prompt, size = 50, providers = ["pdl"], filters = {} } = req.body || {};
-  if (!prompt || !String(prompt).trim()) {
-    return res.status(400).json({ error: "prompt is required" });
-  }
+  // create items & persist in-memory
+  const items = makeItems(size);
+  IMPORTS.set(importId, { id: importId, items });
 
-  const id = uid();
-  const job = { id, status: "queued", import_job_id: null, created_at: new Date().toISOString() };
-  JOBS.set(id, job);
-  EVENTS.set(id, []);
-  pushEvent(id, "info", "Queued");
+  // save job as completed
+  JOBS.set(jobId, { id: jobId, status: "completed", import_job_id: importId, events });
 
-  setImmediate(() => runProspectJob(id, { prompt, size, providers, filters }));
-  res.json(job);
+  return res.status(201).json({ id: jobId, status: "completed", import_job_id: importId, provider: "stub" });
 });
 
-/* GET /api/ai/prospect/jobs/:id */
-router.get("/jobs/:id", (req, res) => {
-  const j = JOBS.get(req.params.id);
-  if (!j) return res.status(404).json({ error: "Job not found" });
-  res.json(j);
+// Job status
+router.get("/ai/prospect/jobs/:id", (req, res) => {
+  const job = JOBS.get(req.params.id);
+  if (!job) return res.status(404).json({ message: "Not Found" });
+  res.json({ id: job.id, status: job.status, import_job_id: job.import_job_id, provider: "stub" });
 });
 
-/* GET /api/ai/prospect/jobs/:id/events?since=ISO */
-router.get("/jobs/:id/events", (req, res) => {
-  const arr = EVENTS.get(req.params.id) || [];
-  const { since } = req.query;
-  if (!since) return res.json(arr);
-  res.json(arr.filter((e) => e.ts > since));
+// Job events (ignores ?since for simplicity)
+router.get("/ai/prospect/jobs/:id/events", (req, res) => {
+  const job = JOBS.get(req.params.id);
+  if (!job) return res.json([]);
+  res.json(job.events || []);
 });
 
+export { IMPORTS };
 export default router;
+
