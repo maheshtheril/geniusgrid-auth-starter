@@ -7,12 +7,12 @@ import {
 } from "../services/leadsCustomFieldsService.js";
 
 function getTenantId(req) {
-  // prefer session.tenantId (your code sets this), then user.tenant_id, then header.
   return (
     req.session?.tenantId ||
     req.session?.tenant_id ||
     req.user?.tenant_id ||
-    req.headers["x-tenant-id"]
+    req.headers["x-tenant-id"] ||
+    null
   );
 }
 
@@ -20,19 +20,31 @@ export async function listFields(req, res) {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ message: "No tenant in session" });
 
+  // 🔎 Pure-scope check: does NOT touch tables
+  if (req.query.__scope === "1") {
+    try {
+      const dbg = await getTenantDebugInfo(tenantId);
+      return res.json({ tenantId, dbg });
+    } catch (e) {
+      const expose = req.query.__err === "1" || process.env.DEBUG_ERRORS === "1";
+      return res.status(500).json({
+        message: "Scope check failed",
+        ...(expose ? { error: { code: e.code, detail: e.detail, message: e.message } } : {}),
+      });
+    }
+  }
+
   try {
     const formVersionId = await getActiveLeadsFormVersionId(tenantId);
     const fields = await listFieldsByFormVersion(tenantId, formVersionId);
-
-    // debug helper: append current GUC values when ?__dbg=1
-    if (req.query.__dbg === "1") {
-      const dbg = await getTenantDebugInfo(tenantId);
-      return res.json({ formVersionId, fields, dbg });
-    }
     return res.json({ formVersionId, fields });
   } catch (e) {
     req.log?.error({ err: e }, "listFields error");
-    return res.status(500).json({ message: "Failed to load custom fields" });
+    const expose = req.query.__err === "1" || process.env.DEBUG_ERRORS === "1";
+    return res.status(500).json({
+      message: "Failed to load custom fields",
+      ...(expose ? { error: { code: e.code, detail: e.detail, message: e.message } } : {}),
+    });
   }
 }
 
@@ -70,7 +82,11 @@ export async function createField(req, res) {
     return res.json(field);
   } catch (e) {
     req.log?.error({ err: e }, "createField error");
-    return res.status(500).json({ message: "Failed to save custom field" });
+    const expose = req.query.__err === "1" || process.env.DEBUG_ERRORS === "1";
+    return res.status(500).json({
+      message: "Failed to save custom field",
+      ...(expose ? { error: { code: e.code, detail: e.detail, message: e.message } } : {}),
+    });
   }
 }
 
@@ -80,7 +96,7 @@ export async function saveValuesForLead(req, res) {
 
   try {
     const { leadId } = req.params;
-    const { values } = req.body; // [{ code, value }, ...]
+    const { values } = req.body;
 
     if (!Array.isArray(values) || !values.length) {
       return res.status(422).json({ message: "values[] required" });
@@ -98,6 +114,10 @@ export async function saveValuesForLead(req, res) {
     return res.json({ ok: true });
   } catch (e) {
     req.log?.error({ err: e }, "saveValuesForLead error");
-    return res.status(500).json({ message: "Failed to save values" });
+    const expose = req.query.__err === "1" || process.env.DEBUG_ERRORS === "1";
+    return res.status(500).json({
+      message: "Failed to save values",
+      ...(expose ? { error: { code: e.code, detail: e.detail, message: e.message } } : {}),
+    });
   }
 }
