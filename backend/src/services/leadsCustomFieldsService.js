@@ -1,3 +1,4 @@
+// 📄 src/services/leadsCustomFieldsService.js
 import { pool } from "../db/pool.js";
 
 /** Set tenant scope for RLS on this specific PG connection. */
@@ -20,7 +21,7 @@ export async function getTenantDebugInfo(tenantId) {
         current_setting('app.tenant_id', true) as app_tenant_id,
         current_setting('request.jwt.claims.tenant_id', true) as jwt_tenant_id,
         current_setting('request.tenant_id', true) as req_tenant_id
-    `
+      `
     );
     return rows?.[0] || {};
   } finally {
@@ -47,22 +48,25 @@ export async function getActiveLeadsFormVersionId(tenantId) {
     );
     const formId = formRes.rows[0].id;
 
-    // 2) get active version or create v1
+    // 2) get active version or create v1 (proper CTE; no "select from (insert ...)")
     const verRes = await client.query(
       `
       with got as (
-        select id from custom_form_versions
+        select id
+        from custom_form_versions
         where tenant_id = $1 and form_id = $2 and status = 'active'
-        order by version desc limit 1
-      )
-      select id from got
-      union all
-      select id from (
+        order by version desc
+        limit 1
+      ),
+      ins as (
         insert into custom_form_versions (tenant_id, form_id, version, status)
         select $1, $2, 1, 'active'
         where not exists (select 1 from got)
         returning id
-      ) ins
+      )
+      select id from got
+      union all
+      select id from ins
       limit 1;
       `,
       [tenantId, formId]
@@ -128,8 +132,7 @@ export async function upsertCustomField({
         help_text = excluded.help_text,
         options_json = excluded.options_json,
         validation_json = excluded.validation_json,
-        is_required = excluded.is_required,
-        updated_at = now()
+        is_required = excluded.is_required
       returning *;
     `;
     const { rows } = await client.query(q, [
