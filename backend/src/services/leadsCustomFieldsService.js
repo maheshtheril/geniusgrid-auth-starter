@@ -1,48 +1,69 @@
-// Adjust this import if your pool is at src/db/index.js
 import { pool } from "../db/pool.js";
 
-/** Ensure current request has the tenant scope set for RLS */
+/** Set tenant scope for RLS on this specific PG connection. */
 async function setTenantScope(client, tenantId) {
-  // Your RLS uses ensure_tenant_scope(), usually backed by app.tenant_id
+  // Set multiple GUC keys so whatever ensure_tenant_scope() reads will match.
+  // All are LOCAL to this connection (true).
   await client.query("select set_config('app.tenant_id', $1, true)", [tenantId]);
+  await client.query("select set_config('request.jwt.claims.tenant_id', $1, true)", [tenantId]);
+  await client.query("select set_config('request.tenant_id', $1, true)", [tenantId]);
 }
 
-/** Get (or create) the custom form + active version for Leads */
+/** Optional: expose current GUC values for debugging */
+export async function getTenantDebugInfo(tenantId) {
+  const client = await pool.connect();
+  try {
+    await setTenantScope(client, tenantId);
+    const { rows } = await client.query(
+      `
+      select
+        current_setting('app.tenant_id', true) as app_tenant_id,
+        current_setting('request.jwt.claims.tenant_id', true) as jwt_tenant_id,
+        current_setting('request.tenant_id', true) as req_tenant_id
+    `
+    );
+    return rows?.[0] || {};
+  } finally {
+    client.release();
+  }
+}
+
+/** Ensure/return the ACTIVE Leads form version id (per-tenant). */
 export async function getActiveLeadsFormVersionId(tenantId) {
   const client = await pool.connect();
   try {
     await setTenantScope(client, tenantId);
 
-    // 1) ensure form (module_name + code)
+    // 1) ensure the form row exists
     const formRes = await client.query(
       `
-      INSERT INTO custom_forms (tenant_id, module_name, code, name)
-      VALUES ($1, 'crm', 'leads', 'Leads Form')
-      ON CONFLICT (tenant_id, module_name, code)
-      DO UPDATE SET name = EXCLUDED.name
-      RETURNING id;
+      insert into custom_forms (tenant_id, module_name, code, name)
+      values ($1, 'crm', 'leads', 'Leads Form')
+      on conflict (tenant_id, module_name, code)
+      do update set name = excluded.name
+      returning id;
       `,
       [tenantId]
     );
     const formId = formRes.rows[0].id;
 
-    // 2) find active version or create v1
+    // 2) get active version or create v1
     const verRes = await client.query(
       `
-      WITH got AS (
-        SELECT id FROM custom_form_versions
-        WHERE tenant_id = $1 AND form_id = $2 AND status = 'active'
-        ORDER BY version DESC LIMIT 1
+      with got as (
+        select id from custom_form_versions
+        where tenant_id = $1 and form_id = $2 and status = 'active'
+        order by version desc limit 1
       )
-      SELECT id FROM got
-      UNION ALL
-      SELECT id FROM (
-        INSERT INTO custom_form_versions (tenant_id, form_id, version, status)
-        SELECT $1, $2, 1, 'active'
-        WHERE NOT EXISTS (SELECT 1 FROM got)
-        RETURNING id
+      select id from got
+      union all
+      select id from (
+        insert into custom_form_versions (tenant_id, form_id, version, status)
+        select $1, $2, 1, 'active'
+        where not exists (select 1 from got)
+        returning id
       ) ins
-      LIMIT 1;
+      limit 1;
       `,
       [tenantId, formId]
     );
@@ -53,18 +74,18 @@ export async function getActiveLeadsFormVersionId(tenantId) {
   }
 }
 
-/** List fields by form version */
+/** List active fields for a form version. */
 export async function listFieldsByFormVersion(tenantId, formVersionId) {
   const client = await pool.connect();
   try {
     await setTenantScope(client, tenantId);
     const { rows } = await client.query(
       `
-      SELECT id, code, label, field_type, placeholder, help_text,
+      select id, code, label, field_type, placeholder, help_text,
              options_json, validation_json, order_index, is_required, is_active
-      FROM custom_fields
-      WHERE tenant_id = $1 AND form_version_id = $2 AND is_active = true
-      ORDER BY order_index, label;
+      from custom_fields
+      where tenant_id = $1 and form_version_id = $2 and is_active = true
+      order by order_index, label;
       `,
       [tenantId, formVersionId]
     );
@@ -74,7 +95,7 @@ export async function listFieldsByFormVersion(tenantId, formVersionId) {
   }
 }
 
-/** Upsert a field into the active version */
+/** Upsert a field into the active version. */
 export async function upsertCustomField({
   tenantId,
   formVersionId,
@@ -86,30 +107,30 @@ export async function upsertCustomField({
   help_text = null,
   options_json = [],
   validation_json = null,
-  section = "General",
+  section = "General", // not stored yet; reserved for future use
 }) {
   const client = await pool.connect();
   try {
     await setTenantScope(client, tenantId);
     const q = `
-      INSERT INTO custom_fields
+      insert into custom_fields
         (tenant_id, form_version_id, code, label, field_type, placeholder, help_text,
          options_json, validation_json, order_index, is_required, is_active)
-      VALUES
-        ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb, COALESCE(
-           (SELECT COALESCE(MAX(order_index), 0) + 1 FROM custom_fields WHERE tenant_id=$1 AND form_version_id=$2), 0
-         ), $10, true)
-      ON CONFLICT (tenant_id, form_version_id, code)
-      DO UPDATE SET
-        label = EXCLUDED.label,
-        field_type = EXCLUDED.field_type,
-        placeholder = EXCLUDED.placeholder,
-        help_text = EXCLUDED.help_text,
-        options_json = EXCLUDED.options_json,
-        validation_json = EXCLUDED.validation_json,
-        is_required = EXCLUDED.is_required,
+      values
+        ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb,
+         coalesce((select coalesce(max(order_index),0)+1 from custom_fields where tenant_id=$1 and form_version_id=$2),0),
+         $10, true)
+      on conflict (tenant_id, form_version_id, code)
+      do update set
+        label = excluded.label,
+        field_type = excluded.field_type,
+        placeholder = excluded.placeholder,
+        help_text = excluded.help_text,
+        options_json = excluded.options_json,
+        validation_json = excluded.validation_json,
+        is_required = excluded.is_required,
         updated_at = now()
-      RETURNING *;
+      returning *;
     `;
     const { rows } = await client.query(q, [
       tenantId,
@@ -129,24 +150,23 @@ export async function upsertCustomField({
   }
 }
 
-/** Upsert values for a specific record (lead) */
+/** Upsert values for a lead record. */
 export async function upsertLeadCustomValues({
   tenantId,
   formVersionId,
   recordType = "lead",
   recordId,
-  values, // [{code, value}]
+  values, // [{ code, value }]
 }) {
   const client = await pool.connect();
   try {
     await setTenantScope(client, tenantId);
 
-    // Load fields by code → id + type
     const { rows: fields } = await client.query(
       `
-      SELECT id, code, field_type
-      FROM custom_fields
-      WHERE tenant_id = $1 AND form_version_id = $2 AND is_active = true;
+      select id, code, field_type
+      from custom_fields
+      where tenant_id = $1 and form_version_id = $2 and is_active = true;
       `,
       [tenantId, formVersionId]
     );
@@ -165,31 +185,31 @@ export async function upsertLeadCustomValues({
           cols.date = value ? new Date(value) : null;
           break;
         case "file":
-          cols.file = value || null; // expect file_id (uuid) if you wire uploads
+          cols.file = value || null; // expects file_id uuid
           break;
         case "select":
         case "text":
         default:
-          if (typeof value === "object") cols.json = value;
+          if (typeof value === "object" && value !== null) cols.json = value;
           else cols.text = value == null ? null : String(value);
           break;
       }
 
       await client.query(
         `
-        INSERT INTO custom_field_values
+        insert into custom_field_values
           (tenant_id, form_version_id, field_id, record_type, record_id,
            value_text, value_number, value_date, value_json, file_id)
-        VALUES
+        values
           ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10)
-        ON CONFLICT (tenant_id, field_id, record_type, record_id)
-        DO UPDATE SET
-          form_version_id = EXCLUDED.form_version_id,
-          value_text   = EXCLUDED.value_text,
-          value_number = EXCLUDED.value_number,
-          value_date   = EXCLUDED.value_date,
-          value_json   = EXCLUDED.value_json,
-          file_id      = EXCLUDED.file_id,
+        on conflict (tenant_id, field_id, record_type, record_id)
+        do update set
+          form_version_id = excluded.form_version_id,
+          value_text   = excluded.value_text,
+          value_number = excluded.value_number,
+          value_date   = excluded.value_date,
+          value_json   = excluded.value_json,
+          file_id      = excluded.file_id,
           updated_at   = now();
         `,
         [

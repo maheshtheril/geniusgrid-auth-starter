@@ -3,37 +3,54 @@ import {
   listFieldsByFormVersion,
   upsertCustomField,
   upsertLeadCustomValues,
+  getTenantDebugInfo,
 } from "../services/leadsCustomFieldsService.js";
 
 function getTenantId(req) {
-  // from session auth middleware
-  return req.user?.tenant_id || req.session?.tenant_id || req.headers["x-tenant-id"];
+  // prefer session.tenantId (your code sets this), then user.tenant_id, then header.
+  return (
+    req.session?.tenantId ||
+    req.session?.tenant_id ||
+    req.user?.tenant_id ||
+    req.headers["x-tenant-id"]
+  );
 }
 
 export async function listFields(req, res) {
-  try {
-    const tenantId = getTenantId(req);
-    if (!tenantId) return res.status(401).json({ message: "No tenant" });
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ message: "No tenant in session" });
 
+  try {
     const formVersionId = await getActiveLeadsFormVersionId(tenantId);
     const fields = await listFieldsByFormVersion(tenantId, formVersionId);
+
+    // debug helper: append current GUC values when ?__dbg=1
+    if (req.query.__dbg === "1") {
+      const dbg = await getTenantDebugInfo(tenantId);
+      return res.json({ formVersionId, fields, dbg });
+    }
     return res.json({ formVersionId, fields });
   } catch (e) {
-    console.error("listFields error", e);
-    res.status(500).json({ message: "Failed to load custom fields" });
+    req.log?.error({ err: e }, "listFields error");
+    return res.status(500).json({ message: "Failed to load custom fields" });
   }
 }
 
 export async function createField(req, res) {
-  try {
-    const tenantId = getTenantId(req);
-    if (!tenantId) return res.status(401).json({ message: "No tenant" });
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ message: "No tenant in session" });
 
+  try {
     const { label, key, type, required = false, section = "General", options = [] } = req.body;
     if (!label) return res.status(422).json({ message: "label required" });
 
-    const code = (key || label).toString().trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64);
-    const field_type = type;
+    const code = (key || label)
+      .toString()
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 64);
 
     const formVersionId = await getActiveLeadsFormVersionId(tenantId);
     const field = await upsertCustomField({
@@ -41,10 +58,9 @@ export async function createField(req, res) {
       formVersionId,
       code,
       label,
-      field_type,
+      field_type: type,
       required,
       options_json: Array.isArray(options) ? options : [],
-      // place-holders you can expand later:
       placeholder: null,
       help_text: null,
       validation_json: null,
@@ -53,18 +69,18 @@ export async function createField(req, res) {
 
     return res.json(field);
   } catch (e) {
-    console.error("createField error", e);
-    res.status(500).json({ message: "Failed to save custom field" });
+    req.log?.error({ err: e }, "createField error");
+    return res.status(500).json({ message: "Failed to save custom field" });
   }
 }
 
 export async function saveValuesForLead(req, res) {
-  try {
-    const tenantId = getTenantId(req);
-    if (!tenantId) return res.status(401).json({ message: "No tenant" });
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ message: "No tenant in session" });
 
+  try {
     const { leadId } = req.params;
-    const { values } = req.body; // [{ code:'pan_no', value:'ABCPX1234Q' }, ...]
+    const { values } = req.body; // [{ code, value }, ...]
 
     if (!Array.isArray(values) || !values.length) {
       return res.status(422).json({ message: "values[] required" });
@@ -81,7 +97,7 @@ export async function saveValuesForLead(req, res) {
 
     return res.json({ ok: true });
   } catch (e) {
-    console.error("saveValuesForLead error", e);
-    res.status(500).json({ message: "Failed to save values" });
+    req.log?.error({ err: e }, "saveValuesForLead error");
+    return res.status(500).json({ message: "Failed to save values" });
   }
 }
