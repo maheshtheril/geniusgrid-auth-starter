@@ -63,54 +63,57 @@ async function fetchPDL(prompt, size) {
 router.get("/ping", (_req, res) => res.json({ ok: true }));
 
 // Create job
+// router.post("/jobs", async (req, res) => {
+//   const { prompt = "", size = 50 } = req.body || {};
+//   const id = randomUUID();
+//   const job = {
+//     id,
+//     status: "queued",
+//     import_job_id: null,
+//     provider: "pdl",
+//     events: [],
+//     created_at: nowISO(),
+//   };
+//   JOBS.set(id, job);
+
+//   addEvent(job, "info", "Queued job");
+//   res.status(201).json({
+//     id: job.id,
+//     status: job.status,
+//     import_job_id: job.import_job_id,
+//     provider: job.provider,
+//   });
+
+//   // run async so the HTTP response returns immediately
+//   (async () => {
+//     try {
+//       job.status = "running";
+//       addEvent(job, "info", "Calling PDL…");
+//       const pdlJson = await fetchPDL(String(prompt).trim(), size);
+//       addEvent(
+//         job,
+//         "success",
+//         `PDL returned ${Array.isArray(pdlJson?.data) ? pdlJson.data.length : 0} results`
+//       );
+
+//       const items = mapPDLItems(pdlJson);
+//       const importId = randomUUID();
+//       IMPORTS.set(importId, { id: importId, items, created_at: nowISO() });
+//       job.import_job_id = importId;
+
+//       addEvent(job, "info", `Prepared ${items.length} items for preview/import`);
+//       job.status = "completed";
+//       addEvent(job, "success", "Job completed");
+//     } catch (err) {
+//       job.status = "failed";
+//       addEvent(job, "error", `Failed: ${err?.message || String(err)}`);
+//     }
+//   })().catch(() => {});
+// });
 router.post("/jobs", async (req, res) => {
-  const { prompt = "", size = 50 } = req.body || {};
   const id = randomUUID();
-  const job = {
-    id,
-    status: "queued",
-    import_job_id: null,
-    provider: "pdl",
-    events: [],
-    created_at: nowISO(),
-  };
-  JOBS.set(id, job);
-
-  addEvent(job, "info", "Queued job");
-  res.status(201).json({
-    id: job.id,
-    status: job.status,
-    import_job_id: job.import_job_id,
-    provider: job.provider,
-  });
-
-  // run async so the HTTP response returns immediately
-  (async () => {
-    try {
-      job.status = "running";
-      addEvent(job, "info", "Calling PDL…");
-      const pdlJson = await fetchPDL(String(prompt).trim(), size);
-      addEvent(
-        job,
-        "success",
-        `PDL returned ${Array.isArray(pdlJson?.data) ? pdlJson.data.length : 0} results`
-      );
-
-      const items = mapPDLItems(pdlJson);
-      const importId = randomUUID();
-      IMPORTS.set(importId, { id: importId, items, created_at: nowISO() });
-      job.import_job_id = importId;
-
-      addEvent(job, "info", `Prepared ${items.length} items for preview/import`);
-      job.status = "completed";
-      addEvent(job, "success", "Job completed");
-    } catch (err) {
-      job.status = "failed";
-      addEvent(job, "error", `Failed: ${err?.message || String(err)}`);
-    }
-  })().catch(() => {});
+  return res.status(201).json({ id, status: "queued", import_job_id: null, provider: "stub" });
 });
-
 // Job status
 router.get("/jobs/:id", (req, res) => {
   const job = JOBS.get(req.params.id);
