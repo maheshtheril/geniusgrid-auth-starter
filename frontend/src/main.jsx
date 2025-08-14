@@ -9,7 +9,9 @@ import App from "./App.jsx";
 
 // ✅ Static, safe import (no early calls)
 import { applyTheme } from "@/theme/applyTheme";
+import "./styles/light-overrides.css";
 import { installAiProspectMock } from "./mocks/installAiProspectMock";
+
 installAiProspectMock();
 // Optional deps — app still boots if these fail to import
 let uiApi = null;

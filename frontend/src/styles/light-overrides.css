@@ -1,0 +1,119 @@
+/* Light theme visibility fixes for Leads table chips only.
+   No component code changes; safe to remove anytime. */
+
+/* --- Theme guards (use whichever your app sets) --- */
+:root[data-theme="light"],
+html.theme-light,
+body.theme-light {
+  /* neutrals */
+  --chip-bg:        #f3f4f6;   /* gray-100 */
+  --chip-text:      #111827;   /* gray-900 */
+  --chip-border:    #d1d5db;   /* gray-300 */
+
+  /* semantic tints for status/stage */
+  --chip-info-bg:   #e8f0fe;   /* blue-50/100 */
+  --chip-info-text: #0b57d0;   /* Google blue-ish */
+  --chip-ok-bg:     #e9f7ef;   /* green-50/100 */
+  --chip-ok-text:   #0f5132;   /* green-800 */
+  --chip-warn-bg:   #fff7ed;   /* orange-50 */
+  --chip-warn-text: #9a3412;   /* orange-800 */
+  --chip-warn-brd:  #fed7aa;   /* orange-200 */
+
+  /* make muted labels readable in light */
+  --muted-text:     #475569;   /* slate-600 */
+}
+
+/* Generic badge/chip/tag baseline in Light */
+:root[data-theme="light"] .gg-badge,
+html.theme-light .gg-badge,
+body.theme-light .gg-badge,
+:root[data-theme="light"] .badge,
+html.theme-light .badge,
+body.theme-light .badge,
+:root[data-theme="light"] .chip,
+html.theme-light .chip,
+body.theme-light .chip,
+:root[data-theme="light"] .tag,
+html.theme-light .tag,
+body.theme-light .tag {
+  background: var(--chip-bg) !important;
+  color: var(--chip-text) !important;
+  border: 1px solid var(--chip-border) !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+
+/* Status chips (map your classes/data-attrs if different) */
+:root[data-theme="light"] .status-new,
+html.theme-light .status-new,
+body.theme-light .status-new,
+:root[data-theme="light"] [data-status="new"],
+html.theme-light [data-status="new"],
+body.theme-light [data-status="new"] {
+  background: var(--chip-info-bg) !important;
+  color: var(--chip-info-text) !important;
+  border-color: var(--chip-info-text) !important;
+}
+
+:root[data-theme="light"] .status-qualified,
+html.theme-light .status-qualified,
+body.theme-light .status-qualified,
+:root[data-theme="light"] [data-status="qualified"],
+html.theme-light [data-status="qualified"],
+body.theme-light [data-status="qualified"] {
+  background: var(--chip-info-bg) !important;
+  color: var(--chip-info-text) !important;
+  border-color: var(--chip-info-text) !important;
+}
+
+:root[data-theme="light"] .status-won,
+html.theme-light .status-won,
+body.theme-light .status-won,
+:root[data-theme="light"] [data-status="won"],
+html.theme-light [data-status="won"],
+body.theme-light [data-status="won"] {
+  background: var(--chip-ok-bg) !important;
+  color: var(--chip-ok-text) !important;
+  border-color: var(--chip-ok-text) !important;
+}
+
+:root[data-theme="light"] .status-lost,
+html.theme-light .status-lost,
+body.theme-light .status-lost,
+:root[data-theme="light"] [data-status="lost"],
+html.theme-light [data-status="lost"],
+body.theme-light [data-status="lost"] {
+  background: var(--chip-warn-bg) !important;
+  color: var(--chip-warn-text) !important;
+  border-color: var(--chip-warn-brd) !important;
+}
+
+/* Stage chips (same treatment; adjust class/attr names if needed) */
+:root[data-theme="light"] .stage,
+html.theme-light .stage,
+body.theme-light .stage,
+:root[data-theme="light"] [data-stage],
+html.theme-light [data-stage],
+body.theme-light [data-stage] {
+  background: var(--chip-bg) !important;
+  color: var(--chip-text) !important;
+  border-color: var(--chip-border) !important;
+}
+
+/* Priority pill (numbered circle on the right column) */
+:root[data-theme="light"] .priority-pill,
+html.theme-light .priority-pill,
+body.theme-light .priority-pill {
+  background: var(--chip-warn-bg) !important;
+  color: var(--chip-warn-text) !important;
+  border: 1px solid var(--chip-warn-brd) !important;
+  font-weight: 700;
+}
+
+/* Make “muted” labels readable in Light (e.g., table header subtles) */
+:root[data-theme="light"] .gg-muted,
+html.theme-light .gg-muted,
+body.theme-light .gg-muted {
+  color: var(--muted-text) !important;
+  opacity: 1 !important;
+}
