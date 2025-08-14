@@ -118,3 +118,48 @@ body.theme-light .gg-muted {
   opacity: 1 !important;
 }
 
+/* Light theme: make chip text darker (no component changes) */
+:root[data-theme="light"] .bg-blue-500\/20,
+html.theme-light .bg-blue-500\/20,
+body.theme-light .bg-blue-500\/20 {
+  color: #1d4ed8 !important;      /* blue-700 */
+  border: 1px solid #93c5fd !important; /* blue-300 border for definition */
+  font-weight: 700 !important;
+}
+
+:root[data-theme="light"] .bg-emerald-500\/20,
+html.theme-light .bg-emerald-500\/20,
+body.theme-light .bg-emerald-500\/20 {
+  color: #047857 !important;      /* emerald-700 */
+  border: 1px solid #86efac !important; /* emerald-300 */
+  font-weight: 700 !important;
+}
+
+:root[data-theme="light"] .bg-amber-500\/20,
+html.theme-light .bg-amber-500\/20,
+body.theme-light .bg-amber-500\/20 {
+  color: #b45309 !important;      /* amber-700 */
+  border: 1px solid #fcd34d !important; /* amber-300 */
+  font-weight: 700 !important;
+}
+
+:root[data-theme="light"] .bg-rose-500\/20,
+html.theme-light .bg-rose-500\/20,
+body.theme-light .bg-rose-500\/20 {
+  color: #be123c !important;      /* rose-700 */
+  border: 1px solid #fda4af !important; /* rose-300 */
+  font-weight: 700 !important;
+}
+
+:root[data-theme="light"] .bg-gray-500\/20,
+html.theme-light .bg-gray-500\/20,
+body.theme-light .bg-gray-500\/20 {
+  color: #334155 !important;      /* slate-700 for neutral chips */
+  border: 1px solid #cbd5e1 !important; /* slate-300 */
+  font-weight: 700 !important;
+}
+
+/* Optional: slightly increase contrast for tiny text */
+:root[data-theme="light"] .rounded-full.px-2.py-0\.5.text-xs.font-medium {
+  letter-spacing: 0.01em; /* tiny boost for readability */
+}
