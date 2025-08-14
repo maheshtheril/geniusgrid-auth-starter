@@ -9,7 +9,6 @@ import LeadsCards from "@/components/leads/LeadsCards";
 import LeadDrawer from "@/components/leads/LeadDrawer";
 import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
 import { useEnv } from "@/store/useEnv";
-// Icons for compact view toggles (✅ correct names)
 import { Table2, KanbanSquare, Grid2X2 } from "lucide-react";
 
 const DEFAULT_COLUMNS = [
@@ -41,6 +40,17 @@ function IconBtn({ title, active, onClick, children }) {
   );
 }
 
+/** YYYY-MM-DD for a given tz (defaults to Asia/Kolkata) */
+function todayInTZ(tz = "Asia/Kolkata") {
+  // en-CA gives YYYY-MM-DD format
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
 export default function LeadsPage() {
   const api = useLeadsApi();
   const { leadCustomFields = [], setLeadCustomFields } = useEnv();
@@ -48,7 +58,16 @@ export default function LeadsPage() {
   // View, filters, pagination
   const [view, setView]         = useState("table");
   const [query, setQuery]       = useState("");
-  const [filters, setFilters]   = useState({ owner_id: "", stage: "", status: "" });
+  const [filters, setFilters]   = useState(() => {
+    const today = todayInTZ();
+    return {
+      owner_id: "",
+      stage: "",
+      status: "",
+      date_from: today,   // NEW
+      date_to: today,     // NEW
+    };
+  });
   const [page, setPage]         = useState(1);
   const [pageSize, setPageSize] = useState(25);
   const [count, setCount]       = useState(0);
@@ -115,6 +134,10 @@ export default function LeadsPage() {
       filter_stage:  filters.stage || undefined,
       filter_status: filters.status || undefined,
       filter_owner_id: filters.owner_id || undefined,
+      // NEW: date range filters
+      filter_date_from: filters.date_from || undefined,
+      filter_date_to: filters.date_to || undefined,
+
       page_number: page,
       page_size: pageSize,
       sort_by: sortKey || undefined,
@@ -131,6 +154,10 @@ export default function LeadsPage() {
       stage: filters.stage || undefined,
       status: filters.status || undefined,
       owner_id: filters.owner_id || undefined,
+      // pass-through for older APIs too (harmless if ignored)
+      date_from: filters.date_from || undefined,
+      date_to: filters.date_to || undefined,
+
       page, pageSize,
       sort: sortKey || undefined,
       dir:  sortDir || undefined,
@@ -334,6 +361,13 @@ export default function LeadsPage() {
     </select>
   );
 
+  // Quick helper to set "today" back into the date filters
+  const setTodayRange = () => {
+    const today = todayInTZ();
+    setFilters(f => ({ ...f, date_from: today, date_to: today }));
+    setPage(1);
+  };
+
   return (
     <div className="min-h-[100dvh] bg-[var(--bg)] text-[color:var(--text)]">
       <div className="p-4 flex flex-col gap-4">
@@ -352,27 +386,9 @@ export default function LeadsPage() {
 
               {/* Compact icon toggles — visible at all breakpoints now */}
               <div className="flex items-center gap-1" role="group" aria-label="Change leads view">
-                <IconBtn
-                  title="Table view"
-                  active={view === "table"}
-                  onClick={() => setView("table")}
-                >
-                  <Table2 size={16} />
-                </IconBtn>
-                <IconBtn
-                  title="Kanban view"
-                  active={view === "kanban"}
-                  onClick={() => setView("kanban")}
-                >
-                  <KanbanSquare size={16} />
-                </IconBtn>
-                <IconBtn
-                  title="Card view"
-                  active={view === "cards"}
-                  onClick={() => setView("cards")}
-                >
-                  <Grid2X2 size={16} />
-                </IconBtn>
+                <IconBtn title="Table view"  active={view === "table"}  onClick={() => setView("table")}><Table2 size={16} /></IconBtn>
+                <IconBtn title="Kanban view" active={view === "kanban"} onClick={() => setView("kanban")}><KanbanSquare size={16} /></IconBtn>
+                <IconBtn title="Card view"   active={view === "cards"}  onClick={() => setView("cards")}><Grid2X2 size={16} /></IconBtn>
               </div>
 
               <button
@@ -396,6 +412,33 @@ export default function LeadsPage() {
         {/* Filters */}
         <div className="gg-surface p-3 rounded-2xl">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            {/* NEW: Date range controls (default to today) */}
+            <div className="flex gap-2 flex-wrap">
+              <label className="flex items-center gap-2">
+                <span className="text-xs text-[color:var(--muted)]">From</span>
+                <input
+                  type="date"
+                  className="gg-input"
+                  value={filters.date_from}
+                  onChange={(e) => { setFilters(f => ({ ...f, date_from: e.target.value })); setPage(1); }}
+                  aria-label="From date"
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <span className="text-xs text-[color:var(--muted)]">To</span>
+                <input
+                  type="date"
+                  className="gg-input"
+                  value={filters.date_to}
+                  onChange={(e) => { setFilters(f => ({ ...f, date_to: e.target.value })); setPage(1); }}
+                  aria-label="To date"
+                />
+              </label>
+              <button type="button" className="gg-btn gg-btn-ghost" onClick={setTodayRange}>
+                Today
+              </button>
+            </div>
+
             <input
               value={query}
               onChange={(e) => { setQuery(e.target.value); setPage(1); }}
@@ -432,7 +475,12 @@ export default function LeadsPage() {
             <div className="flex items-center gap-2 lg:ml-auto">
               <button
                 className="gg-btn gg-btn-ghost"
-                onClick={() => { setFilters({ owner_id: "", stage: "", status: "" }); setQuery(""); setPage(1); }}
+                onClick={() => {
+                  const today = todayInTZ();
+                  setFilters({ owner_id: "", stage: "", status: "", date_from: today, date_to: today });
+                  setQuery("");
+                  setPage(1);
+                }}
               >
                 Reset
               </button>
