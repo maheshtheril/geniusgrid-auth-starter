@@ -235,10 +235,10 @@ app.use("/api/leads", requireAuth, leadsMergeRoutes);
 /* Other modules */
 app.use("/api", requireAuth, leadsModule);
   app.use("/api", leadsImportsRoutes);   // exposes /api/leads/imports/…
-if (!useMockAi) {
+//if (!useMockAi) {
    app.use("/api", aiProspectRoutes);     // exposes /api/ai/prospect/…
  
- }
+//}
 
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));

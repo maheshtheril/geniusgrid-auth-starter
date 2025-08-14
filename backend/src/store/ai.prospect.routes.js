@@ -1,6 +1,4 @@
-// backend/src/store/ai.prospect.routes.js
 // Live PDL-backed prospecting with a tiny in-memory job/import store.
-
 import express from "express";
 import { randomUUID } from "crypto";
 
@@ -41,7 +39,6 @@ async function fetchPDL(prompt, size) {
   // People Data Labs person search (basic full-text). Node 20 has global fetch.
   const url = "https://api.peopledatalabs.com/v5/person/search";
   const body = {
-    // Keep it simple: many PDL accounts permit a string query; adjust if your plan needs structured queries.
     query: prompt,
     size: Math.max(1, Math.min(Number(size) || 25, 200)),
   };
@@ -80,7 +77,12 @@ router.post("/jobs", async (req, res) => {
   JOBS.set(id, job);
 
   addEvent(job, "info", "Queued job");
-  res.status(201).json({ id: job.id, status: job.status, import_job_id: job.import_job_id, provider: job.provider });
+  res.status(201).json({
+    id: job.id,
+    status: job.status,
+    import_job_id: job.import_job_id,
+    provider: job.provider,
+  });
 
   // run async so the HTTP response returns immediately
   (async () => {
@@ -88,7 +90,11 @@ router.post("/jobs", async (req, res) => {
       job.status = "running";
       addEvent(job, "info", "Calling PDL…");
       const pdlJson = await fetchPDL(String(prompt).trim(), size);
-      addEvent(job, "success", `PDL returned ${Array.isArray(pdlJson?.data) ? pdlJson.data.length : 0} results`);
+      addEvent(
+        job,
+        "success",
+        `PDL returned ${Array.isArray(pdlJson?.data) ? pdlJson.data.length : 0} results`
+      );
 
       const items = mapPDLItems(pdlJson);
       const importId = randomUUID();
