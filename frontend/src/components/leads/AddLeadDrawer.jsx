@@ -1,20 +1,22 @@
 // src/components/leads/AddLeadDrawer.jsx — world-class UI (full, updated)
-// Focus: phone input is maximum width; country dropdown & dial code are compact.
-// Also: clean sections, single "Add custom field" in Advance, no Group/Section picker anywhere.
+// Phone input is max width; country dropdown & dial code are compact.
+// Clean sections, single "Add custom field" in Advance, no Group/Section picker.
+// CFModal saves directly to /api/leads/custom-fields.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Plus, Info } from "lucide-react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
-import "flag-icons/css/flag-icons.min.css"; // SVG flags
+import { http } from "@/lib/http"; // ⬅️ for CFModal save
+import "flag-icons/css/flag-icons.min.css";
 
-const safeRandomId = () => (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
+const safeRandomId = () =>
+  (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
 
-/** Turn "IN" -> 🇮🇳 (emoji fallback if DB doesn’t provide one) */
-const flagFromIso2 = (iso2 = "") => iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
+const flagFromIso2 = (iso2 = "") =>
+  iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
 
-/** Normalize "maybe-array" into a real array */
 function normalizeToArray(maybe) {
   if (Array.isArray(maybe)) return maybe;
   if (Array.isArray(maybe?.data)) return maybe.data;
@@ -23,10 +25,7 @@ function normalizeToArray(maybe) {
   return [];
 }
 
-/** Custom fields shape:
- *  [{ id,key,label,type,required,options?, group: 'general'|'advance' }, ...]
- */
-
+/* -------------------------- Base lead form shape -------------------------- */
 const INIT = {
   name: "",
   mobile_country: "IN",
@@ -41,7 +40,7 @@ const INIT = {
   source: "",
 };
 
-/* --------------------------------- UI Primitives --------------------------------- */
+/* --------------------------------- UI atoms -------------------------------- */
 function Section({ title, subtitle, children, right }) {
   return (
     <section className="gg-panel rounded-2xl p-4 md:p-5 space-y-4">
@@ -62,8 +61,7 @@ function Field({ label, required, htmlFor, children, hint, error }) {
     <div className="space-y-1.5">
       {label && (
         <label htmlFor={htmlFor} className="flex items-center gap-1 text-xs md:text-sm gg-muted">
-          {label}
-          {required && <span className="text-rose-400">*</span>}
+          {label}{required && <span className="text-rose-400">*</span>}
         </label>
       )}
       {children}
@@ -101,7 +99,7 @@ function Select({ id, value, onChange, children, invalid }) {
   );
 }
 
-/* ------------ CountrySelect (custom, with SVG flags) ------------ */
+/* ---------------------- CountrySelect (with SVG flags) --------------------- */
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -110,14 +108,19 @@ function CountrySelect({ options, value, onChange, disabled }) {
   const btnRef = useRef(null);
 
   const lower = (s) => String(s || "").toLowerCase();
-
-  const selected = useMemo(() => options.find((o) => lower(o.cc) === lower(value)) || null, [options, value]);
+  const selected = useMemo(
+    () => options.find((o) => lower(o.cc) === lower(value)) || null,
+    [options, value]
+  );
 
   const filtered = useMemo(() => {
     const q = lower(query).trim();
     if (!q) return options;
     return options.filter(
-      (o) => lower(o.name).includes(q) || lower(o.cc).includes(q) || String(o.code).replace("+", "").includes(q.replace("+", ""))
+      (o) =>
+        lower(o.name).includes(q) ||
+        lower(o.cc).includes(q) ||
+        String(o.code).replace("+", "").includes(q.replace("+", ""))
     );
   }, [options, query]);
 
@@ -133,22 +136,13 @@ function CountrySelect({ options, value, onChange, disabled }) {
 
   useEffect(() => { setHi(0); }, [query, open]);
 
-  const choose = (cc) => {
-    onChange?.(cc);
-    setOpen(false);
-    setQuery("");
-    btnRef.current?.focus();
-  };
+  const choose = (cc) => { onChange?.(cc); setOpen(false); setQuery(""); btnRef.current?.focus(); };
 
   const onKeyDown = (e) => {
     if (!open) {
       if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        setOpen(true);
-        setTimeout(() => {
-          const input = boxRef.current?.querySelector("input[type='text']");
-          input?.focus();
-        }, 0);
+        e.preventDefault(); setOpen(true);
+        setTimeout(() => boxRef.current?.querySelector("input[type='text']")?.focus(), 0);
       }
       return;
     }
@@ -179,9 +173,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
               <span className={`fi fi-${selected.cc.toLowerCase()}`} aria-hidden />
               <span className="truncate text-sm font-medium">{selected.cc}</span>
             </>
-          ) : (
-            <span className="opacity-60">Country</span>
-          )}
+          ) : (<span className="opacity-60">Country</span>)}
         </span>
         <span className="opacity-60">▾</span>
       </button>
@@ -194,7 +186,15 @@ function CountrySelect({ options, value, onChange, disabled }) {
           </div>
           <ul role="listbox" className="max-h-64 overflow-auto" tabIndex={-1} onKeyDown={onListKey}>
             {filtered.map((o, idx) => (
-              <li key={o.cc} role="option" aria-selected={o.cc === value} className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${idx === hi ? "bg-[color:var(--hover)]" : ""}`} onMouseEnter={() => setHi(idx)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(o.cc)}>
+              <li
+                key={o.cc}
+                role="option"
+                aria-selected={o.cc === value}
+                className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${idx === hi ? "bg-[color:var(--hover)]" : ""}`}
+                onMouseEnter={() => setHi(idx)}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => choose(o.cc)}
+              >
                 <span className={`fi fi-${o.cc.toLowerCase()}`} aria-hidden />
                 <span className="truncate">{o.name}</span>
                 <span className="ml-2 text-xs opacity-70">{o.cc}</span>
@@ -208,8 +208,8 @@ function CountrySelect({ options, value, onChange, disabled }) {
     </div>
   );
 }
-/* ------------------------------- end CountrySelect ------------------------------- */
 
+/* ============================== AddLeadDrawer ============================== */
 export default function AddLeadDrawer({
   onClose,
   onSuccess,
@@ -217,13 +217,11 @@ export default function AddLeadDrawer({
   stages = ["new", "prospect", "proposal", "negotiation", "closed"],
   sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
   customFields = [],
-  variant = "full", // kept for compatibility; we always show all fields
-  onManageCustomFields,
-  onCreateCustomField,
+  variant = "full",
 }) {
   const api = useLeadsApi();
 
-  // countries from DB (normalize to array)
+  // countries from DB
   const _c = useCountriesApi("en");
   const countriesLoading = _c?.loading ?? false;
   const countriesRaw = _c?.countries ?? _c ?? [];
@@ -256,18 +254,23 @@ export default function AddLeadDrawer({
   const firstInputRef = useRef(null);
   const submittingRef = useRef(false);
 
-  // dial code map from DB
-  const codeByCc = useMemo(() => Object.fromEntries(countryOpts.map((c) => [String(c.cc).toUpperCase(), c.code])), [countryOpts]);
+  const codeByCc = useMemo(
+    () => Object.fromEntries(countryOpts.map((c) => [String(c.cc).toUpperCase(), c.code])),
+    [countryOpts]
+  );
 
-  // hard reset on mount
+  // reset on mount
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
-    setCfList((Array.isArray(customFields) ? customFields : []).map((f) => ({ ...f, group: f?.group === "advance" ? "advance" : "general" })));
+    setCfList((Array.isArray(customFields) ? customFields : []).map((f) => ({
+      ...f,
+      group: f?.group === "advance" ? "advance" : "general",
+    })));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only
 
-  // sync dial code once countries arrive
+  // sync dial code when countries arrive
   useEffect(() => {
     if (countriesLoading) return;
     const hasOpts = countryOpts.length > 0;
@@ -297,7 +300,8 @@ export default function AddLeadDrawer({
 
   // helpers
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target?.value ?? e }));
-  const updateFileCF = (key) => (e) => setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
+  const updateFileCF = (key) => (e) =>
+    setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
 
   const onCountryPicked = (cc) => {
     const CC = String(cc || "").toUpperCase();
@@ -314,18 +318,24 @@ export default function AddLeadDrawer({
     const timer = setTimeout(async () => {
       if (!api?.checkMobile) return;
       try {
-        const res = await api.checkMobile({ mobile: `${form.mobile_code} ${String(form.mobile).trim()}` });
+        const res = await api.checkMobile({
+          mobile: `${form.mobile_code} ${String(form.mobile).trim()}`,
+        });
         if (alive) setDupMobile(!!res?.exists);
       } catch {
         if (alive) setDupMobile(null);
       }
     }, 450);
-    return () => { alive = false; clearTimeout(timer); };
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+    };
   }, [form.mobile, form.mobile_code, api]);
 
-  // ---- GROUPED CUSTOM FIELDS ----
+  // grouped custom fields
   const { generalCF, advanceCF } = useMemo(() => {
-    const g = [], a = [];
+    const g = [],
+      a = [];
     for (const f of cfList) (f.group === "advance" ? a : g).push(f);
     return { generalCF: g, advanceCF: a };
   }, [cfList]);
@@ -333,7 +343,9 @@ export default function AddLeadDrawer({
   // validation
   const problems = useMemo(() => {
     const p = {};
-    const need = (k, msg) => { if (!String(form[k] ?? "").trim()) p[k] = msg; };
+    const need = (k, msg) => {
+      if (!String(form[k] ?? "").trim()) p[k] = msg;
+    };
 
     need("name", "Lead name is required");
     need("mobile", "Mobile is required");
@@ -341,8 +353,10 @@ export default function AddLeadDrawer({
     need("stage", "Lead stage is required");
     need("source", "Source is required");
 
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) p.email = "Invalid email";
-    if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile)) p.mobile = "Invalid phone number";
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
+      p.email = "Invalid email";
+    if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile))
+      p.mobile = "Invalid phone number";
     if (dupMobile) p.mobile = "Duplicate number — will be sent for approval";
 
     for (const cf of cfList) {
@@ -361,7 +375,7 @@ export default function AddLeadDrawer({
 
   const isValid = Object.keys(problems).length === 0;
 
-  // payload builder (separates file-type custom fields into multipart parts)
+  // payload builder
   function buildPayload() {
     const customForJson = {};
     const files = {};
@@ -370,7 +384,7 @@ export default function AddLeadDrawer({
       const key = cf.key;
       const v = custom[key];
       if (cf.type === "file") {
-        if (v instanceof File) files[`cf_files[${key}]`] = v; // adjust name if your API differs
+        if (v instanceof File) files[`cf_files[${key}]`] = v;
       } else {
         if (v !== undefined) customForJson[key] = v;
       }
@@ -380,7 +394,10 @@ export default function AddLeadDrawer({
       name: String(form.name || "").trim(),
       mobile: `${form.mobile_code} ${String(form.mobile || "").trim()}`,
       email: form.email?.trim() || null,
-      expected_revenue: form.expected_revenue !== "" && form.expected_revenue !== null ? Number(form.expected_revenue) : null,
+      expected_revenue:
+        form.expected_revenue !== "" && form.expected_revenue !== null
+          ? Number(form.expected_revenue)
+          : null,
       follow_up_date: form.follow_up_date,
       profession: form.profession || null,
       stage: form.stage,
@@ -436,7 +453,7 @@ export default function AddLeadDrawer({
     }
   };
 
-  // custom field renderer (supports file)
+  // custom field renderer
   const renderCF = (cf) => {
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
@@ -446,61 +463,110 @@ export default function AddLeadDrawer({
 
     const wrap = (control) => (
       <div key={cf.id || key} className="space-y-1.5">
-        {cf.type !== "checkbox" && <label className="text-xs md:text-sm gg-muted">{cf.label} {reqMark}</label>}
+        {cf.type !== "checkbox" && (
+          <label className="text-xs md:text-sm gg-muted">
+            {cf.label} {reqMark}
+          </label>
+        )}
         {control}
-        {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-0.5">{problems[`cf:${key}`]}</div>}
+        {problems[`cf:${key}`] && (
+          <div className="text-rose-400 text-xs mt-0.5">
+            {problems[`cf:${key}`]}
+          </div>
+        )}
       </div>
     );
 
     switch (cf.type) {
       case "textarea":
-        return wrap(<textarea className={`${base} h-24`} value={val} onChange={(e) => set(e.target.value)} />);
+        return wrap(
+          <textarea
+            className={`${base} h-24`}
+            value={val}
+            onChange={(e) => set(e.target.value)}
+          />
+        );
       case "number":
-        return wrap(<input type="number" className={base} value={val} onChange={(e) => set(e.target.value)} />);
+        return wrap(
+          <input
+            type="number"
+            className={base}
+            value={val}
+            onChange={(e) => set(e.target.value)}
+          />
+        );
       case "date":
-        return wrap(<input type="date" className={base} value={val} onChange={(e) => set(e.target.value)} />);
+        return wrap(
+          <input
+            type="date"
+            className={base}
+            value={val}
+            onChange={(e) => set(e.target.value)}
+          />
+        );
       case "select":
         return wrap(
-          <select className={base} value={val} onChange={(e) => set(e.target.value)}>
+          <select
+            className={base}
+            value={val}
+            onChange={(e) => set(e.target.value)}
+          >
             <option value="">Select…</option>
             {(cf.options || []).map((opt) => (
-              <option key={String(opt)} value={opt}>{opt}</option>
+              <option key={String(opt)} value={opt}>
+                {opt}
+              </option>
             ))}
           </select>
         );
       case "checkbox":
         return (
           <label key={cf.id || key} className="flex items-center gap-2">
-            <input type="checkbox" checked={!!val} onChange={(e) => set(e.target.checked)} />
-            <span className="text-sm">{cf.label} {reqMark}</span>
+            <input
+              type="checkbox"
+              checked={!!val}
+              onChange={(e) => set(e.target.checked)}
+            />
+            <span className="text-sm">
+              {cf.label} {reqMark}
+            </span>
           </label>
         );
       case "file":
         return wrap(
-          <input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />
+          <input
+            type="file"
+            className={base}
+            accept={cf.accept || "*/*"}
+            onChange={updateFileCF(key)}
+          />
         );
       default:
         return wrap(
-          <input className={base} value={val} onChange={(e) => set(e.target.value)} />
+          <input
+            className={base}
+            value={val}
+            onChange={(e) => set(e.target.value)}
+          />
         );
     }
   };
 
-  /* ============================== LAYOUT ============================== */
+  /* ============================== Layout ============================== */
   const el = (
     <div className="fixed inset-0 z-[9999]">
-      {/* Backdrop */}
       <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] animate-fadeIn" onClick={onClose} aria-hidden />
-
-      {/* Drawer */}
       <aside
         className="absolute right-0 top-0 h-full w-full sm:w-[780px] bg-[var(--surface)] border-l border-[color:var(--border)] shadow-2xl animate-slideIn will-change-transform flex flex-col"
-        role="dialog" aria-modal="true" aria-label="Add Lead"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Add Lead"
       >
-        {/* Header */}
         <div className="px-4 md:px-5 py-3 border-b border-[color:var(--border)] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl gg-surface flex items-center justify-center"><User2 className="w-4 h-4" /></div>
+            <div className="w-8 h-8 rounded-xl gg-surface flex items-center justify-center">
+              <User2 className="w-4 h-4" />
+            </div>
             <div>
               <h2 className="text-base md:text-lg font-semibold leading-tight">New Lead</h2>
               <div className="gg-muted text-xs">Fill in the details below</div>
@@ -508,10 +574,8 @@ export default function AddLeadDrawer({
           </div>
         </div>
 
-        {/* Body */}
         <form onSubmit={submit} className="flex-1 overflow-auto">
           <div className="p-4 md:p-5 pt-6 space-y-5">
-            {/* GENERAL */}
             <Section title="General" subtitle="Core information to create the lead.">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Lead Name" required htmlFor="lead-name" error={problems.name}>
@@ -585,11 +649,14 @@ export default function AddLeadDrawer({
               )}
             </Section>
 
-            {/* ADVANCE (only custom fields) */}
             <Section
               title="Custom fields — Advance"
               right={
-                <button type="button" className="gg-btn gg-btn-sm" onClick={() => (onManageCustomFields ? onManageCustomFields() : setShowCFModal(true))}>
+                <button
+                  type="button"
+                  className="gg-btn gg-btn-sm"
+                  onClick={() => setShowCFModal(true)}
+                >
                   <Plus className="w-4 h-4 mr-1" /> Add custom field
                 </button>
               }
@@ -597,15 +664,20 @@ export default function AddLeadDrawer({
               {advanceCF.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{advanceCF.map(renderCF)}</div>
               ) : (
-                <div className="gg-card p-3 text-sm text-[color:var(--muted)]">No custom fields yet.</div>
+                <div className="gg-card p-3 text-sm text-[color:var(--muted)]">
+                  No custom fields yet.
+                </div>
               )}
             </Section>
 
-            {error && <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">{error}</div>}
+            {error && (
+              <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">
+                {error}
+              </div>
+            )}
           </div>
         </form>
 
-        {/* Footer */}
         <div className="px-4 md:px-5 py-3 border-t border-[color:var(--border)] flex items-center justify-between gap-3 sticky bottom-0 bg-[var(--surface)]">
           <div className="flex items-center gap-2 text-xs md:text-sm gg-muted">
             <CheckCircle2 className="w-4 h-4" />
@@ -613,33 +685,33 @@ export default function AddLeadDrawer({
           </div>
           <div className="flex items-center gap-2">
             <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
-            <button id="addlead-save" className="gg-btn gg-btn-primary" type="submit" onClick={submit} disabled={saving || !isValid} aria-disabled={saving || !isValid}>
+            <button
+              id="addlead-save"
+              className="gg-btn gg-btn-primary"
+              type="submit"
+              onClick={submit}
+              disabled={saving || !isValid}
+              aria-disabled={saving || !isValid}
+            >
               {saving ? "Saving…" : "Save Lead"}
             </button>
           </div>
         </div>
       </aside>
 
-      {/* Inline Custom Field Modal */}
+      {/* Inline Custom Field Modal (now self-saving) */}
       {showCFModal && (
         <CFModal
           onClose={() => setShowCFModal(false)}
-          onSave={async (field) => {
-            // Force every new field into Advance group
-            let newField = { ...field, group: "advance" };
-            if (onCreateCustomField) {
-              try {
-                const persisted = await onCreateCustomField(newField);
-                if (persisted) newField = { ...newField, ...persisted, group: "advance" };
-              } catch {}
-            }
-            setCfList((list) => [...list, newField]);
+          onSaved={(persistedField) => {
+            // ensure it's Advance in the UI
+            const f = { ...persistedField, group: "advance" };
+            setCfList((list) => [...list, f]);
             setShowCFModal(false);
           }}
         />
       )}
 
-      {/* Animations */}
       <style>{`
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes slideIn { 0% { transform: translateX(28px); opacity: .0; } 60% { transform: translateX(-3px); opacity: 1; } 100% { transform: translateX(0); } }
@@ -655,23 +727,57 @@ export default function AddLeadDrawer({
   return createPortal(el, document.body);
 }
 
-function CFModal({ onClose, onSave }) {
-  // Removed group from state & UI; we'll always save as 'advance'
-  const [f, setF] = useState({ label: "", key: "", type: "text", required: false, optionsText: "" });
+/* ============================== CFModal ============================== */
+/* Self-contained modal: no Group field; saves to backend; returns saved field */
+function CFModal({ onClose, onSaved }) {
+  const [f, setF] = useState({
+    label: "",
+    key: "",
+    type: "text",
+    required: false,
+    optionsText: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
 
-  const save = () => {
-    const key = (f.key || f.label).trim().toLowerCase().replace(/\s+/g, "_");
-    if (!f.label.trim()) return;
-    const field = {
-      id: safeRandomId(),
-      label: f.label.trim(),
+  const save = async () => {
+    setErr("");
+    const label = f.label.trim();
+    if (!label) { setErr("Label is required."); return; }
+
+    const key = (f.key || label).trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64);
+    const payload = {
+      label,
       key,
       type: f.type,
-      group: "advance", // <- forced to Advance
       required: !!f.required,
-      options: f.type === "select" ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean) : [],
+      options: f.type === "select"
+        ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean)
+        : [],
+      // no section/group sent
     };
-    onSave?.(field);
+
+    try {
+      setSaving(true);
+      const resp = await http.post("/api/leads/custom-fields", payload);
+      const saved = resp?.data || {};
+      const fieldForUi = {
+        id: saved.id || safeRandomId(),
+        key: saved.code || key,
+        label: saved.label || label,
+        type: saved.field_type || payload.type,
+        required: saved.is_required ?? payload.required,
+        options: saved.options_json ?? payload.options,
+        group: "advance",
+      };
+      onSaved?.(fieldForUi);
+      onClose?.();
+    } catch (e) {
+      console.error("CFModal save", e);
+      setErr(e?.response?.data?.message || e?.message || "Failed to save custom field.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return createPortal(
@@ -689,7 +795,7 @@ function CFModal({ onClose, onSave }) {
             <input className="gg-input h-10" value={f.label} onChange={(e) => setF((s) => ({ ...s, label: e.target.value }))} />
           </div>
 
-          {/* Key only — Group selector removed */}
+          {/* Key only — Group removed */}
           <div>
             <label className="gg-label">Key</label>
             <input className="gg-input h-10" value={f.key} onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))} placeholder="auto from label if empty" />
@@ -724,11 +830,15 @@ function CFModal({ onClose, onSave }) {
               <input className="gg-input h-10" placeholder="e.g., Hot, Warm, Cold" value={f.optionsText} onChange={(e) => setF((s) => ({ ...s, optionsText: e.target.value }))} />
             </div>
           )}
+
+          {err && <div className="text-sm text-rose-400">{err}</div>}
         </div>
 
         <div className="flex justify-end mt-4 gap-2">
           <button className="gg-btn gg-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="gg-btn gg-btn-primary" onClick={save}>Save</button>
+          <button className="gg-btn gg-btn-primary" onClick={save} disabled={saving}>
+            {saving ? "Saving…" : "Save"}
+          </button>
         </div>
       </div>
     </div>,
@@ -736,4 +846,6 @@ function CFModal({ onClose, onSave }) {
   );
 }
 
-function cap(s) { return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1); }
+function cap(s) {
+  return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
+}
