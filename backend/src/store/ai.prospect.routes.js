@@ -39,8 +39,28 @@ async function fetchPDL(prompt, size) {
   if (!key) throw new Error("Missing PDL_API_KEY");
 
   const url = "https://api.peopledatalabs.com/v5/person/search";
+
+  // Build an Elasticsearch query that PDL accepts.
+  // Falls back to a reasonable default if prompt is empty.
+const es = {
+  bool: {
+    should: [
+      { match_phrase: { job_title: "procurement" } },
+      { match_phrase: { job_title: "finance" } },
+      { match_phrase: { job_title: "operations" } },
+      { match: { job_company_industry: "manufacturing" } },
+      { match: { job_company_name: "manufacturer" } },
+      { simple_query_string: { query: prompt || "", fields: ["job_title^2","job_company_name","job_company_industry","summary","skills"] } },
+    ],
+    minimum_should_match: 1,
+    filter: [{ term: { location_country: "India" } }],
+  },
+};
+
+
   const body = {
-    query: String(prompt || ""),
+    // IMPORTANT: PDL expects query to be a JSON STRING (stringified)
+    query: JSON.stringify(es),
     size: Math.max(1, Math.min(Number(size) || 25, 200)),
   };
 
@@ -59,6 +79,7 @@ async function fetchPDL(prompt, size) {
   }
   return r.json();
 }
+
 
 // Health
 router.get("/ping", (_req, res) => res.json({ ok: true }));
