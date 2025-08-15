@@ -68,7 +68,7 @@ function buildTree(input){
   // 3) synthesize ADMIN root if missing but any admin.* exists
   const hasAnyAdmin = src.some(n=>String(n.code||"").startsWith("admin"));
   if(hasAnyAdmin && !byCode[ADMIN_CODE]){
-    const admin = { id:`synthetic:${ADMIN_CODE}`, code: ADMIN_CODE, name:"Admin", path:"/app/admin", icon:"⚙️", sort_order:10, parent_id:null, module_type:"app", children:[] };
+    const admin = { id:`synthetic:${ADMIN_CODE}`, code: ADMIN_CODE, name:"Admin", path:"/admin", icon:"⚙️", sort_order:10, parent_id:null, module_type:"app", children:[] };
     byId[admin.id]=admin; byCode[ADMIN_CODE]=admin; src.push(admin);
   }
 
