@@ -54,44 +54,64 @@ function norm(raw){
   const parent_id   = raw.parent_id ?? raw.parentId ?? null;
   const parent_code = raw.parent_code ?? raw.parentCode ?? null;
   const module_type = raw.module_type ?? raw.moduleType ?? raw.type ?? null;
-  return { id:String(id||code), code, name, path, icon, sort_order, parent_id: parent_id ? String(parent_id) : null, parent_code, module_type, children: [] };
+  return {
+    id:String(id||code), code, name, path, icon, sort_order,
+    parent_id: parent_id ? String(parent_id) : null,
+    parent_code, module_type, children: []
+  };
 }
 
 function buildTree(input){
-  // 1) normalize incoming
   const src = (input||[]).map(norm).filter(n=>n.id);
 
-  // 2) index by id/code
   const byId   = Object.fromEntries(src.map(n=>[n.id,n]));
   const byCode = Object.fromEntries(src.map(n=>[n.code,n]));
 
-  // 3) synthesize ADMIN root if missing but any admin.* exists
+  // Ensure ADMIN root exists if we have any admin.* item
   const hasAnyAdmin = src.some(n=>String(n.code||"").startsWith("admin"));
   if(hasAnyAdmin && !byCode[ADMIN_CODE]){
-    const admin = { id:`synthetic:${ADMIN_CODE}`, code: ADMIN_CODE, name:"Admin", path:"/admin", icon:"⚙️", sort_order:10, parent_id:null, module_type:"app", children:[] };
+    const admin = { id:`synthetic:${ADMIN_CODE}`, code:ADMIN_CODE, name:"Admin",
+      path:"/admin", icon:"⚙️", sort_order:10, parent_id:null, module_type:"app", children:[] };
     byId[admin.id]=admin; byCode[ADMIN_CODE]=admin; src.push(admin);
   }
 
-  // 4) synthesize admin groups if referenced or needed
+  // Ensure groups exist when needed
   for(const [gcode, meta] of Object.entries(GROUP_LABELS)){
     const exists = !!byCode[gcode];
     const needed = !exists && src.some(n => inferGroupCode(n.code)===gcode || n.parent_code===gcode);
     if(!exists && needed){
       const parentAdmin = byCode[ADMIN_CODE];
-      const g = { id:`synthetic:${gcode}`, code:gcode, name:meta.name, path:null, icon:meta.icon, sort_order:meta.sort_order, parent_id: parentAdmin? parentAdmin.id : null, module_type:"group", children:[] };
+      const g = { id:`synthetic:${gcode}`, code:gcode, name:meta.name, path:null,
+        icon:meta.icon, sort_order:meta.sort_order, parent_id: parentAdmin? parentAdmin.id : null,
+        module_type:"group", children:[] };
       byId[g.id]=g; byCode[gcode]=g; src.push(g);
     }
   }
 
-  // 5) attach children
+  // Attach / repair parent links
   for(const n of src){
-    // if no parent_id, try parent_code, then infer by code
-    if(!n.parent_id){
-      const gcode = n.parent_code || inferGroupCode(n.code);
-      if(gcode && byCode[gcode]) n.parent_id = byCode[gcode].id;
-    }
-    // ensure groups behave as headings
+    // Treat groups as headings
     if(n.code in GROUP_LABELS){ n.path = null; n.module_type = "group"; }
+
+    const parentKnown = n.parent_id && byId[n.parent_id];
+
+    if(!parentKnown){
+      // Try explicit parent_code
+      if(n.parent_code && byCode[n.parent_code]){
+        n.parent_id = byCode[n.parent_code].id;
+        continue;
+      }
+      // Try infer group by code
+      const gcode = inferGroupCode(n.code);
+      if(gcode && byCode[gcode]){
+        n.parent_id = byCode[gcode].id;
+        continue;
+      }
+      // As a last resort, put admin.* under Admin root
+      if(n.code !== ADMIN_CODE && n.code.startsWith("admin") && byCode[ADMIN_CODE]){
+        n.parent_id = byCode[ADMIN_CODE].id;
+      }
+    }
   }
 
   const roots=[];
@@ -100,7 +120,6 @@ function buildTree(input){
     else roots.push(n);
   }
 
-  // 6) sort
   const sortFn=(a,b)=>(a.sort_order??999)-(b.sort_order??999) || String(a.name||"").localeCompare(String(b.name||""));
   const sortDeep=(nodes)=>{ nodes.sort(sortFn); nodes.forEach(nd=>nd.children?.length && sortDeep(nd.children)); return nodes; };
   return sortDeep(roots);
@@ -109,23 +128,25 @@ function buildTree(input){
 /* ---------------- Node component ---------------- */
 function NodeItem({ node, depth=0, defaultOpen=false, onNavigate }){
   const hasChildren = (node.children?.length||0)>0;
-  const isLeaf = !hasChildren && !!node.path;
+  const linkPath = node.path ? node.path.replace(/^\/app(?=\/|$)/, "") : null; // UI-side strip
+  const isLeaf = !!linkPath && !hasChildren; // headings stay expandable
   const [open, setOpen] = useState(defaultOpen);
   const Icon = iconByName(node.icon);
   const pad = 16 + depth*18;
   const base = "flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors";
+  const displayName = node.name ?? node.label ?? node.code;
 
   if(isLeaf){
     return (
       <NavLink
-        to={node.path}
+        to={linkPath}
         end
         onClick={onNavigate}
         className={({isActive}) => `${base} ${isActive ? "bg-white/10 text-white" : "text-gray-300 hover:text-white hover:bg-white/5"}`}
         style={{ paddingLeft: pad }}
       >
         <Icon className="w-4 h-4 opacity-80" />
-        <span className="truncate">{node.name}</span>
+        <span className="truncate">{displayName}</span>
       </NavLink>
     );
   }
@@ -137,7 +158,7 @@ function NodeItem({ node, depth=0, defaultOpen=false, onNavigate }){
         onClick={()=>setOpen(v=>!v)} aria-expanded={open} style={{ paddingLeft: pad }}
       >
         <Icon className="w-4 h-4 opacity-80" />
-        <span className="flex-1 truncate">{node.name}</span>
+        <span className="flex-1 truncate">{displayName}</span>
         {open ? <IconSet.ChevronDown className="w-4 h-4" /> : <IconSet.ChevronRight className="w-4 h-4" />}
       </button>
       {hasChildren && (
