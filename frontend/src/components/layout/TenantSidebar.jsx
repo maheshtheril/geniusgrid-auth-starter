@@ -17,7 +17,8 @@ function EmojiIcon({ glyph, className }) {
 
 function isEmoji(str) {
   if (!str) return false;
-  try { return /[\p{Extended_Pictographic}]/u.test(str); } catch { return /[^\w\s]/.test(str); }
+  try { return /[\p{Extended_Pictographic}]/u.test(str); }
+  catch { return /[^\w\s]/.test(str); }
 }
 
 function iconByName(name) {
@@ -28,38 +29,98 @@ function iconByName(name) {
   return IconSet[pascal] || IconSet.Dot;
 }
 
-/* ----------------------------- Tree ----------------------------- */
+/* ----------------------------- Group inference ----------------------------- */
+/** If API doesn't send parent_id/parent_code, infer a group from the item's code */
+const ADMIN_GROUP_CODE = "admin";
+const GROUP_MAP = {
+  "admin.grp.org": new Set([
+    "admin.org","admin.branding","admin.localization","admin.taxes",
+    "admin.units","admin.locations","admin.calendars","admin.numbering"
+  ]),
+  "admin.grp.rbac": new Set(["admin.users","admin.roles","admin.permissions","admin.teams"]),
+  "admin.grp.sec" : new Set(["admin.security","admin.sso","admin.domains","admin.audit"]),
+  "admin.grp.data": new Set([
+    "admin.settings","admin.custom-fields","admin.pipelines","admin.templates",
+    "admin.notifications","admin.import_export","admin.backups"
+  ]),
+  "admin.grp.int" : new Set(["admin.integrations","admin.marketplace","admin.api_keys","admin.webhooks","admin.features"]),
+  "admin.grp.ai"  : new Set(["admin.ai","admin.automation","admin.approvals"]),
+  "admin.grp.bill": new Set(["admin.billing","admin.usage","admin.logs"]),
+};
 
-function normalizeItem(i) {
-  // accept snake_case or camelCase from API
-  const id         = i.id ?? i.menu_id ?? i.menuId;
-  const parent_id  = i.parent_id ?? i.parentId ?? null;
-  const name       = i.name ?? i.label ?? i.code ?? "Untitled";
-  const path       = i.path ?? i.url ?? i.route ?? null;
-  const icon       = i.icon ?? i.emoji ?? null;
-  const sort_order = i.sort_order ?? i.sortOrder ?? 999;
-  return { ...i, id, parent_id, name, path, icon, sort_order, children: [] };
+function inferParentCode(itemCode) {
+  if (!itemCode) return null;
+  for (const [groupCode, children] of Object.entries(GROUP_MAP)) {
+    if (children.has(itemCode)) return groupCode;
+  }
+  return null;
+}
+
+/* ----------------------------- Tree build ----------------------------- */
+
+function normalizeItem(raw) {
+  const id          = raw.id ?? raw.menu_id ?? raw.menuId;
+  const parent_id   = raw.parent_id ?? raw.parentId ?? null;
+  const parent_code = raw.parent_code ?? raw.parentCode ?? null;
+  const code        = raw.code ?? String(id || "");
+  const name        = raw.name ?? raw.label ?? code ?? "Untitled";
+  const path        = raw.path ?? raw.url ?? raw.route ?? null;
+  const icon        = raw.icon ?? raw.emoji ?? null;
+  const sort_order  = raw.sort_order ?? raw.sortOrder ?? 999;
+  const module_type = raw.module_type ?? raw.moduleType ?? raw.type ?? null;
+
+  return {
+    ...raw,
+    id, parent_id, parent_code, code, name, path, icon, sort_order, module_type,
+    children: [],
+  };
 }
 
 function buildTree(items) {
+  // 1) Normalize and index by id/code
   const primed = (items || []).map(normalizeItem).filter(i => i.id);
   const byId   = Object.fromEntries(primed.map(i => [i.id, i]));
-  const roots  = [];
+  const byCode = Object.fromEntries(primed.map(i => [i.code, i]));
 
+  // 2) If parent_id is missing, try parent_code, otherwise infer by code
+  for (const i of primed) {
+    if (!i.parent_id) {
+      let parentCode = i.parent_code || inferParentCode(i.code);
+      if (parentCode && byCode[parentCode]) {
+        i.parent_id = byCode[parentCode].id;
+      }
+    }
+  }
+
+  // 3) Ensure Admin groups are under 'admin' if present
+  //    (helps when API returned groups as roots accidentally)
+  const admin = byCode[ADMIN_GROUP_CODE];
+  if (admin) {
+    for (const code of Object.keys(GROUP_MAP)) {
+      const g = byCode[code];
+      if (g && !g.parent_id) g.parent_id = admin.id;
+      // groups must behave as headings: no link
+      if (g) {
+        g.path = null;
+        g.module_type = "group";
+      }
+    }
+  }
+
+  // 4) Assemble hierarchy
+  const roots = [];
   primed.forEach((i) => {
-    if (i.parent_id) {
-      const p = byId[i.parent_id];
-      if (p) p.children.push(i);
-      else roots.push(i); // orphan safety
+    if (i.parent_id && byId[i.parent_id]) {
+      byId[i.parent_id].children.push(i);
     } else {
       roots.push(i);
     }
   });
 
+  // 5) Sort parents/children consistently
   const sortFn = (a, b) =>
     (a.sort_order ?? 999) - (b.sort_order ?? 999) ||
     String(a.name || "").localeCompare(String(b.name || ""));
-
   const sortDeep = (nodes) => {
     nodes.sort(sortFn);
     nodes.forEach(n => n.children?.length && sortDeep(n.children));
@@ -73,7 +134,7 @@ function buildTree(items) {
 
 function NodeItem({ node, depth = 0, defaultOpen = false, onNavigate }) {
   const hasChildren = (node.children?.length || 0) > 0;
-  const isLeaf = !hasChildren && !!node.path; // leaf only if NO children
+  const isLeaf = !hasChildren && !!node.path; // leaf only if NO children & has a link
   const [open, setOpen] = useState(defaultOpen);
   const Icon = iconByName(node.icon);
 
@@ -97,7 +158,7 @@ function NodeItem({ node, depth = 0, defaultOpen = false, onNavigate }) {
     );
   }
 
-  // Group / parent
+  // Group / parent (collapsible)
   return (
     <div>
       <button
