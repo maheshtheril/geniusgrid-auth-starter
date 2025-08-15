@@ -17,42 +17,35 @@ function EmojiIcon({ glyph, className }) {
 
 function isEmoji(str) {
   if (!str) return false;
-  try {
-    // Broad check for pictographic glyphs (works in modern browsers)
-    return /[\p{Extended_Pictographic}]/u.test(str);
-  } catch {
-    // Fallback heuristic
-    return [...str].length <= 2 && /[^\w\s]/.test(str);
-  }
+  try { return /[\p{Extended_Pictographic}]/u.test(str); } catch { return /[^\w\s]/.test(str); }
 }
 
 function iconByName(name) {
   if (!name) return IconSet.Dot;
-  if (isEmoji(name)) {
-    return (props) => <EmojiIcon glyph={name} {...props} />;
-  }
-  // Exact match (e.g., "Settings", "Shield")
+  if (isEmoji(name)) return (props) => <EmojiIcon glyph={name} {...props} />;
   if (IconSet[name]) return IconSet[name];
-  // Try PascalCase from kebab/space/snake
-  const pascal = String(name)
-    .split(/[-_ ]+/)
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
-    .join("");
+  const pascal = String(name).split(/[-_ ]+/).map(s => s.charAt(0).toUpperCase() + s.slice(1)).join("");
   return IconSet[pascal] || IconSet.Dot;
 }
 
 /* ----------------------------- Tree ----------------------------- */
 
-function buildTree(items) {
-  // Normalize names and prime children arrays
-  const primed = (items || []).map((i) => ({
-    ...i,
-    name: i?.name ?? i?.label ?? i?.code ?? "Untitled",
-    children: [],
-  }));
+function normalizeItem(i) {
+  // accept snake_case or camelCase from API
+  const id         = i.id ?? i.menu_id ?? i.menuId;
+  const parent_id  = i.parent_id ?? i.parentId ?? null;
+  const name       = i.name ?? i.label ?? i.code ?? "Untitled";
+  const path       = i.path ?? i.url ?? i.route ?? null;
+  const icon       = i.icon ?? i.emoji ?? null;
+  const sort_order = i.sort_order ?? i.sortOrder ?? 999;
+  return { ...i, id, parent_id, name, path, icon, sort_order, children: [] };
+}
 
-  const byId = Object.fromEntries(primed.map((i) => [i.id, i]));
-  const roots = [];
+function buildTree(items) {
+  const primed = (items || []).map(normalizeItem).filter(i => i.id);
+  const byId   = Object.fromEntries(primed.map(i => [i.id, i]));
+  const roots  = [];
+
   primed.forEach((i) => {
     if (i.parent_id) {
       const p = byId[i.parent_id];
@@ -69,7 +62,7 @@ function buildTree(items) {
 
   const sortDeep = (nodes) => {
     nodes.sort(sortFn);
-    nodes.forEach((n) => n.children?.length && sortDeep(n.children));
+    nodes.forEach(n => n.children?.length && sortDeep(n.children));
     return nodes;
   };
 
@@ -85,8 +78,7 @@ function NodeItem({ node, depth = 0, defaultOpen = false, onNavigate }) {
   const Icon = iconByName(node.icon);
 
   const pad = 16 + depth * 18; // clearer indentation
-  const baseCls =
-    "flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors";
+  const baseCls = "flex items-center gap-2 rounded-xl px-3 py-2 text-sm transition-colors";
 
   if (isLeaf) {
     return (
@@ -95,11 +87,7 @@ function NodeItem({ node, depth = 0, defaultOpen = false, onNavigate }) {
         end
         onClick={onNavigate}
         className={({ isActive }) =>
-          `${baseCls} ${
-            isActive
-              ? "bg-white/10 text-white"
-              : "text-gray-300 hover:text-white hover:bg-white/5"
-          }`
+          `${baseCls} ${isActive ? "bg-white/10 text-white" : "text-gray-300 hover:text-white hover:bg-white/5"}`
         }
         style={{ paddingLeft: pad }}
       >
@@ -109,23 +97,19 @@ function NodeItem({ node, depth = 0, defaultOpen = false, onNavigate }) {
     );
   }
 
-  // Group / Parent (collapsible)
+  // Group / parent
   return (
     <div>
       <button
         type="button"
         className={`${baseCls} text-gray-300 hover:text-white hover:bg-white/5 w-full text-left font-medium`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(v => !v)}
         aria-expanded={open}
         style={{ paddingLeft: pad }}
       >
         <Icon className="w-4 h-4 opacity-80" />
         <span className="flex-1 truncate">{node.name}</span>
-        {open ? (
-          <IconSet.ChevronDown className="w-4 h-4" />
-        ) : (
-          <IconSet.ChevronRight className="w-4 h-4" />
-        )}
+        {open ? <IconSet.ChevronDown className="w-4 h-4" /> : <IconSet.ChevronRight className="w-4 h-4" />}
       </button>
 
       {hasChildren && (
@@ -139,13 +123,8 @@ function NodeItem({ node, depth = 0, defaultOpen = false, onNavigate }) {
               style={{ marginLeft: pad }}
             >
               <div className="border-l border-white/10 pl-3">
-                {node.children.map((ch) => (
-                  <NodeItem
-                    key={ch.id}
-                    node={ch}
-                    depth={depth + 1}
-                    onNavigate={onNavigate}
-                  />
+                {node.children.map(ch => (
+                  <NodeItem key={ch.id} node={ch} depth={depth + 1} onNavigate={onNavigate} />
                 ))}
               </div>
             </motion.div>
@@ -164,19 +143,12 @@ export default function TenantSidebar({ onNavigate }) {
 
   return (
     <aside className="w-64 shrink-0 hidden md:flex md:flex-col bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100 border-r border-white/10 p-3">
-      <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-white/40">
-        Menu
-      </div>
+      <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-white/40">Menu</div>
 
       <div className="mt-2 space-y-1">
         {tree.length ? (
-          tree.map((node) => (
-            <NodeItem
-              key={node.id}
-              node={node}
-              defaultOpen={true}
-              onNavigate={onNavigate}
-            />
+          tree.map(node => (
+            <NodeItem key={node.id} node={node} defaultOpen={true} onNavigate={onNavigate} />
           ))
         ) : (
           <div className="text-sm opacity-70">No menus</div>
