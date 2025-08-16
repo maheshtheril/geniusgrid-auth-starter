@@ -1,7 +1,7 @@
-// ---------- FILE: src/pages/crm/deals/DealsLayout.jsx (Pro + New Deal Drawer) ----------
+// ---------- FILE: src/pages/crm/deals/DealsLayout.jsx (Pro + New Deal Drawer + Help) ----------
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Briefcase, Plus, Upload, Download, Search } from "lucide-react";
+import { Briefcase, Plus, Upload, Download, Search, HelpCircle } from "lucide-react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,10 +72,14 @@ export default function DealsLayout(){
       if (!typing && (e.key === "n" || e.key === "N") && !e.ctrlKey && !e.metaKey) {
         e.preventDefault(); setShowNew(true); // open drawer
       }
+      // Help shortcut (Shift+/ on many keyboards gives '?', but handle '?' directly)
+      if (!typing && e.key === "?") {
+        e.preventDefault(); navigate("/app/crm/deals/help");
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [navigate]);
 
   const onSearch = (val) => {
     const next = new URLSearchParams(params);
@@ -129,6 +133,9 @@ export default function DealsLayout(){
             <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/export?q="+encodeURIComponent(q))}>
               <Download className="h-4"/> Export
             </Button>
+            <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/help")}>
+              <HelpCircle className="h-4" /> Help
+            </Button>
           </div>
         </div>
       </div>
@@ -157,7 +164,7 @@ export default function DealsLayout(){
 
       {/* Content */}
       <div className="bg-card rounded-2xl border p-3 md:p-4">
-      <Outlet context={{ openNewDeal: () => setShowNew(true) }} />
+        <Outlet context={{ openNewDeal: () => setShowNew(true) }} />
       </div>
 
       {/* New Deal Drawer */}
