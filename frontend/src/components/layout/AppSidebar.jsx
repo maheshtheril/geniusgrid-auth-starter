@@ -1,4 +1,3 @@
-// src/components/layout/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
@@ -17,18 +16,23 @@ const byOrderThenName = (a, b) => {
   const bn = String(b.label || b.name || b.code || "");
   return an.localeCompare(bn, undefined, { sensitivity: "base" });
 };
+const isMain = (n) => String(n.label || n.name || n.code || "").trim().toLowerCase() === "main";
 
-/* ------------------ DB-FIRST (STRICT ROOTS) ------------------
-   - Attach children ONLY if parent exists
-   - Display ONLY roots with parent_id NULL
-   - Drop any root named "Main"
-   - Ignore orphans (no synthetic parents)
----------------------------------------------------------------- */
-function buildStrictTree(items) {
+/* ------------------ DB-FIRST tree builder ------------------
+   Pass A (strict): roots = parent_id NULL only
+   Pass B (rescue if A empty): roots = NULL OR parent missing OR obvious module roots
+   Children still attach STRICTLY by parent_id (only if parent exists)
+-------------------------------------------------------------- */
+function buildTreeResilient(rawItems) {
+  // normalize payload shape
+  const items = Array.isArray(rawItems) ? rawItems : (rawItems?.data ?? rawItems?.items ?? []);
   const byId = new Map();
   const children = new Map();
 
   (items || []).forEach((raw) => {
+    const parent_id =
+      raw.parent_id === "" || raw.parent_id === "null" || raw.parent_id === undefined ? null : raw.parent_id;
+
     const n = {
       id: raw.id,
       code: raw.code,
@@ -36,15 +40,16 @@ function buildStrictTree(items) {
       name: raw.label ?? raw.name ?? raw.code ?? "",
       path: normPath(raw.path || ""),
       icon: raw.icon ?? null,
-      parent_id: (raw.parent_id ?? null) || null, // coerce "" -> null
+      parent_id,
       module_code: raw.module_code ?? null,
       sort_order: raw.sort_order ?? null,
     };
+    if (!n.id) return; // skip corrupt rows
     byId.set(n.id, n);
     children.set(n.id, []);
   });
 
-  // attach ONLY when parent exists
+  // attach children strictly when parent exists
   byId.forEach((n) => {
     if (n.parent_id && byId.has(n.parent_id)) {
       children.get(n.parent_id).push(n);
@@ -57,17 +62,33 @@ function buildStrictTree(items) {
     return { ...node, children: kids.map(sortRec) };
   };
 
-  // STRICT roots: parent_id NULL only, and not "Main"
-  const roots = Array.from(byId.values()).filter((n) => !n.parent_id);
-  const filteredRoots = roots.filter(
-    (r) => String(r.label || r.code || "").trim().toLowerCase() !== "main"
-  );
+  // ---- PASS A: strict parents (parent_id null only) ----
+  let roots = Array.from(byId.values()).filter((n) => !n.parent_id && !isMain(n));
+  roots.sort(byOrderThenName);
 
-  filteredRoots.sort(byOrderThenName);
-  return filteredRoots.map(sortRec);
+  // ---- PASS B: rescue if strict yielded nothing ----
+  if (roots.length === 0 && byId.size > 0) {
+    const isObviousModuleRoot = (n) => {
+      // code with no dot, or /app/<module>
+      const c = String(n.code || "").trim();
+      const path = n.path || "";
+      return (!c.includes(".")) || /^\/app\/[^/]+$/.test(path);
+    };
+
+    const candidateRoots = Array.from(byId.values()).filter((n) => {
+      const parentExists = n.parent_id && byId.has(n.parent_id);
+      return !parentExists || isObviousModuleRoot(n);
+    });
+
+    roots = candidateRoots.filter((n) => !isMain(n));
+    roots.sort(byOrderThenName);
+  }
+
+  // depth-first sort & shape
+  return roots.map(sortRec);
 }
 
-/* ------------------ search utilities ------------------ */
+/* ------------------ search utils ------------------ */
 function walk(nodes, fn, parentId = null) {
   (nodes || []).forEach((n) => {
     fn(n, parentId);
@@ -154,71 +175,57 @@ const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inlin
 
 /* ------------------ COMPONENT ------------------ */
 export default function AppSidebar() {
-  const { menus = [], branding } = useEnv(); // DB-driven payload
+  const { menus = [], branding, ready } = useEnv(); // expect menus from DB
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  // STRICT roots (Admin + CRM only if parent_id is NULL in payload)
+  // Build (resilient) DB tree
   const roots = useMemo(() => {
-    const t = buildStrictTree(menus || []);
-    // Debug: show what we actually got
-    console.groupCollapsed("[Sidebar] roots (parent_id NULL only; 'Main' dropped)");
-    console.table(
-      t.map((r) => ({
-        id: r.id,
-        label: r.label,
-        code: r.code,
-        path: r.path,
-        children: r.children?.length || 0,
-      }))
-    );
+    const tree = buildTreeResilient(menus || []);
+    // Debug snapshots (remove later)
+    console.groupCollapsed("[Sidebar] payload");
+    console.table((Array.isArray(menus) ? menus : menus?.data ?? menus?.items ?? []).map(m => ({
+      id: m.id, code: m.code, label: m.label || m.name, path: m.path, parent_id: m.parent_id, sort: m.sort_order
+    })));
     console.groupEnd();
-    if (!t.length) {
-      console.warn(
-        "[Sidebar] No parents found. Ensure Admin/CRM rows have parent_id NULL in the menus payload."
-      );
-    }
-    return t;
+
+    console.groupCollapsed("[Sidebar] roots (DB-first, resilient)");
+    console.table(tree.map(r => ({ id: r.id, label: r.label, path: r.path, children: r.children?.length || 0 })));
+    console.groupEnd();
+    return tree;
   }, [menus]);
 
-  // Collapsed by default
+  // State: collapsed by default
   const [openIds, setOpenIds] = useState(() => new Set());
   const [query, setQuery] = useState("");
 
   const parentMap = useMemo(() => buildParentMap(roots), [roots]);
-  const { pruned: visibleTree, expandIds } = useMemo(
-    () => filterTree(roots, query),
-    [roots, query]
-  );
+  const { pruned: visibleTree, expandIds } = useMemo(() => filterTree(roots, query), [roots, query]);
 
   const isOpen = (id) => openIds.has(id);
-  const openMany = (ids) =>
-    setOpenIds((prev) => {
-      const next = new Set(prev);
-      ids.forEach((i) => next.add(i));
-      return next;
-    });
+  const openMany = (ids) => setOpenIds((prev) => {
+    const next = new Set(prev);
+    ids.forEach((i) => next.add(i));
+    return next;
+  });
   const closeAll = () => setOpenIds(new Set());
   const openAll = () => {
     const all = new Set();
-    walk(roots, (n) => {
-      if (n.children?.length) all.add(n.id);
-    });
+    walk(roots, (n) => { if (n.children?.length) all.add(n.id); });
     setOpenIds(all);
   };
-  const toggle = (id) =>
-    setOpenIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const toggle = (id) => setOpenIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   // Auto-open ancestors of the active route
   useEffect(() => {
     const match = findNodeByPath(roots, loc.pathname);
     if (match) openMany(ancestorsOf(match.id, parentMap));
-    // Scroll active link into view
+
+    // Scroll active into view
     const el = scrollerRef.current?.querySelector('a[aria-current="page"]');
     if (el && scrollerRef.current) {
       const { top: cTop } = scrollerRef.current.getBoundingClientRect();
@@ -230,19 +237,15 @@ export default function AppSidebar() {
     }
   }, [loc.pathname, roots, parentMap]);
 
-  // When searching, auto-open ancestors of matches
-  useEffect(() => {
-    if (query) openMany(expandIds);
-  }, [query, expandIds]);
+  // While searching, open ancestors of matches
+  useEffect(() => { if (query) openMany(expandIds); }, [query, expandIds]);
 
-  /* ---------- Node renderer ---------- */
   function Node({ node, depth = 0 }) {
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
     const open = isOpen(node.id);
     const pad = depth > 0 ? "ml-3" : "";
     const label = node.label || node.name || node.code || "";
 
-    // Any node with children acts as a header toggle (ignore its path for navigation)
     if (hasChildren) {
       return (
         <div className="group" key={node.id}>
@@ -259,23 +262,17 @@ export default function AppSidebar() {
           >
             <Chevron open={open} />
             {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
-            <span className="truncate">
-              <Highlight text={label} query={query} />
-            </span>
+            <span className="truncate"><Highlight text={label} query={query} /></span>
           </button>
-
           {open && (
             <div id={`children-${node.id}`} className="mt-1 space-y-1">
-              {node.children.map((c) => (
-                <Node key={c.id} node={c} depth={depth + 1} />
-              ))}
+              {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
             </div>
           )}
         </div>
       );
     }
 
-    // Leaf link
     return (
       <div className="group" key={node.id}>
         <NavLink
@@ -291,27 +288,18 @@ export default function AppSidebar() {
         >
           <Spacer />
           {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
-          <span className="truncate">
-            <Highlight text={label} query={query} />
-          </span>
+          <span className="truncate"><Highlight text={label} query={query} /></span>
         </NavLink>
       </div>
     );
   }
 
   return (
-    <aside
-      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
-      style={{ width: "16rem", minWidth: "16rem" }}
-    >
+    <aside className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col" style={{ width: "16rem", minWidth: "16rem" }}>
       {/* Header: Logo + Brand */}
       <div className="h-14 px-3 flex items-center gap-3 border-b border-gray-800">
         {branding?.logoUrl ? (
-          <img
-            src={branding.logoUrl}
-            alt={branding?.appName || "Logo"}
-            className="h-8 w-8 rounded-md object-contain bg-white/5 p-1"
-          />
+          <img src={branding.logoUrl} alt={branding?.appName || "Logo"} className="h-8 w-8 rounded-md object-contain bg-white/5 p-1" />
         ) : (
           <div className="h-8 w-8 rounded-md bg-gray-800 flex items-center justify-center text-lg">🧠</div>
         )}
@@ -342,29 +330,20 @@ export default function AppSidebar() {
               </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={openAll}
-            className="px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700"
-            title="Expand all"
-          >
-            ⤢
-          </button>
-          <button
-            type="button"
-            onClick={closeAll}
-            className="px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700"
-            title="Collapse all"
-          >
-            ⤡
-          </button>
+          <button type="button" onClick={openAll} className="px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700" title="Expand all">⤢</button>
+          <button type="button" onClick={closeAll} className="px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700" title="Collapse all">⤡</button>
         </div>
       </div>
 
-      {/* Menu list: STRICT parents only (no orphans, no synthetic "Main") */}
+      {/* Menu list */}
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
-        {visibleTree.length === 0 ? (
-          <div className="text-xs text-gray-400 px-3 py-2">No menus.</div>
+        {/* Loading guard: if env isn't ready and nothing to show yet */}
+        {!ready && (Array.isArray(menus) ? menus.length === 0 : !menus) ? (
+          <div className="text-xs text-gray-400 px-3 py-2">Loading menus…</div>
+        ) : visibleTree.length === 0 ? (
+          <div className="text-xs text-gray-400 px-3 py-2">
+            No menus. Check that Admin/CRM rows have <code>parent_id</code> NULL or their parents exist in the payload.
+          </div>
         ) : (
           visibleTree.map((root) => <Node key={root.id} node={root} />)
         )}
