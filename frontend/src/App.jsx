@@ -129,8 +129,8 @@ export default function App() {
 
               {/* Deals */}
               <Route path="deals" element={<DealsLayout />}>
-                {/* Index → Pipeline (explicit, no external component) */}
-                <Route index element={<Navigate to="pipeline" replace />} />
+              <Route index element={<DealsIndexRedirect />} />
+             <Route index element={<Navigate to="pipeline" replace />} />
                 <Route path="pipeline" element={<DealsPipeline />} />
                 <Route path="list" element={<DealsList />} />
                 <Route path="help" element={<DealsHelp />} />
