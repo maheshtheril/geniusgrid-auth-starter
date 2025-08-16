@@ -18,8 +18,13 @@ const byOrderThenName = (a, b) => {
   return an.localeCompare(bn, undefined, { sensitivity: "base" });
 };
 
-/* ------------------ DB-FIRST: build tree strictly by parent_id ------------------ */
-function buildTreeDbFirst(items) {
+/* ------------------ DB-FIRST (STRICT ROOTS) ------------------
+   - Attach children ONLY if parent exists
+   - Display ONLY roots with parent_id NULL
+   - Drop any root named "Main"
+   - Ignore orphans (no synthetic parents)
+---------------------------------------------------------------- */
+function buildStrictTree(items) {
   const byId = new Map();
   const children = new Map();
 
@@ -31,7 +36,7 @@ function buildTreeDbFirst(items) {
       name: raw.label ?? raw.name ?? raw.code ?? "",
       path: normPath(raw.path || ""),
       icon: raw.icon ?? null,
-      parent_id: raw.parent_id ?? null,
+      parent_id: (raw.parent_id ?? null) || null, // coerce "" -> null
       module_code: raw.module_code ?? null,
       sort_order: raw.sort_order ?? null,
     };
@@ -39,37 +44,27 @@ function buildTreeDbFirst(items) {
     children.set(n.id, []);
   });
 
-  // attach strictly by parent_id; missing parent => root
-  const roots = [];
+  // attach ONLY when parent exists
   byId.forEach((n) => {
     if (n.parent_id && byId.has(n.parent_id)) {
       children.get(n.parent_id).push(n);
-    } else {
-      roots.push(n);
     }
   });
 
-  // sort depth-first
   const sortRec = (node) => {
     const kids = children.get(node.id) || [];
     kids.sort(byOrderThenName);
     return { ...node, children: kids.map(sortRec) };
   };
-  roots.sort(byOrderThenName);
-  let tree = roots.map(sortRec);
 
-  // Remove any root named "Main" (any case) and HOIST its children to roots
-  const flattened = [];
-  for (const r of tree) {
-    const nm = String(r.label || r.code || "").trim().toLowerCase();
-    if (nm === "main") {
-      (r.children || []).forEach((c) => flattened.push(c));
-    } else {
-      flattened.push(r);
-    }
-  }
+  // STRICT roots: parent_id NULL only, and not "Main"
+  const roots = Array.from(byId.values()).filter((n) => !n.parent_id);
+  const filteredRoots = roots.filter(
+    (r) => String(r.label || r.code || "").trim().toLowerCase() !== "main"
+  );
 
-  return flattened;
+  filteredRoots.sort(byOrderThenName);
+  return filteredRoots.map(sortRec);
 }
 
 /* ------------------ search utilities ------------------ */
@@ -91,7 +86,7 @@ function ancestorsOf(id, parentMap) {
     list.push(cur);
     cur = parentMap.get(cur);
   }
-  return list; // nearest parent first
+  return list;
 }
 function findNodeByPath(nodes, path) {
   let found = null;
@@ -159,21 +154,38 @@ const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inlin
 
 /* ------------------ COMPONENT ------------------ */
 export default function AppSidebar() {
-  const { menus = [], branding } = useEnv(); // DB-driven payload from your store
+  const { menus = [], branding } = useEnv(); // DB-driven payload
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  // Build DB tree (roots must be parent_id NULL; "Main" is removed/flattened)
-  const roots = useMemo(() => buildTreeDbFirst(menus || []), [menus]);
+  // STRICT roots (Admin + CRM only if parent_id is NULL in payload)
+  const roots = useMemo(() => {
+    const t = buildStrictTree(menus || []);
+    // Debug: show what we actually got
+    console.groupCollapsed("[Sidebar] roots (parent_id NULL only; 'Main' dropped)");
+    console.table(
+      t.map((r) => ({
+        id: r.id,
+        label: r.label,
+        code: r.code,
+        path: r.path,
+        children: r.children?.length || 0,
+      }))
+    );
+    console.groupEnd();
+    if (!t.length) {
+      console.warn(
+        "[Sidebar] No parents found. Ensure Admin/CRM rows have parent_id NULL in the menus payload."
+      );
+    }
+    return t;
+  }, [menus]);
 
-  // Open-state + search
+  // Collapsed by default
   const [openIds, setOpenIds] = useState(() => new Set());
   const [query, setQuery] = useState("");
 
-  // Parents map based on current (full) tree for active-route auto-open
   const parentMap = useMemo(() => buildParentMap(roots), [roots]);
-
-  // Filtered view for search
   const { pruned: visibleTree, expandIds } = useMemo(
     () => filterTree(roots, query),
     [roots, query]
@@ -349,7 +361,7 @@ export default function AppSidebar() {
         </div>
       </div>
 
-      {/* Menu list (DB-driven, no synthetic "Main") */}
+      {/* Menu list: STRICT parents only (no orphans, no synthetic "Main") */}
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
         {visibleTree.length === 0 ? (
           <div className="text-xs text-gray-400 px-3 py-2">No menus.</div>
