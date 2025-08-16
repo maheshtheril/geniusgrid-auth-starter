@@ -391,4 +391,8 @@ a:hover{ text-decoration:underline }
     rgb(var(--gg-accent)) 100%);
   opacity: .95;
 }
+.gg-btn.is-active {
+  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(0,0,0,.18));
+  border-color: rgba(255,255,255,.22);
+}
 
