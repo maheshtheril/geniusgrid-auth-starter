@@ -1,12 +1,9 @@
 // src/components/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/* ---- config ---- */
-const ARROW_SIZE = 20;
-
-/* ---- helpers ---- */
+/* helpers */
 const normPath = (p) => {
   if (p == null) return null;
   const s = String(p).trim();
@@ -26,8 +23,8 @@ const byOrderThenLabel = (a, b) => {
   return String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" });
 };
 
-/* ---- build strictly by parent_id (NO filtering of roots) ---- */
-function buildTree(items) {
+/* get ONLY parent (root) menus */
+function getParents(items) {
   const rows = (items || []).map((raw) => ({
     id: raw.id,
     code: raw.code,
@@ -39,58 +36,22 @@ function buildTree(items) {
     sort_order: raw.sort_order ?? null,
   }));
 
-  const byId = new Map();
-  const kids = new Map();
-  rows.forEach((n) => {
-    if (!n.id) return;
-    byId.set(n.id, n);
-    kids.set(n.id, []);
-  });
-
-  const roots = [];
-  byId.forEach((n) => {
-    const pid = n.parent_id;
-    if (pid && byId.has(pid)) kids.get(pid).push(n);
-    else roots.push(n);
-  });
-
-  const sortRec = (node) => {
-    const childList = kids.get(node.id) || [];
-    childList.sort(byOrderThenLabel);
-    return { ...node, children: childList.map(sortRec) };
-  };
-
-  roots.sort(byOrderThenLabel);
-  return roots.map(sortRec); // Admin & CRM stay as top-level parents
+  const idSet = new Set(rows.map((r) => r.id));
+  // root if parent_id is null OR parent not present in this payload
+  const parents = rows.filter((r) => !r.parent_id || !idSet.has(r.parent_id));
+  parents.sort(byOrderThenLabel);
+  // hide any literal "Main"
+  return parents.filter((p) => String(p.label).trim().toLowerCase() !== "main");
 }
-
-/* ---- visuals ---- */
-function Arrow({ open, size = ARROW_SIZE, className = "opacity-80" }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" className={`shrink-0 ${className}`} aria-hidden>
-      <path
-        d={open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"}
-        stroke="currentColor"
-        strokeWidth="2"
-        fill="none"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-const ArrowPlaceholder = () => (
-  <span style={{ width: ARROW_SIZE, height: ARROW_SIZE, display: "inline-block" }} />
-);
 
 export default function AppSidebar() {
   const { menus = [], branding } = useEnv();
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  const roots = useMemo(() => buildTree(menus), [menus]);
+  const parents = useMemo(() => getParents(menus), [menus]);
 
-  // keep active link in view
+  // keep active in view
   useEffect(() => {
     const el = scrollerRef.current?.querySelector('a[aria-current="page"]');
     if (el && scrollerRef.current) {
@@ -101,83 +62,7 @@ export default function AppSidebar() {
     }
   }, [loc.pathname]);
 
-  function Node({ node, depth = 0 }) {
-    const hasChildren = node.children?.length > 0;
-    const isRoot = depth === 0;
-    const [open, setOpen] = useState(isRoot); // ROOTS open by default
-    const pad = depth > 0 ? "ml-3" : "";
-
-    // ROOTS render as headers (non-link) so Admin/CRM show as main nodes
-    if (isRoot) {
-      return (
-        <div className="group" key={node.id}>
-          <button
-            type="button"
-            onClick={() => hasChildren && setOpen(v => !v)}
-            className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
-            aria-expanded={open}
-          >
-            {hasChildren ? <Arrow open={open} /> : <ArrowPlaceholder />}
-            <span className="truncate">{node.label || node.code}</span>
-          </button>
-          {hasChildren && open && (
-            <div className="mt-1 space-y-1">
-              {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Non-root with a path: clickable link (submenu)
-    if (node.path) {
-      return (
-        <div key={node.id}>
-          <NavLink
-            to={node.path}
-            end
-            className={({ isActive }) =>
-              [
-                "flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-gray-800/50",
-                isActive ? "bg-gray-800 text-white" : "text-gray-200",
-                pad,
-              ].join(" ")
-            }
-          >
-            <ArrowPlaceholder />
-            <span className="truncate">{node.label || node.code}</span>
-          </NavLink>
-          {hasChildren && (
-            <div className="mt-1 space-y-1">
-              {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // Non-root without path: header subgroup
-    return (
-      <div className="group" key={node.id}>
-        <button
-          type="button"
-          onClick={() => hasChildren && setOpen(v => !v)}
-          className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
-          aria-expanded={open}
-        >
-          {hasChildren ? <Arrow open={open} /> : <ArrowPlaceholder />}
-          <span className="truncate">{node.label || node.code}</span>
-        </button>
-        {hasChildren && open && (
-          <div className="mt-1 space-y-1">
-            {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // lock width so it can't collapse to icons-only
+  // lock width to avoid icon-only collapse
   const fixedWidth = "16rem";
 
   return (
@@ -189,8 +74,28 @@ export default function AppSidebar() {
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
-      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2" style={{ scrollbarGutter: "stable" }}>
-        {roots.map((root) => <Node key={root.id} node={root} />)}
+      <div
+        ref={scrollerRef}
+        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2"
+        style={{ scrollbarGutter: "stable" }}
+      >
+        {parents.map((node) => (
+          <NavLink
+            key={node.id}
+            to={node.path || "#"}
+            end
+            className={({ isActive }) =>
+              [
+                "flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-gray-800/50",
+                isActive ? "bg-gray-800 text-white" : "text-gray-200",
+              ].join(" ")
+            }
+          >
+            {/* optional icon (emoji/string from DB) */}
+            {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
+            <span className="truncate">{node.label || node.code}</span>
+          </NavLink>
+        ))}
       </div>
     </aside>
   );
