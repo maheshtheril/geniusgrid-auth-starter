@@ -34,6 +34,7 @@ import DealsLayout from "@/pages/crm/deals/DealsLayout";
 import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect";
 import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
 import DealsList from "@/pages/crm/deals/DealsList";
+import DealsHelp from "@/pages/crm/deals/DealsHelp";
 
 /* -------- CRM: Extras (Contacts, Calls, Tasks, Reports, Notifications, Settings) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
@@ -131,6 +132,7 @@ export default function App() {
                 <Route index element={<DealsIndexRedirect />} />
                 <Route path="pipeline" element={<DealsPipeline />} />
                 <Route path="list" element={<DealsList />} />
+                <Route path="help" element={<DealsHelp/>} /> 
               </Route>
 
               {/* Incentives */}
