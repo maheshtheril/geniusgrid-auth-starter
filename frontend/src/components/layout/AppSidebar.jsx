@@ -1,5 +1,5 @@
 // -----------------------------------------------
-// src/components/Sidebar.jsx  (structure-first + brand header)
+// src/components/AppSidebar.jsx  (structure-first + brand header)
 // -----------------------------------------------
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
