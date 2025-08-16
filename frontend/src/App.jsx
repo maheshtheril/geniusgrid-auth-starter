@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEnv } from "@/store/useEnv";
 
-import DealDrawer from "./DealDrawer";
+
 import { STAGES, createDeal } from "./mockApi";
 
 const TABS = [
