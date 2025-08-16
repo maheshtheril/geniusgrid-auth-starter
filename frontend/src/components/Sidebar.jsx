@@ -1,5 +1,5 @@
 // -----------------------------------------------
-// src/components/Sidebar.jsx (redesigned + AI gate)
+// src/components/Sidebar.jsx (robust tree builder)
 // -----------------------------------------------
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useState } from "react";
@@ -16,29 +16,158 @@ function normalizeIconName(s = "") {
     .join("") || "Dot";
 }
 
-/** Build a parent→children tree, preserving/sorting by optional `order`, then `name`. */
+/** --- Admin grouping (by code) --- */
+const G = {
+  org : new Set(["admin.org","admin.branding","admin.localization","admin.taxes","admin.units","admin.locations","admin.calendars","admin.numbering","admin.compliance"]),
+  rbac: new Set(["admin.users","admin.roles","admin.permissions","admin.teams"]),
+  sec : new Set(["admin.security","admin.sso","admin.domains","admin.audit"]),
+  data: new Set(["admin.settings","admin.custom-fields","admin.pipelines","admin.templates","admin.notifications","admin.import_export","admin.backups"]),
+  int : new Set(["admin.integrations","admin.marketplace","admin.api_keys","admin.webhooks","admin.features"]),
+  ai  : new Set(["admin.ai","admin.automation","admin.approvals"]),
+  bill: new Set(["admin.billing","admin.usage","admin.logs"]),
+};
+const ADMIN_GROUPS = [
+  { code:"admin.grp.org" , name:"Organization & Compliance", icon:"Building", sort:21, kids:G.org  },
+  { code:"admin.grp.rbac", name:"Access Control (RBAC)"    , icon:"Shield",   sort:22, kids:G.rbac },
+  { code:"admin.grp.sec" , name:"Security & Compliance"    , icon:"Lock",     sort:23, kids:G.sec  },
+  { code:"admin.grp.data", name:"Data & Customization"     , icon:"Puzzle",   sort:24, kids:G.data },
+  { code:"admin.grp.int" , name:"Integrations & Developer" , icon:"Plug",     sort:25, kids:G.int  },
+  { code:"admin.grp.ai"  , name:"AI & Automation"          , icon:"Sparkles", sort:26, kids:G.ai   },
+  { code:"admin.grp.bill", name:"Billing & Observability"  , icon:"CreditCard",sort:27, kids:G.bill},
+];
+
+/** Normalize an incoming row. Works with your DB view or existing payload. */
+function norm(i){
+  return {
+    id:        i.id ?? i.menu_id ?? i.menuId ?? i.code ?? String(Math.random()),
+    code:      i.code ?? i.name ?? "",
+    name:      i.name ?? i.label ?? i.code ?? "Untitled",
+    path:      i.path ?? i.url ?? i.route ?? null,     // keep /app prefix
+    icon:      normalizeIconName(i.icon ?? "Folder"),
+    order:     i.order ?? i.sort_order ?? i.sortOrder ?? 999,
+    parent_id: i.parent_id ?? null,
+    parent_code: i.parent_code ?? i.parentCode ?? null,
+  };
+}
+
+/** Build a tree using: 1) parent_id (if present), else 2) parent_code (if present), else 3) code patterns */
 function buildTree(items) {
-  const copy = Array.isArray(items) ? [...items] : [];
-  const byId = Object.fromEntries(copy.map((i) => [i.id, { ...i, children: [] }]));
-  const roots = [];
-  copy.forEach((i) => {
-    if (i.parent_id && byId[i.parent_id]) byId[i.parent_id].children.push(byId[i.id]);
-    else roots.push(byId[i.id]);
+  const rows = (Array.isArray(items) ? items : []).map(norm).filter(r => r.code);
+
+  // One-time debug: see what frontend actually receives
+  if (typeof window !== "undefined" && !window.__GG_MENU_DUMPED__) {
+    window.__GG_MENU_DUMPED__ = true;
+    try { console.table(rows.map(({code,name,path,parent_id,parent_code,order})=>({code,name,path,parent_id,parent_code,order}))); } catch {}
+  }
+
+  // Indexes
+  const byId   = Object.fromEntries(rows.map(r => [String(r.id), r]));
+  const byCode = Object.fromEntries(rows.map(r => [r.code, r]));
+
+  // Start by building via parent_id (original behavior)
+  const nodesById = new Map();
+  const ensureId = (r) => {
+    if (!nodesById.has(r.id)) nodesById.set(r.id, {...r, children: []});
+    return nodesById.get(r.id);
+  };
+  rows.forEach(r => ensureId(r));
+
+  // Attach by parent_id if valid
+  const rootsId = [];
+  rows.forEach(r => {
+    if (r.parent_id && byId[r.parent_id]) {
+      const p = ensureId(byId[r.parent_id]);
+      const n = ensureId(r);
+      p.children.push(n);
+    } else {
+      rootsId.push(ensureId(r));
+    }
   });
 
-  const sortFn = (a, b) => {
-    const ao = Number.isFinite(a.order) ? a.order : Number.POSITIVE_INFINITY;
-    const bo = Number.isFinite(b.order) ? b.order : Number.POSITIVE_INFINITY;
-    if (ao !== bo) return ao - bo;
-    return String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" });
+  // If tree still flat / wrong, augment with code-based hierarchy:
+  // 1) Ensure Admin/CRM roots exist if implied by children
+  const needAdmin = rows.some(r => r.code === "admin" || r.code.startsWith("admin."));
+  const needCrm   = rows.some(r => r.code === "crm"   || r.code.startsWith("crm."));
+  if (needAdmin && !byCode["admin"]) {
+    const synthetic = { id:"admin", code:"admin", name:"Admin", path:"/app/admin", icon:"Settings", order:10, children:[] };
+    nodesById.set(synthetic.id, synthetic);
+    rootsId.push(synthetic);
+  }
+  if (needCrm && !byCode["crm"]) {
+    const synthetic = { id:"crm", code:"crm", name:"CRM", path:"/app/crm", icon:"Handshake", order:10, children:[] };
+    nodesById.set(synthetic.id, synthetic);
+    rootsId.push(synthetic);
+  }
+
+  // Helper to find/create node by code (for groups/modules)
+  const getByCodeNode = (code, fallback) => {
+    // Look for existing node with that code
+    for (const n of nodesById.values()) if (n.code === code) return n;
+    // Create synthetic
+    const base = byCode[code] || fallback || { code, name: code.toUpperCase(), path: null, icon: "Folder", order: 50 };
+    const id = base.id ?? code;
+    const node = { id, ...base, children: base.children || [] };
+    nodesById.set(id, node);
+    // put under roots if not attached later
+    if (!rootsId.includes(node)) rootsId.push(node);
+    return node;
   };
 
-  const sortTree = (nodes) => {
-    nodes.sort(sortFn);
-    nodes.forEach((n) => n.children && sortTree(n.children));
-  };
-  sortTree(roots);
-  return roots;
+  // 2) Attach by parent_code where parent_id was missing
+  rows.forEach(r => {
+    if (!r.parent_id && r.parent_code) {
+      const parent = getByCodeNode(r.parent_code);
+      const self   = [...nodesById.values()].find(n => n.id === r.id) || getByCodeNode(r.code, r);
+      if (!parent.children.some(c => c.id === self.id)) parent.children.push(self);
+      // remove self from roots if it got a parent now
+      const idx = rootsId.indexOf(self); if (idx >= 0) rootsId.splice(idx,1);
+    }
+  });
+
+  // 3) Code rules for Admin groups and CRM
+  if (needAdmin) {
+    const adminRoot = getByCodeNode("admin", { code:"admin", name:"Admin", path:"/app/admin", icon:"Settings", order:10 });
+    ADMIN_GROUPS.forEach(g => {
+      const groupNode = getByCodeNode(g.code, { code:g.code, name:g.name, path:null, icon:g.icon, order:g.sort });
+      // attach group to admin if not already
+      if (!adminRoot.children.some(c => c.code === g.code)) adminRoot.children.push(groupNode);
+      // attach its kids
+      rows.filter(r => r.code.startsWith("admin.") && !r.code.startsWith("admin.grp."))
+          .forEach(r => {
+            if (g.kids.has(r.code)) {
+              const self = getByCodeNode(r.code, r);
+              if (!groupNode.children.some(c => c.id === self.id)) groupNode.children.push(self);
+              const idx = rootsId.indexOf(self); if (idx >= 0) rootsId.splice(idx,1);
+            }
+          });
+    });
+  }
+  if (needCrm) {
+    const crmRoot = getByCodeNode("crm", { code:"crm", name:"CRM", path:"/app/crm", icon:"Handshake", order:10 });
+    rows.filter(r => r.code.startsWith("crm.") && r.code !== "crm")
+        .forEach(r => {
+          const self = getByCodeNode(r.code, r);
+          if (!crmRoot.children.some(c => c.id === self.id)) crmRoot.children.push(self);
+          const idx = rootsId.indexOf(self); if (idx >= 0) rootsId.splice(idx,1);
+        });
+  }
+
+  // 4) Other modules like purchase.*, sales.*, etc.
+  rows.forEach(r => {
+    if (!r.code.startsWith("admin.") && !r.code.startsWith("crm.") && r.code.includes(".")) {
+      const mod = r.code.split(".")[0];
+      const modRoot = getByCodeNode(mod, { code:mod, name:mod.toUpperCase(), path:`/app/${mod}`, icon:"Folder", order:20 });
+      const self = getByCodeNode(r.code, r);
+      if (!modRoot.children.some(c => c.id === self.id)) modRoot.children.push(self);
+      const idx = rootsId.indexOf(self); if (idx >= 0) rootsId.splice(idx,1);
+    }
+  });
+
+  // Sorting
+  const byName = (a,b)=> String(a.name||"").localeCompare(String(b.name||""));
+  const byOrder= (a,b)=> (Number.isFinite(a.order)?a.order:999) - (Number.isFinite(b.order)?b.order:999) || byName(a,b);
+  const sortDeep = (arr)=>{ arr.sort(byOrder); arr.forEach(n=>n.children?.length && sortDeep(n.children)); return arr; };
+  return sortDeep(rootsId);
 }
 
 function branchHasActive(node, pathname) {
@@ -49,15 +178,12 @@ function branchHasActive(node, pathname) {
 function ItemLink({ node, depth = 0 }) {
   const pad = 8 + depth * 12;
   const hasChildren = (node.children?.length || 0) > 0;
-  const iconName = normalizeIconName(node.icon);
+  const iconName = node.icon || "Folder";
   const location = useLocation();
 
-  // Auto-open top levels and the branch that contains the active route
   const activeBranch = useMemo(() => branchHasActive(node, location.pathname), [node, location.pathname]);
   const [open, setOpen] = useState(depth < 1 || activeBranch);
-  useEffect(() => {
-    if (activeBranch) setOpen(true);
-  }, [activeBranch]);
+  useEffect(() => { if (activeBranch) setOpen(true); }, [activeBranch]);
 
   return (
     <div>
@@ -94,14 +220,9 @@ function ItemLink({ node, depth = 0 }) {
       {hasChildren && (
         <AnimatePresence initial={false}>
           {open && (
-            <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: "auto", opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              className="overflow-hidden"
-            >
+            <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
               {node.children.map((ch) => (
-                <ItemLink key={ch.id} node={ch} depth={depth + 1} />
+                <ItemLink key={ch.id || ch.code} node={ch} depth={depth + 1} />
               ))}
             </motion.div>
           )}
@@ -112,25 +233,25 @@ function ItemLink({ node, depth = 0 }) {
 }
 
 export default function Sidebar() {
-  const { menus } = useEnv();                   // server-provided menus (id, name, path, icon, parent_id, order?)
-  const { ent } = useEntitlements();           // { features: { ai_prospecting: true }, ... }
+  const { menus } = useEnv();            // expects flat rows (id, code, name/label, path, icon, parent_id?, order?)
+  const { ent } = useEntitlements();
   const hasAI = !!(ent?.features && ent.features.ai_prospecting);
 
-  // Merge a gated "Discover (AI)" entry if entitlement present and not already in menus
+  // Add "Discover (AI)" under CRM if entitled and not present
   const mergedMenus = useMemo(() => {
     const base = Array.isArray(menus) ? [...menus] : [];
-    if (hasAI && !base.some((i) => i.path === "/app/leads/discover")) {
-      const leadsParent =
-        base.find((i) => i.path === "/app/leads") ||
-        base.find((i) => /leads/i.test(i.name || ""));
-
+    const already = base.some(i => i.path === "/app/crm/discover" || i.code === "crm.discover");
+    if (hasAI && !already) {
+      // Find CRM parent
+      const crmParent = base.find(i => i.code === "crm" || i.path === "/app/crm");
       base.push({
         id: "nav_ai_prospecting",
+        code: "crm.discover",
         name: "Discover (AI)",
-        path: "/app/leads/discover",
-        icon: "sparkles",
-        parent_id: leadsParent?.id || null,
-        order: Number.isFinite(leadsParent?.order) ? (leadsParent.order + 1) : undefined,
+        path: "/app/crm/discover",
+        icon: "Sparkles",
+        parent_id: crmParent?.id ?? null,
+        order: Number.isFinite(crmParent?.order) ? (crmParent.order + 1) : 12,
       });
     }
     return base;
@@ -144,7 +265,7 @@ export default function Sidebar() {
 
       <div className="mt-2 space-y-1">
         {tree.length ? (
-          tree.map((node) => <ItemLink key={node.id} node={node} />)
+          tree.map((node) => <ItemLink key={node.id || node.code} node={node} />)
         ) : (
           <div className="text-sm opacity-70">No menus</div>
         )}
