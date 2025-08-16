@@ -44,25 +44,23 @@ function norm(row) {
 
 /* ------------- build tree purely from DB; synthesize missing roots per module if needed ------------- */
 function buildTree(items = []) {
-  // normalize minimal fields
+  // Normalize just what's needed (match your DB columns exactly)
   const src = (items || []).map((row) => ({
-    id: String(row.id),
-    code: String(row.code ?? row.label ?? ""),
-    code_lc: String(row.code ?? row.label ?? "").toLowerCase(),
+    id: String(row.id),                                     // menu_templates.id
+    code: String(row.code ?? ""),                           // menu_templates.code
     name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
-    path: normPath(row.path ?? row.url ?? row.route),
-    icon: row.icon ?? null,
-    sort_order: row.sort_order ?? row.order ?? 0,
+    path: normPath(row.path ?? row.url ?? row.route),       // menu_templates.path
+    icon: row.icon ?? null,                                  // menu_templates.icon
+    sort_order: row.sort_order ?? row.order ?? 0,           // menu_templates.sort_order
     order: row.order ?? row.sort_order ?? 0,
-    parent_id: row.parent_id ? String(row.parent_id) : null,
-    children: [],
-    module_code_lc: row.module_code ? String(row.module_code).toLowerCase() : null,
+    parent_id: row.parent_id ? String(row.parent_id) : null // menu_templates.parent_id
   }));
 
-  const byId = Object.fromEntries(src.map((r) => [r.id, { ...r }]));
+  // Index by id
+  const byId = Object.fromEntries(src.map(r => [r.id, { ...r, children: [] }]));
 
-  // 1) attach strictly by parent_id
-  let roots = [];
+  // Attach strictly by parent_id; if parent missing/not assigned, it’s a root
+  const roots = [];
   for (const r of src) {
     const node = byId[r.id];
     if (r.parent_id && byId[r.parent_id]) {
@@ -72,43 +70,11 @@ function buildTree(items = []) {
     }
   }
 
-  // 2) synthesize "Main" for leftover roots that aren't admin/crm
-  const isAdminish = (n) =>
-    n.code_lc === "admin" || n.code_lc.startsWith("admin.") || /\/app\/admin(\/|$)/i.test(n.path || "");
-  const isCrmish = (n) =>
-    n.code_lc === "crm" || n.code_lc.startsWith("crm.") || n.module_code_lc === "crm" || /\/app\/crm(\/|$)/i.test(n.path || "");
-
-  const hasExplicitMain =
-    roots.some((r) => r.code_lc === "main") || roots.some((r) => (r.path || "").toLowerCase() === "/app");
-
-  const mainCandidates = roots.filter((n) => !isAdminish(n) && !isCrmish(n));
-
-  if (!hasExplicitMain && mainCandidates.length) {
-    const synthetic = {
-      id: "root:main",
-      code: "main",
-      code_lc: "main",
-      name: "Main",
-      path: "/app",
-      icon: undefined,
-      sort_order: Math.min(...mainCandidates.map((n) => n.sort_order ?? n.order ?? 0)),
-      order: Math.min(...mainCandidates.map((n) => n.order ?? n.sort_order ?? 0)),
-      children: [],
-    };
-    for (const n of mainCandidates) {
-      const idx = roots.indexOf(n);
-      if (idx >= 0) roots.splice(idx, 1);
-      synthetic.children.push(n);
-    }
-    roots.push(synthetic);
-  }
-
-  // 3) deep sort
+  // Deep sort (by sort_order then name)
   const sortDeep = (arr) => {
-    arr.sort(
-      (a, b) =>
-        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
-        String(a.name || "").localeCompare(String(b.name || ""))
+    arr.sort((a, b) =>
+      (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+      String(a.name || "").localeCompare(String(b.name || ""))
     );
     arr.forEach((n) => n.children?.length && sortDeep(n.children));
     return arr;
