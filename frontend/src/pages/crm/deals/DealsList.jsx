@@ -1,4 +1,4 @@
-// ---------- FILE: src/pages/crm/deals/DealsList.jsx (Pro) ----------
+// ---------- FILE: src/pages/crm/deals/DealsList.jsx (Pro, Fixed) ----------
 // Futuristic, production-ready Deals table with:
 // - Debounced search, multi-filter (stage/owner)
 // - Client-side sort on columns
@@ -112,9 +112,12 @@ export default function DealsList(){
   };
 
   const handleAiNext = async (row)=>{
-    try { setAiBusy(row.id); await aiNextStep(row.id); }
+    try { setAiBusy(row.id); const res = await aiNextStep(row.id); if (res?.next_step){ setRows(prev=>prev.map(x=>x.id===row.id?{...x, next_step: res.next_step}:x)); } }
     finally { setAiBusy(null); }
   };
+
+  const showingFrom = sorted.length ? (page-1)*pageSize + 1 : 0;
+  const showingTo = Math.min(page*pageSize, sorted.length);
 
   return (
     <div className="space-y-3">
@@ -131,7 +134,7 @@ export default function DealsList(){
             </SelectContent>
           </Select>
           <Select value={owner} onValueChange={setOwner}>
-            <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="All owners" /></SelectValue></SelectTrigger>
+            <SelectTrigger className="h-9 w-[160px]"><SelectValue placeholder="All owners" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="">All owners</SelectItem>
               {owners.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
@@ -206,7 +209,7 @@ export default function DealsList(){
       {/* Pagination bar */}
       <div className="flex items-center justify-between gap-3">
         <div className="text-sm opacity-70">
-          Showing <b>{(page-1)*pageSize + 1}</b>–<b>{Math.min(page*pageSize, sorted.length)}</b> of <b>{sorted.length}</b>
+          Showing <b>{showingFrom}</b>–<b>{showingTo}</b> of <b>{sorted.length}</b>
         </div>
         <div className="flex items-center gap-2">
           <Select value={String(pageSize)} onValueChange={(v)=>{ setPageSize(Number(v)); setPage(1); }}>
