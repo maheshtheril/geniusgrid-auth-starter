@@ -11,7 +11,8 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import { Toolbar } from "./_shared/Toolbar";
-import { listDeals, updateDeal, aiNextStep } from "./mockApi"; // extend your mockApi accordingly
+import { listDeals, updateDeal } from "./mockApi";
+import * as mockApi from "./mockApi"; // extend your mockApi accordingly
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";

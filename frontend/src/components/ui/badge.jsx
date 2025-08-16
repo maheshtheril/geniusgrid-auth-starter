@@ -1,11 +1,11 @@
 import React from "react";
-
-export default function Badge({ children, variant = "default", className = "" }) {
+export function Badge({ children, variant = "default", className = "" }) {
   const variants = {
     default: "bg-primary/10 text-primary border border-primary/20",
     secondary: "bg-muted text-foreground border border-border",
     success: "bg-green-100 text-green-700 border border-green-300",
     danger: "bg-red-100 text-red-700 border border-red-300",
+    outline: "border border-border",
   };
   return (
     <span
@@ -15,3 +15,4 @@ export default function Badge({ children, variant = "default", className = "" })
     </span>
   );
 }
+export default Badge;

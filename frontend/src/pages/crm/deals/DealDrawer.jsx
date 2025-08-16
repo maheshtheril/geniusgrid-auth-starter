@@ -6,7 +6,8 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "./_shared/Modal";
-import { STAGES, updateDeal, aiNextStep } from "./mockApi";
+import { STAGES, updateDeal } from "./mockApi";
+import * as mockApi from "./mockApi";
 
 export default function DealDrawer({ open, onClose, deal, onSave }){
   const [form, setForm] = useState(deal || {});
