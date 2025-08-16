@@ -13,39 +13,34 @@ const normPath = (p) => {
   if (!s) return null;
   return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
 };
-const first = (...vals) => vals.find((v) => v !== undefined && v !== null);
-const toNumOrNull = (v) => (Number.isFinite(+v) ? +v : null);
-const toNullable = (v) => {
+const toNull = (v) => {
   if (v === undefined || v === null) return null;
-  const s = String(v).trim();
-  return s === "" || s.toLowerCase() === "null" ? null : v;
+  const s = String(v).trim().toLowerCase();
+  return s === "" || s === "null" ? null : v;
 };
+const numOr = (v, d = 999999) => (Number.isFinite(+v) ? +v : d);
 const byOrderThenLabel = (a, b) => {
-  const ao = Number.isFinite(a.sort_order) ? a.sort_order : 999999;
-  const bo = Number.isFinite(b.sort_order) ? b.sort_order : 999999;
+  const ao = numOr(a.sort_order);
+  const bo = numOr(b.sort_order);
   if (ao !== bo) return ao - bo;
   return String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" });
 };
 
-/* ---- normalize + build strictly by parent id ---- */
-function normalize(items) {
-  return (items || []).map((raw) => ({
-    id: first(raw.id, raw.ID),
-    code: first(raw.code, raw.Code),
-    label: first(raw.label, raw.Label) || "",
-    path: normPath(first(raw.path, raw.Path)),
-    icon: first(raw.icon, raw.Icon) ?? null,
-    parent_id: toNullable(first(raw.parent_id, raw.parentId, raw.parentID)),
-    module_code: first(raw.module_code, raw.moduleCode) ?? null,
-    sort_order: toNumOrNull(first(raw.sort_order, raw.sortOrder)),
-  }));
-}
-
+/* ---- build strictly by parent_id (NO filtering of roots) ---- */
 function buildTree(items) {
-  const rows = normalize(items);
+  const rows = (items || []).map((raw) => ({
+    id: raw.id,
+    code: raw.code,
+    label: raw.label || "",
+    path: normPath(raw.path),
+    icon: raw.icon ?? null,
+    parent_id: toNull(raw.parent_id),
+    module_code: raw.module_code ?? null,
+    sort_order: raw.sort_order ?? null,
+  }));
+
   const byId = new Map();
   const kids = new Map();
-
   rows.forEach((n) => {
     if (!n.id) return;
     byId.set(n.id, n);
@@ -55,11 +50,8 @@ function buildTree(items) {
   const roots = [];
   byId.forEach((n) => {
     const pid = n.parent_id;
-    if (pid && byId.has(pid)) {
-      kids.get(pid).push(n);
-    } else {
-      roots.push(n);
-    }
+    if (pid && byId.has(pid)) kids.get(pid).push(n);
+    else roots.push(n);
   });
 
   const sortRec = (node) => {
@@ -69,9 +61,7 @@ function buildTree(items) {
   };
 
   roots.sort(byOrderThenLabel);
-  // remove any root literally labeled "Main"
-  const filtered = roots.filter((r) => String(r.label).trim().toLowerCase() !== "main");
-  return filtered.map(sortRec);
+  return roots.map(sortRec); // Admin & CRM stay as top-level parents
 }
 
 /* ---- visuals ---- */
@@ -114,20 +104,17 @@ export default function AppSidebar() {
   function Node({ node, depth = 0 }) {
     const hasChildren = node.children?.length > 0;
     const isRoot = depth === 0;
-    const [open, setOpen] = useState(true && isRoot); // roots open by default
+    const [open, setOpen] = useState(isRoot); // ROOTS open by default
     const pad = depth > 0 ? "ml-3" : "";
 
-    // Always render ROOT as a header (non-link) so parents are visible
+    // ROOTS render as headers (non-link) so Admin/CRM show as main nodes
     if (isRoot) {
       return (
         <div className="group" key={node.id}>
           <button
             type="button"
-            onClick={() => hasChildren && setOpen((v) => !v)}
-            className={[
-              "flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left",
-              pad,
-            ].join(" ")}
+            onClick={() => hasChildren && setOpen(v => !v)}
+            className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
             aria-expanded={open}
           >
             {hasChildren ? <Arrow open={open} /> : <ArrowPlaceholder />}
@@ -135,16 +122,14 @@ export default function AppSidebar() {
           </button>
           {hasChildren && open && (
             <div className="mt-1 space-y-1">
-              {node.children.map((c) => (
-                <Node key={c.id} node={c} depth={depth + 1} />
-              ))}
+              {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
             </div>
           )}
         </div>
       );
     }
 
-    // Non-root with a path: clickable link
+    // Non-root with a path: clickable link (submenu)
     if (node.path) {
       return (
         <div key={node.id}>
@@ -164,25 +149,20 @@ export default function AppSidebar() {
           </NavLink>
           {hasChildren && (
             <div className="mt-1 space-y-1">
-              {node.children.map((c) => (
-                <Node key={c.id} node={c} depth={depth + 1} />
-              ))}
+              {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
             </div>
           )}
         </div>
       );
     }
 
-    // Non-root without a path: collapsible header
+    // Non-root without path: header subgroup
     return (
       <div className="group" key={node.id}>
         <button
           type="button"
-          onClick={() => hasChildren && setOpen((v) => !v)}
-          className={[
-            "flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left",
-            pad,
-          ].join(" ")}
+          onClick={() => hasChildren && setOpen(v => !v)}
+          className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
           aria-expanded={open}
         >
           {hasChildren ? <Arrow open={open} /> : <ArrowPlaceholder />}
@@ -190,16 +170,14 @@ export default function AppSidebar() {
         </button>
         {hasChildren && open && (
           <div className="mt-1 space-y-1">
-            {node.children.map((c) => (
-              <Node key={c.id} node={c} depth={depth + 1} />
-            ))}
+            {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
           </div>
         )}
       </div>
     );
   }
 
-  // lock width to avoid icon-only collapse
+  // lock width so it can't collapse to icons-only
   const fixedWidth = "16rem";
 
   return (
@@ -212,9 +190,7 @@ export default function AppSidebar() {
       </div>
 
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2" style={{ scrollbarGutter: "stable" }}>
-        {roots.map((root) => (
-          <Node key={root.id} node={root} />
-        ))}
+        {roots.map((root) => <Node key={root.id} node={root} />)}
       </div>
     </aside>
   );
