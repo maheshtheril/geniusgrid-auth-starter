@@ -18,17 +18,22 @@ const byOrderThenName = (a, b) => {
 };
 const isMain = (n) => String(n.label || n.name || n.code || "").trim().toLowerCase() === "main";
 
-/* ------------------ DB-FIRST: attach strictly; roots ONLY admin/crm with parent_id NULL ------------------ */
-function buildAdminCrmTree(items) {
-  const ALLOWED_ROOT_CODES = new Set(["admin", "crm"]);
-
-  // normalize source shape
+/* ------------------ SMART admin/crm builder ------------------
+   1) Normalize payload ("" / "null" / undefined -> null parent_id)
+   2) Attach children strictly when parent exists in payload
+   3) Prefer strict parents: parent_id NULL AND code in {'admin','crm'}
+   4) If a strict parent missing, synthesize ONLY that header and
+      group orphaned admin.* / crm.* nodes under it (NO synthetic "Main")
+---------------------------------------------------------------- */
+function buildAdminCrmTreeSmart(items) {
+  const ALLOWED = new Set(["admin", "crm"]);
   const src = Array.isArray(items) ? items : (items?.data ?? items?.items ?? []);
+
   const byId = new Map();
   const children = new Map();
 
+  // normalize & index
   (src || []).forEach((raw) => {
-    // --- robust field normalization ---
     const code = String(raw.code ?? raw.Code ?? "").trim();
     const pidRaw = raw.parent_id ?? raw.parentId ?? raw.parentID ?? null;
     const parent_id = (pidRaw === "" || String(pidRaw).toLowerCase() === "null") ? null : pidRaw;
@@ -38,37 +43,23 @@ function buildAdminCrmTree(items) {
       code,
       label: raw.label ?? raw.name ?? code,
       name: raw.label ?? raw.name ?? code,
-      path: (() => {
-        const p = raw.path ?? raw.Path ?? "";
-        if (!p) return null;
-        const s = String(p).trim();
-        return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
-      })(),
+      path: normPath(raw.path ?? raw.Path ?? ""),
       icon: raw.icon ?? raw.Icon ?? null,
       parent_id,
       module_code: raw.module_code ?? raw.moduleCode ?? null,
       sort_order: raw.sort_order ?? raw.sortOrder ?? null,
     };
-    if (!n.id) return;                 // skip corrupt rows
+    if (!n.id) return;
     byId.set(n.id, n);
     children.set(n.id, []);
   });
 
-  // attach strictly if parent exists
+  // attach children strictly (only if parent exists in payload)
   byId.forEach((n) => {
     if (n.parent_id && byId.has(n.parent_id)) {
       children.get(n.parent_id).push(n);
     }
   });
-
-  const byOrderThenName = (a, b) => {
-    const ao = Number.isFinite(a.sort_order) ? a.sort_order : 999999;
-    const bo = Number.isFinite(b.sort_order) ? b.sort_order : 999999;
-    if (ao !== bo) return ao - bo;
-    const an = String(a.label || a.name || a.code || "");
-    const bn = String(b.label || b.name || b.code || "");
-    return an.localeCompare(bn, undefined, { sensitivity: "base" });
-  };
 
   const sortRec = (node) => {
     const kids = children.get(node.id) || [];
@@ -76,24 +67,73 @@ function buildAdminCrmTree(items) {
     return { ...node, children: kids.map(sortRec) };
   };
 
-  // strict parents: parent_id is null AND code is admin/crm (case-insensitive), drop any "Main"
-  const strictParents = Array.from(byId.values()).filter((n) => {
+  // ---- Strict roots: parent_id NULL + code admin/crm (drop "Main") ----
+  const strictRoots = Array.from(byId.values()).filter((n) => {
     const codeLower = String(n.code || "").toLowerCase();
     const nameLower = String(n.label || n.name || n.code || "").trim().toLowerCase();
-    return !n.parent_id && ALLOWED_ROOT_CODES.has(codeLower) && nameLower !== "main";
+    return !n.parent_id && ALLOWED.has(codeLower) && nameLower !== "main";
   });
+  strictRoots.sort(byOrderThenName);
+  const strictTree = strictRoots.map(sortRec);
 
-  strictParents.sort(byOrderThenName);
-  const tree = strictParents.map(sortRec);
+  // If both strict Admin and CRM exist, return them
+  const haveAdmin = strictRoots.some((r) => String(r.code).toLowerCase() === "admin");
+  const haveCrm   = strictRoots.some((r) => String(r.code).toLowerCase() === "crm");
+  if (haveAdmin && haveCrm) return strictTree;
 
-  // helpful debug (remove later)
-  console.groupCollapsed("[Sidebar] admin/crm raw rows");
-  console.table(Array.from(byId.values())
-    .filter(n => ["admin","crm"].includes(String(n.code).toLowerCase()))
-    .map(n => ({ id:n.id, code:n.code, parent_id:n.parent_id, path:n.path })));
-  console.groupEnd();
+  // ---- Synthesis for missing module parent(s) (ONLY Admin/CRM) ----
+  const values = Array.from(byId.values());
+  const isAdminLike = (n) =>
+    String(n.code || "").toLowerCase().startsWith("admin.") ||
+    (n.path || "").startsWith("/app/admin");
 
-  return tree;
+  const isCrmLike = (n) =>
+    String(n.code || "").toLowerCase().startsWith("crm.") ||
+    (n.path || "").startsWith("/app/crm") ||
+    String(n.module_code || "").toLowerCase() === "crm";
+
+  // top-level orphan candidates = nodes whose parent is missing from payload (or null)
+  const parentExists = (n) => !!(n.parent_id && byId.has(n.parent_id));
+
+  const adminOrphansTop = !haveAdmin
+    ? values.filter((n) => isAdminLike(n) && !parentExists(n) && !isMain(n))
+    : [];
+
+  const crmOrphansTop = !haveCrm
+    ? values.filter((n) => isCrmLike(n) && !parentExists(n) && !isMain(n))
+    : [];
+
+  // Build synthetic headers only if we actually have children to show
+  const synthRoots = [];
+  if (!haveAdmin && adminOrphansTop.length) {
+    adminOrphansTop.sort(byOrderThenName);
+    synthRoots.push({
+      id: "__admin_root__",
+      code: "admin",
+      label: "Admin",
+      icon: "⚙️",
+      path: null, // header only (no navigation)
+      sort_order: 10,
+      children: adminOrphansTop.map(sortRec),
+    });
+  }
+  if (!haveCrm && crmOrphansTop.length) {
+    crmOrphansTop.sort(byOrderThenName);
+    synthRoots.push({
+      id: "__crm_root__",
+      code: "crm",
+      label: "CRM",
+      icon: "🤝",
+      path: null, // header only (no navigation)
+      sort_order: 10,
+      children: crmOrphansTop.map(sortRec),
+    });
+  }
+
+  // Combine present strict roots with any synthesized ones
+  const out = [...strictTree, ...synthRoots];
+  out.sort(byOrderThenName);
+  return out;
 }
 
 /* ------------------ search utils ------------------ */
@@ -187,8 +227,15 @@ export default function AppSidebar() {
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  // Build tree (ONLY Admin & CRM as parents)
-  const roots = useMemo(() => buildAdminCrmTree(menus || []), [menus]);
+  // Build tree (strict when possible; synth Admin/CRM headers if missing)
+  const roots = useMemo(() => {
+    const tree = buildAdminCrmTreeSmart(menus || []);
+    // debug (remove if noisy)
+    console.groupCollapsed("[Sidebar] roots (admin/crm, smart)");
+    console.table(tree.map(r => ({ id: r.id, code: r.code, label: r.label, path: r.path, children: r.children?.length || 0 })));
+    console.groupEnd();
+    return tree;
+  }, [menus]);
 
   // Collapsed by default + search
   const [openIds, setOpenIds] = useState(() => new Set());
@@ -248,7 +295,7 @@ export default function AppSidebar() {
     const pad = depth > 0 ? "ml-3" : "";
     const label = node.label || node.name || node.code || "";
 
-    // Any node with children acts as a header toggle (ignore its path for navigation)
+    // headers (toggle only)
     if (hasChildren) {
       return (
         <div className="group" key={node.id}>
@@ -281,7 +328,7 @@ export default function AppSidebar() {
       );
     }
 
-    // Leaf link
+    // leaves (links)
     return (
       <div className="group" key={node.id}>
         <NavLink
@@ -306,25 +353,18 @@ export default function AppSidebar() {
   }
 
   return (
-    <aside
-      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
-      style={{ width: "16rem", minWidth: "16rem" }}
-    >
+    <aside className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col" style={{ width: "16rem", minWidth: "16rem" }}>
       {/* Header: Logo + Brand */}
       <div className="h-14 px-3 flex items-center gap-3 border-b border-gray-800">
         {branding?.logoUrl ? (
-          <img
-            src={branding.logoUrl}
-            alt={branding?.appName || "Logo"}
-            className="h-8 w-8 rounded-md object-contain bg-white/5 p-1"
-          />
+          <img src={branding.logoUrl} alt={branding?.appName || "Logo"} className="h-8 w-8 rounded-md object-contain bg-white/5 p-1" />
         ) : (
           <div className="h-8 w-8 rounded-md bg-gray-800 flex items-center justify-center text-lg">🧠</div>
         )}
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
-      {/* Search + Expand/Collapse */}
+      {/* Search + actions */}
       <div className="p-2 border-b border-gray-800">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -353,13 +393,13 @@ export default function AppSidebar() {
         </div>
       </div>
 
-      {/* Menu list (ONLY Admin & CRM parents) */}
+      {/* Menu */}
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
         {!ready && (Array.isArray(menus) ? menus.length === 0 : !menus) ? (
           <div className="text-xs text-gray-400 px-3 py-2">Loading menus…</div>
         ) : visibleTree.length === 0 ? (
           <div className="text-xs text-gray-400 px-3 py-2">
-            No parents found. Ensure <code>code</code> is <b>admin</b> / <b>crm</b> and <code>parent_id</code> is <b>NULL</b> for those rows.
+            No Admin/CRM menus detected. Check console: <code>[Sidebar] roots (admin/crm, smart)</code>.
           </div>
         ) : (
           visibleTree.map((root) => <Node key={root.id} node={root} />)
