@@ -3,14 +3,22 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/* ---------- arrow size ---------- */
-const ARROW_SIZE = 24;
+/* ---- config ---- */
+const ARROW_SIZE = 20;
 
-/* ---------- helpers ---------- */
+/* ---- helpers ---- */
 const normPath = (p) => {
-  if (!p) return null;
+  if (p == null) return null;
   const s = String(p).trim();
+  if (!s) return null;
   return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
+};
+const first = (...vals) => vals.find((v) => v !== undefined && v !== null);
+const toNumOrNull = (v) => (Number.isFinite(+v) ? +v : null);
+const toNullable = (v) => {
+  if (v === undefined || v === null) return null;
+  const s = String(v).trim();
+  return s === "" || s.toLowerCase() === "null" ? null : v;
 };
 const byOrderThenLabel = (a, b) => {
   const ao = Number.isFinite(a.sort_order) ? a.sort_order : 999999;
@@ -19,45 +27,54 @@ const byOrderThenLabel = (a, b) => {
   return String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" });
 };
 
-/* ---------- build tree strictly by parent_id ---------- */
-function buildTree(items) {
-  const byId = new Map();
-  const children = new Map();
+/* ---- normalize + build strictly by parent id ---- */
+function normalize(items) {
+  return (items || []).map((raw) => ({
+    id: first(raw.id, raw.ID),
+    code: first(raw.code, raw.Code),
+    label: first(raw.label, raw.Label) || "",
+    path: normPath(first(raw.path, raw.Path)),
+    icon: first(raw.icon, raw.Icon) ?? null,
+    parent_id: toNullable(first(raw.parent_id, raw.parentId, raw.parentID)),
+    module_code: first(raw.module_code, raw.moduleCode) ?? null,
+    sort_order: toNumOrNull(first(raw.sort_order, raw.sortOrder)),
+  }));
+}
 
-  (items || []).forEach((raw) => {
-    const n = {
-      id: raw.id,
-      code: raw.code,
-      label: raw.label || "",
-      path: normPath(raw.path || ""),
-      icon: raw.icon || null,
-      parent_id: raw.parent_id || null,
-      module_code: raw.module_code || null,
-      sort_order: raw.sort_order ?? null,
-    };
+function buildTree(items) {
+  const rows = normalize(items);
+  const byId = new Map();
+  const kids = new Map();
+
+  rows.forEach((n) => {
+    if (!n.id) return;
     byId.set(n.id, n);
-    children.set(n.id, []);
+    kids.set(n.id, []);
   });
 
   const roots = [];
   byId.forEach((n) => {
-    if (n.parent_id && byId.has(n.parent_id)) children.get(n.parent_id).push(n);
-    else roots.push(n);
+    const pid = n.parent_id;
+    if (pid && byId.has(pid)) {
+      kids.get(pid).push(n);
+    } else {
+      roots.push(n);
+    }
   });
 
   const sortRec = (node) => {
-    const kids = children.get(node.id) || [];
-    kids.sort(byOrderThenLabel);
-    return { ...node, children: kids.map(sortRec) };
+    const childList = kids.get(node.id) || [];
+    childList.sort(byOrderThenLabel);
+    return { ...node, children: childList.map(sortRec) };
   };
 
   roots.sort(byOrderThenLabel);
-  return roots
-    .filter((r) => String(r.label).trim().toLowerCase() !== "main")
-    .map(sortRec);
+  // remove any root literally labeled "Main"
+  const filtered = roots.filter((r) => String(r.label).trim().toLowerCase() !== "main");
+  return filtered.map(sortRec);
 }
 
-/* ---------- visuals ---------- */
+/* ---- visuals ---- */
 function Arrow({ open, size = ARROW_SIZE, className = "opacity-80" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" className={`shrink-0 ${className}`} aria-hidden>
@@ -72,16 +89,16 @@ function Arrow({ open, size = ARROW_SIZE, className = "opacity-80" }) {
     </svg>
   );
 }
-function Placeholder() {
-  return <span style={{ width: ARROW_SIZE, height: ARROW_SIZE, display: "inline-block" }} />;
-}
+const ArrowPlaceholder = () => (
+  <span style={{ width: ARROW_SIZE, height: ARROW_SIZE, display: "inline-block" }} />
+);
 
 export default function AppSidebar() {
   const { menus = [], branding } = useEnv();
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  const roots = useMemo(() => buildTree(menus || []), [menus]);
+  const roots = useMemo(() => buildTree(menus), [menus]);
 
   // keep active link in view
   useEffect(() => {
@@ -97,20 +114,24 @@ export default function AppSidebar() {
   function Node({ node, depth = 0 }) {
     const hasChildren = node.children?.length > 0;
     const isRoot = depth === 0;
-    const [open, setOpen] = useState(isRoot); // roots open by default
+    const [open, setOpen] = useState(true && isRoot); // roots open by default
     const pad = depth > 0 ? "ml-3" : "";
 
+    // Always render ROOT as a header (non-link) so parents are visible
     if (isRoot) {
       return (
         <div className="group" key={node.id}>
           <button
             type="button"
             onClick={() => hasChildren && setOpen((v) => !v)}
-            className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
+            className={[
+              "flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left",
+              pad,
+            ].join(" ")}
             aria-expanded={open}
           >
-            {hasChildren ? <Arrow open={open} /> : <Placeholder />}
-            <span className="gg-nav-text truncate">{node.label || node.code}</span>
+            {hasChildren ? <Arrow open={open} /> : <ArrowPlaceholder />}
+            <span className="truncate">{node.label || node.code}</span>
           </button>
           {hasChildren && open && (
             <div className="mt-1 space-y-1">
@@ -123,6 +144,7 @@ export default function AppSidebar() {
       );
     }
 
+    // Non-root with a path: clickable link
     if (node.path) {
       return (
         <div key={node.id}>
@@ -137,8 +159,8 @@ export default function AppSidebar() {
               ].join(" ")
             }
           >
-            <Placeholder />
-            <span className="gg-nav-text truncate">{node.label || node.code}</span>
+            <ArrowPlaceholder />
+            <span className="truncate">{node.label || node.code}</span>
           </NavLink>
           {hasChildren && (
             <div className="mt-1 space-y-1">
@@ -151,16 +173,20 @@ export default function AppSidebar() {
       );
     }
 
+    // Non-root without a path: collapsible header
     return (
       <div className="group" key={node.id}>
         <button
           type="button"
           onClick={() => hasChildren && setOpen((v) => !v)}
-          className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
+          className={[
+            "flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left",
+            pad,
+          ].join(" ")}
           aria-expanded={open}
         >
-          {hasChildren ? <Arrow open={open} /> : <Placeholder />}
-          <span className="gg-nav-text truncate">{node.label || node.code}</span>
+          {hasChildren ? <Arrow open={open} /> : <ArrowPlaceholder />}
+          <span className="truncate">{node.label || node.code}</span>
         </button>
         {hasChildren && open && (
           <div className="mt-1 space-y-1">
@@ -173,39 +199,19 @@ export default function AppSidebar() {
     );
   }
 
+  // lock width to avoid icon-only collapse
   const fixedWidth = "16rem";
 
   return (
     <aside
-      data-gg-sidebar
       className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
       style={{ width: fixedWidth, minWidth: fixedWidth, maxWidth: fixedWidth }}
     >
-      {/* Force labels visible even if a global 'collapsed' style exists */}
-      <style>{`
-        [data-gg-sidebar] .gg-nav-text{
-          display:inline !important;
-          opacity:1 !important;
-          visibility:visible !important;
-          color:inherit !important;
-          width:auto !important;
-          max-width:none !important;
-          white-space:nowrap !important;
-          font-size:0.875rem !important;
-          overflow:visible !important;
-        }
-        [data-gg-sidebar]{ width:${fixedWidth} !important; min-width:${fixedWidth} !important; }
-      `}</style>
-
       <div className="h-14 px-3 flex items-center gap-2 border-b border-gray-800">
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
-      <div
-        ref={scrollerRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2"
-        style={{ scrollbarGutter: "stable" }}
-      >
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2" style={{ scrollbarGutter: "stable" }}>
         {roots.map((root) => (
           <Node key={root.id} node={root} />
         ))}
