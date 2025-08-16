@@ -44,32 +44,24 @@ function norm(row) {
 
 /* ------------- build tree purely from DB; synthesize missing roots per module if needed ------------- */
 function buildTree(items = []) {
-  // 1) normalize minimal fields we need
-  const src = items.map((row) => {
-    const code = String(row.code ?? row.label ?? "").trim();
-    const parentCode = row.parent_code != null ? String(row.parent_code).trim() : null;
-    const path = normPath(row.path ?? row.url ?? row.route);
-    return {
-      id: String(row.id),
-      code,
-      code_lc: code.toLowerCase(),
-      name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
-      path,
-      icon: row.icon ?? null,
-      sort_order: row.sort_order ?? row.order ?? 0,
-      order: row.order ?? row.sort_order ?? 0,
-      parent_id: row.parent_id ? String(row.parent_id) : null,
-      parent_code: parentCode,
-      parent_code_lc: parentCode ? parentCode.toLowerCase() : null,
-      module_code_lc: row.module_code ? String(row.module_code).toLowerCase() : null,
-      children: [],
-    };
-  });
+  // normalize minimal fields
+  const src = (items || []).map((row) => ({
+    id: String(row.id),
+    code: String(row.code ?? row.label ?? ""),
+    code_lc: String(row.code ?? row.label ?? "").toLowerCase(),
+    name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
+    path: normPath(row.path ?? row.url ?? row.route),
+    icon: row.icon ?? null,
+    sort_order: row.sort_order ?? row.order ?? 0,
+    order: row.order ?? row.sort_order ?? 0,
+    parent_id: row.parent_id ? String(row.parent_id) : null,
+    children: [],
+    module_code_lc: row.module_code ? String(row.module_code).toLowerCase() : null,
+  }));
 
   const byId = Object.fromEntries(src.map((r) => [r.id, { ...r }]));
-  const byCodeLC = Object.fromEntries(src.map((r) => [r.code_lc, byId[r.id]]));
 
-  // 2) attach by parent_id (authoritative)
+  // 1) attach strictly by parent_id
   let roots = [];
   for (const r of src) {
     const node = byId[r.id];
@@ -80,58 +72,16 @@ function buildTree(items = []) {
     }
   }
 
-  // 3) attach by parent_code (case-insensitive) for any still-unattached
-  for (const r of src) {
-    const node = byId[r.id];
-    const alreadyChild = Object.values(byId).some((p) => p.children.includes(node));
-    if (!alreadyChild && r.parent_code_lc && byCodeLC[r.parent_code_lc]) {
-      const p = byCodeLC[r.parent_code_lc];
-      p.children.push(node);
-      roots = roots.filter((x) => x !== node);
-    }
-  }
-
-  // 4) path-based fallback: /a/b/c -> parent /a/b if exists
-  const rowsWithPath = Object.values(byId).filter((n) => n.path);
-  function findClosestParentByPath(child) {
-    if (!child.path) return null;
-    const parts = pathParts(child.path);
-    for (let i = parts.length - 1; i >= 1; i--) {
-      const prefix = "/" + parts.slice(0, i).join("/");
-      const cand = rowsWithPath.find((r) => r.path === prefix);
-      if (cand && cand.id !== child.id) return cand;
-    }
-    return null;
-  }
-  for (const node of [...roots]) {
-    const p = findClosestParentByPath(node);
-    if (p) {
-      if (!p.children.some((c) => c.id === node.id)) p.children.push(node);
-      roots = roots.filter((x) => x !== node);
-    }
-  }
-
-  // 5) synthesize a "Main" bucket for leftover roots that aren't admin/crm
+  // 2) synthesize "Main" for leftover roots that aren't admin/crm
   const isAdminish = (n) =>
-    n.code_lc === "admin" ||
-    n.code_lc.startsWith("admin.") ||
-    /\/app\/admin(\/|$)/i.test(n.path || "");
-
+    n.code_lc === "admin" || n.code_lc.startsWith("admin.") || /\/app\/admin(\/|$)/i.test(n.path || "");
   const isCrmish = (n) =>
-    n.code_lc === "crm" ||
-    n.code_lc.startsWith("crm.") ||
-    n.module_code_lc === "crm" ||
-    /\/app\/crm(\/|$)/i.test(n.path || "");
+    n.code_lc === "crm" || n.code_lc.startsWith("crm.") || n.module_code_lc === "crm" || /\/app\/crm(\/|$)/i.test(n.path || "");
 
-  // if you already have a real main/app root, keep it
   const hasExplicitMain =
-    roots.some((r) => r.code_lc === "main") ||
-    roots.some((r) => r.code_lc === "app") ||
-    roots.some((r) => (r.path || "").toLowerCase() === "/app");
+    roots.some((r) => r.code_lc === "main") || roots.some((r) => (r.path || "").toLowerCase() === "/app");
 
-  const mainCandidates = roots.filter(
-    (n) => !isAdminish(n) && !isCrmish(n)
-  );
+  const mainCandidates = roots.filter((n) => !isAdminish(n) && !isCrmish(n));
 
   if (!hasExplicitMain && mainCandidates.length) {
     const synthetic = {
@@ -153,7 +103,7 @@ function buildTree(items = []) {
     roots.push(synthetic);
   }
 
-  // 6) deep sort
+  // 3) deep sort
   const sortDeep = (arr) => {
     arr.sort(
       (a, b) =>
