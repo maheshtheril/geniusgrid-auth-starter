@@ -31,14 +31,13 @@ import { AuditPage } from "@/pages/crm/incentives/AuditPage";
 
 /* -------- CRM: Deals -------- */
 import DealsLayout from "@/pages/crm/deals/DealsLayout";
-// import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect"; // ← not needed anymore
+// NOTE: Do not import DealsIndexRedirect; we redirect inline with <Navigate/>.
 import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
 import DealsList from "@/pages/crm/deals/DealsList";
 import DealsHelp from "@/pages/crm/deals/DealsHelp";
 
 /* -------- CRM: Extras (Contacts, Calls, Tasks, Reports, Notifications, Settings) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
-
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 import { IncentivesHelpPage } from "@/pages/crm/incentives/HelpPage";
 
@@ -59,7 +58,7 @@ class ErrorBoundary extends React.Component {
       <div className="min-h-screen bg-[#0B0D10] text-gray-200 grid place-items-center p-6">
         <div className="max-w-2xl">
           <div className="text-2xl font-bold mb-2">❌ UI crashed</div>
-          <pre className="whitespace-pre-wrap text-sm opacity-80">
+        <pre className="whitespace-pre-wrap text-sm opacity-80">
             {String(
               this.state.error?.stack ||
                 this.state.error?.message ||
@@ -129,8 +128,8 @@ export default function App() {
 
               {/* Deals */}
               <Route path="deals" element={<DealsLayout />}>
-              <Route index element={<DealsIndexRedirect />} />
-             <Route index element={<Navigate to="pipeline" replace />} />
+                {/* Index → Pipeline (explicit redirect) */}
+                <Route index element={<Navigate to="pipeline" replace />} />
                 <Route path="pipeline" element={<DealsPipeline />} />
                 <Route path="list" element={<DealsList />} />
                 <Route path="help" element={<DealsHelp />} />
