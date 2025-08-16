@@ -18,21 +18,16 @@ const byOrderThenName = (a, b) => {
 };
 const isMain = (n) => String(n.label || n.name || n.code || "").trim().toLowerCase() === "main";
 
-/* ------------------ DB-FIRST tree builder ------------------
-   Pass A (strict): roots = parent_id NULL only
-   Pass B (rescue if A empty): roots = NULL OR parent missing OR obvious module roots
-   Children still attach STRICTLY by parent_id (only if parent exists)
--------------------------------------------------------------- */
-function buildTreeResilient(rawItems) {
-  // normalize payload shape
-  const items = Array.isArray(rawItems) ? rawItems : (rawItems?.data ?? rawItems?.items ?? []);
+/* ------------------ DB-FIRST: attach strictly; roots ONLY admin/crm with parent_id NULL ------------------ */
+function buildAdminCrmTree(items) {
+  const ALLOWED_ROOT_CODES = new Set(["admin", "crm"]);
+
+  // normalize
+  const src = Array.isArray(items) ? items : (items?.data ?? items?.items ?? []);
   const byId = new Map();
   const children = new Map();
 
-  (items || []).forEach((raw) => {
-    const parent_id =
-      raw.parent_id === "" || raw.parent_id === "null" || raw.parent_id === undefined ? null : raw.parent_id;
-
+  (src || []).forEach((raw) => {
     const n = {
       id: raw.id,
       code: raw.code,
@@ -40,16 +35,16 @@ function buildTreeResilient(rawItems) {
       name: raw.label ?? raw.name ?? raw.code ?? "",
       path: normPath(raw.path || ""),
       icon: raw.icon ?? null,
-      parent_id,
+      parent_id: raw.parent_id ?? null,
       module_code: raw.module_code ?? null,
       sort_order: raw.sort_order ?? null,
     };
-    if (!n.id) return; // skip corrupt rows
+    if (!n.id) return;
     byId.set(n.id, n);
     children.set(n.id, []);
   });
 
-  // attach children strictly when parent exists
+  // attach strictly if parent exists
   byId.forEach((n) => {
     if (n.parent_id && byId.has(n.parent_id)) {
       children.get(n.parent_id).push(n);
@@ -62,30 +57,29 @@ function buildTreeResilient(rawItems) {
     return { ...node, children: kids.map(sortRec) };
   };
 
-  // ---- PASS A: strict parents (parent_id null only) ----
-  let roots = Array.from(byId.values()).filter((n) => !n.parent_id && !isMain(n));
-  roots.sort(byOrderThenName);
+  // Strict parents: parent_id NULL, not "Main", and code exactly admin/crm
+  const strictParents = Array.from(byId.values()).filter((n) => {
+    const code = String(n.code || "").toLowerCase();
+    return !n.parent_id && !isMain(n) && ALLOWED_ROOT_CODES.has(code);
+  });
 
-  // ---- PASS B: rescue if strict yielded nothing ----
-  if (roots.length === 0 && byId.size > 0) {
-    const isObviousModuleRoot = (n) => {
-      // code with no dot, or /app/<module>
-      const c = String(n.code || "").trim();
-      const path = n.path || "";
-      return (!c.includes(".")) || /^\/app\/[^/]+$/.test(path);
-    };
+  strictParents.sort(byOrderThenName);
+  const tree = strictParents.map(sortRec);
 
-    const candidateRoots = Array.from(byId.values()).filter((n) => {
-      const parentExists = n.parent_id && byId.has(n.parent_id);
-      return !parentExists || isObviousModuleRoot(n);
-    });
+  // Debug snapshot (remove later)
+  console.groupCollapsed("[Sidebar] STRICT ROOTS (admin/crm only)");
+  console.table(
+    tree.map((r) => ({
+      id: r.id,
+      code: r.code,
+      label: r.label,
+      path: r.path,
+      children: r.children?.length || 0,
+    }))
+  );
+  console.groupEnd();
 
-    roots = candidateRoots.filter((n) => !isMain(n));
-    roots.sort(byOrderThenName);
-  }
-
-  // depth-first sort & shape
-  return roots.map(sortRec);
+  return tree;
 }
 
 /* ------------------ search utils ------------------ */
@@ -175,27 +169,14 @@ const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inlin
 
 /* ------------------ COMPONENT ------------------ */
 export default function AppSidebar() {
-  const { menus = [], branding, ready } = useEnv(); // expect menus from DB
+  const { menus = [], branding, ready } = useEnv(); // DB payload
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  // Build (resilient) DB tree
-  const roots = useMemo(() => {
-    const tree = buildTreeResilient(menus || []);
-    // Debug snapshots (remove later)
-    console.groupCollapsed("[Sidebar] payload");
-    console.table((Array.isArray(menus) ? menus : menus?.data ?? menus?.items ?? []).map(m => ({
-      id: m.id, code: m.code, label: m.label || m.name, path: m.path, parent_id: m.parent_id, sort: m.sort_order
-    })));
-    console.groupEnd();
+  // Build tree (ONLY Admin & CRM as parents)
+  const roots = useMemo(() => buildAdminCrmTree(menus || []), [menus]);
 
-    console.groupCollapsed("[Sidebar] roots (DB-first, resilient)");
-    console.table(tree.map(r => ({ id: r.id, label: r.label, path: r.path, children: r.children?.length || 0 })));
-    console.groupEnd();
-    return tree;
-  }, [menus]);
-
-  // State: collapsed by default
+  // Collapsed by default + search
   const [openIds, setOpenIds] = useState(() => new Set());
   const [query, setQuery] = useState("");
 
@@ -203,28 +184,32 @@ export default function AppSidebar() {
   const { pruned: visibleTree, expandIds } = useMemo(() => filterTree(roots, query), [roots, query]);
 
   const isOpen = (id) => openIds.has(id);
-  const openMany = (ids) => setOpenIds((prev) => {
-    const next = new Set(prev);
-    ids.forEach((i) => next.add(i));
-    return next;
-  });
+  const openMany = (ids) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((i) => next.add(i));
+      return next;
+    });
   const closeAll = () => setOpenIds(new Set());
   const openAll = () => {
     const all = new Set();
-    walk(roots, (n) => { if (n.children?.length) all.add(n.id); });
+    walk(roots, (n) => {
+      if (n.children?.length) all.add(n.id);
+    });
     setOpenIds(all);
   };
-  const toggle = (id) => setOpenIds((prev) => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
+  const toggle = (id) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   // Auto-open ancestors of the active route
   useEffect(() => {
     const match = findNodeByPath(roots, loc.pathname);
     if (match) openMany(ancestorsOf(match.id, parentMap));
-
     // Scroll active into view
     const el = scrollerRef.current?.querySelector('a[aria-current="page"]');
     if (el && scrollerRef.current) {
@@ -237,15 +222,19 @@ export default function AppSidebar() {
     }
   }, [loc.pathname, roots, parentMap]);
 
-  // While searching, open ancestors of matches
-  useEffect(() => { if (query) openMany(expandIds); }, [query, expandIds]);
+  // When searching, auto-open ancestors of matches
+  useEffect(() => {
+    if (query) openMany(expandIds);
+  }, [query, expandIds]);
 
+  /* ---------- Node renderer ---------- */
   function Node({ node, depth = 0 }) {
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
     const open = isOpen(node.id);
     const pad = depth > 0 ? "ml-3" : "";
     const label = node.label || node.name || node.code || "";
 
+    // Any node with children acts as a header toggle (ignore its path for navigation)
     if (hasChildren) {
       return (
         <div className="group" key={node.id}>
@@ -262,17 +251,23 @@ export default function AppSidebar() {
           >
             <Chevron open={open} />
             {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
-            <span className="truncate"><Highlight text={label} query={query} /></span>
+            <span className="truncate">
+              <Highlight text={label} query={query} />
+            </span>
           </button>
+
           {open && (
             <div id={`children-${node.id}`} className="mt-1 space-y-1">
-              {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
+              {node.children.map((c) => (
+                <Node key={c.id} node={c} depth={depth + 1} />
+              ))}
             </div>
           )}
         </div>
       );
     }
 
+    // Leaf link
     return (
       <div className="group" key={node.id}>
         <NavLink
@@ -288,18 +283,27 @@ export default function AppSidebar() {
         >
           <Spacer />
           {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
-          <span className="truncate"><Highlight text={label} query={query} /></span>
+          <span className="truncate">
+            <Highlight text={label} query={query} />
+          </span>
         </NavLink>
       </div>
     );
   }
 
   return (
-    <aside className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col" style={{ width: "16rem", minWidth: "16rem" }}>
+    <aside
+      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
+      style={{ width: "16rem", minWidth: "16rem" }}
+    >
       {/* Header: Logo + Brand */}
       <div className="h-14 px-3 flex items-center gap-3 border-b border-gray-800">
         {branding?.logoUrl ? (
-          <img src={branding.logoUrl} alt={branding?.appName || "Logo"} className="h-8 w-8 rounded-md object-contain bg-white/5 p-1" />
+          <img
+            src={branding.logoUrl}
+            alt={branding?.appName || "Logo"}
+            className="h-8 w-8 rounded-md object-contain bg-white/5 p-1"
+          />
         ) : (
           <div className="h-8 w-8 rounded-md bg-gray-800 flex items-center justify-center text-lg">🧠</div>
         )}
@@ -335,14 +339,13 @@ export default function AppSidebar() {
         </div>
       </div>
 
-      {/* Menu list */}
+      {/* Menu list (ONLY Admin & CRM parents) */}
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
-        {/* Loading guard: if env isn't ready and nothing to show yet */}
         {!ready && (Array.isArray(menus) ? menus.length === 0 : !menus) ? (
           <div className="text-xs text-gray-400 px-3 py-2">Loading menus…</div>
         ) : visibleTree.length === 0 ? (
           <div className="text-xs text-gray-400 px-3 py-2">
-            No menus. Check that Admin/CRM rows have <code>parent_id</code> NULL or their parents exist in the payload.
+            No parents found. Ensure <code>code</code> is <b>admin</b> / <b>crm</b> and <code>parent_id</code> is <b>NULL</b> for those rows.
           </div>
         ) : (
           visibleTree.map((root) => <Node key={root.id} node={root} />)
