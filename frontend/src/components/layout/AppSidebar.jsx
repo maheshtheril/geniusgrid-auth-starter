@@ -1,9 +1,8 @@
-// src/components/layout/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/* tiny helpers */
+/* Tiny safe helpers */
 const first = (...xs) => xs.find(v => v !== undefined && v !== null);
 const normPath = (p) => {
   const v = first(p);
@@ -15,7 +14,7 @@ const cleanParent = (v) => {
   const x = first(v);
   if (x === undefined || x === null) return null;
   const s = String(x).trim().toLowerCase();
-  return (s === "" || s === "null" || s === "undefined" || s === "n/a") ? null : String(x).trim();
+  return (s === "" || s === "null" || s === "undefined") ? null : String(x).trim();
 };
 const numOr = (v, d = 999999) => (Number.isFinite(+v) ? +v : d);
 const byOrderThenLabel = (a, b) => {
@@ -25,67 +24,76 @@ const byOrderThenLabel = (a, b) => {
   return String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" });
 };
 
-/* PARENTS ONLY:
-   - parent_id is null/empty, OR
-   - parent_id references an ID not present in payload (orphan => treat as root)
-*/
-function computeParents(items) {
-  const rows = (items || []).map(raw => ({
+/* Normalize once */
+function normalize(items) {
+  return (items || []).map(raw => ({
     id: first(raw.id, raw.ID),
     code: first(raw.code, raw.Code),
     label: first(raw.label, raw.Label) || "",
     path: normPath(first(raw.path, raw.Path)),
     icon: first(raw.icon, raw.Icon) ?? null,
     parent_id: cleanParent(first(raw.parent_id, raw.parentId, raw.parentID)),
-    sort_order: first(raw.sort_order, raw.sortOrder),
+    module_code: first(raw.module_code, raw.moduleCode) ?? null,
+    sort_order: first(raw.sort_order, raw.sortOrder) ?? null,
   }));
+}
 
-  const allIds = new Set(rows.map(r => r.id).filter(Boolean));
-  const roots = rows.filter(r => !r.parent_id || !allIds.has(r.parent_id));
+/* Build simple parent->children mapping (no recursion) */
+function computeParentsAndChildren(items) {
+  const rows = normalize(items);
+  const byId = new Map(rows.map(r => [r.id, r]));
+  const childrenByParent = new Map();
+  rows.forEach(r => childrenByParent.set(r.id, []));
+  rows.forEach(r => {
+    if (r.parent_id && byId.has(r.parent_id)) {
+      childrenByParent.get(r.parent_id).push(r);
+    }
+  });
 
-  // drop literal "Main" if present
-  const filtered = roots.filter(r => (r.label || r.code || "").trim().toLowerCase() !== "main");
-  filtered.sort(byOrderThenLabel);
-  return filtered;
+  // parent if parent_id is null OR parent not present in payload (covers deleted “Main”)
+  const idSet = new Set(rows.map(r => r.id));
+  const parents = rows.filter(r => !r.parent_id || !idSet.has(r.parent_id));
+  parents.sort(byOrderThenLabel);
+  parents.forEach(p => childrenByParent.get(p.id).sort(byOrderThenLabel));
+
+  // hide literal "Main"
+  const filteredParents = parents.filter(p => (p.label || p.code || "").trim().toLowerCase() !== "main");
+  return { parents: filteredParents, childrenByParent };
 }
 
 export default function AppSidebar() {
-  const { menus = [], branding } = useEnv();
+  const { menus = [], branding, ready } = useEnv();
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  const parents = useMemo(() => computeParents(menus), [menus]);
+  const { parents, childrenByParent } = useMemo(
+    () => computeParentsAndChildren(menus),
+    [menus]
+  );
 
-  // Debug exactly what we got vs. what we render
+  // Debug once
   useEffect(() => {
-    console.groupCollapsed("[Sidebar] menus payload");
+    console.group("[Sidebar] payload");
     console.table((menus || []).map(m => ({
-      id: m.id ?? m.ID,
-      label: m.label ?? m.Label,
-      code: m.code ?? m.Code,
-      path: m.path ?? m.Path,
-      parent_id: m.parent_id ?? m.parentId ?? m.parentID,
-      sort: m.sort_order ?? m.sortOrder
+      id: m.id, code: m.code, label: m.label, path: m.path, parent_id: m.parent_id, sort: m.sort_order
     })));
     console.groupEnd();
 
-    console.groupCollapsed("[Sidebar] parents computed");
+    console.group("[Sidebar] parents");
     console.table(parents.map(p => ({
-      id: p.id, label: p.label, code: p.code, path: p.path, parent_id: p.parent_id, sort: p.sort_order
+      id: p.id, label: p.label, path: p.path, kids: (childrenByParent.get(p.id) || []).length
     })));
     console.groupEnd();
-  }, [menus, parents]);
+  }, [menus, parents, childrenByParent]);
 
-  // keep active in view
+  // Keep active link in view
   useEffect(() => {
     const el = scrollerRef.current?.querySelector('a[aria-current="page"]');
     if (el && scrollerRef.current) {
       const { top: cTop } = scrollerRef.current.getBoundingClientRect();
       const { top: eTop } = el.getBoundingClientRect();
-      scrollerRef.current.scrollTo({
-        top: scrollerRef.current.scrollTop + (eTop - cTop - 120),
-        behavior: "smooth",
-      });
+      const delta = eTop - cTop - 120;
+      scrollerRef.current.scrollTo({ top: scrollerRef.current.scrollTop + delta, behavior: "smooth" });
     }
   }, [loc.pathname]);
 
@@ -99,27 +107,58 @@ export default function AppSidebar() {
       </div>
 
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
-        {parents.length === 0 && (
+        {!ready ? (
+          <div className="text-xs text-gray-400 px-3 py-2">Loading…</div>
+        ) : parents.length === 0 ? (
           <div className="text-xs text-red-300 bg-red-950/30 p-2 rounded">
-            No parent menus computed. Check console tables above to see payload vs. parents.
+            No parent menus computed. Check console tables for payload.
           </div>
-        )}
+        ) : null}
 
-        {parents.map(node => (
-          <NavLink
-            key={node.id}
-            to={node.path || "#"}
-            end
-            className={({ isActive }) =>
-              [
-                "flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-gray-800/50",
-                isActive ? "bg-gray-800 text-white" : "text-gray-200",
-              ].join(" ")
-            }
-          >
-            {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
-            <span className="truncate">{node.label || node.code}</span>
-          </NavLink>
+        {parents.map((p) => (
+          <div key={p.id} className="mb-2">
+            {/* Parent row (clickable if it has a path) */}
+            {p.path ? (
+              <NavLink
+                to={p.path}
+                end
+                className={({ isActive }) =>
+                  [
+                    "flex items-center gap-2 px-3 py-2 rounded-lg text-sm",
+                    isActive ? "bg-gray-800 text-white" : "text-gray-200 hover:bg-gray-800/50",
+                  ].join(" ")
+                }
+              >
+                {p.icon ? <span className="w-4 h-4">{p.icon}</span> : <span className="w-4 h-4" />}
+                <span className="truncate">{p.label || p.code}</span>
+              </NavLink>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 bg-gray-800/30">
+                {p.icon ? <span className="w-4 h-4">{p.icon}</span> : <span className="w-4 h-4" />}
+                <span className="truncate">{p.label || p.code}</span>
+              </div>
+            )}
+
+            {/* Direct children list */}
+            <div className="mt-1 space-y-1">
+              {(childrenByParent.get(p.id) || []).map((c) => (
+                <NavLink
+                  key={c.id}
+                  to={c.path || "#"}
+                  end
+                  className={({ isActive }) =>
+                    [
+                      "ml-3 flex items-center gap-2 px-3 py-1.5 rounded-md text-sm",
+                      isActive ? "bg-gray-800 text-white" : "text-gray-300 hover:bg-gray-800/40",
+                    ].join(" ")
+                  }
+                >
+                  <span className="w-3 h-3" />
+                  <span className="truncate">{c.label || c.code}</span>
+                </NavLink>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </aside>
