@@ -1,361 +1,420 @@
 // src/components/layout/AppSidebar.jsx
-// DB-first Sidebar (React Router v6) — EXACT roots (Admin, CRM), no synthetic "Main".
-// - Normalizes parent_id ("", "null", undefined → null)
-// - Only true parents (code === 'admin' | 'crm' && parent_id === null) are roots
-// - Strict children attachment via parent_id
-// - Collapsed-by-default sections, auto-opens ancestors of active route
-// - Menu search, big expand/collapse arrows, highlight active, no underline on parents
-// - Incentives subtree under CRM (plans, rules, tiers, programs, payouts, adjustments, approvals, reports, audit)
-// - Fallback Admin+CRM tree when menus[] is empty
-// - If DB build misses CRM but crm-like items exist, synthesize a CRM root and group them there
-
-import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
-import {
-  ChevronRight,
-  ChevronDown,
-  Search as SearchIcon,
-  Layers,
-  Settings,
-  BadgePercent,
-  Percent,
-  Banknote,
-  ClipboardList,
-  ListChecks,
-  ShieldCheck,
-  FileText,
-  BarChart3,
-  FolderTree,
-  Cog,
-} from "lucide-react";
 
-/* ----------------------------- tiny utilities ----------------------------- */
-const toNull = (v) => (v === undefined || v === null || v === "" || v === "null" ? null : v);
+/* ========================================================================
+   HARD-CODED MENUS (parents + children). DB is ignored on purpose.
+   ======================================================================== */
+const MENUS = [
+  // ---------------- ROOTS ----------------
+  { id: "admin-root", code: "admin", label: "Admin", path: null, icon: "⚙️", parent_id: null, module_code: "core", sort_order: 10 },
+  { id: "crm-root",   code: "crm",   label: "CRM",   path: null, icon: "🤝", parent_id: null, module_code: "crm",  sort_order: 10 },
+
+  // ---------------- ADMIN GROUPS ----------------
+  { id: "admin-grp-org",  code: "admin.grp.org",  label: "Organization & Compliance",           icon: "🏢", parent_id: "admin-root", sort_order: 21 },
+  { id: "admin-grp-rbac", code: "admin.grp.rbac", label: "Access Control (RBAC)",               icon: "🛡️", parent_id: "admin-root", sort_order: 22 },
+  { id: "admin-grp-sec",  code: "admin.grp.sec",  label: "Security & Compliance",               icon: "🔐", parent_id: "admin-root", sort_order: 23 },
+  { id: "admin-grp-data", code: "admin.grp.data", label: "Data & Customization",                icon: "🧩", parent_id: "admin-root", sort_order: 24 },
+  { id: "admin-grp-int",  code: "admin.grp.int",  label: "Integrations & Developer",            icon: "🔌", parent_id: "admin-root", sort_order: 25 },
+  { id: "admin-grp-ai",   code: "admin.grp.ai",   label: "AI & Automation",                     icon: "✨", parent_id: "admin-root", sort_order: 26 },
+  { id: "admin-grp-bill", code: "admin.grp.bill", label: "Billing & Observability",             icon: "💳", parent_id: "admin-root", sort_order: 27 },
+
+  // Admin → Organization & Compliance
+  { id: "admin-org",          code: "admin.org",          label: "Organization Profile",  path: "/app/admin/org",          icon: "🏢", parent_id: "admin-grp-org",  sort_order: 211 },
+  { id: "admin-branding",     code: "admin.branding",     label: "Branding / Theme",      path: "/app/admin/branding",     icon: "🎨", parent_id: "admin-grp-org",  sort_order: 212 },
+  { id: "admin-localization", code: "admin.localization", label: "Localization",          path: "/app/admin/localization", icon: "🌐", parent_id: "admin-grp-org",  sort_order: 213 },
+  { id: "admin-taxes",        code: "admin.taxes",        label: "Tax & Compliance",      path: "/app/admin/taxes",        icon: "🧾", parent_id: "admin-grp-org",  sort_order: 214 },
+  { id: "admin-units",        code: "admin.units",        label: "Business Units & Depts",path: "/app/admin/units",        icon: "🏢", parent_id: "admin-grp-org",  sort_order: 215 },
+  { id: "admin-locations",    code: "admin.locations",    label: "Locations",             path: "/app/admin/locations",    icon: "📍", parent_id: "admin-grp-org",  sort_order: 216 },
+  { id: "admin-calendars",    code: "admin.calendars",    label: "Calendars & Holidays",  path: "/app/admin/calendars",    icon: "📅", parent_id: "admin-grp-org",  sort_order: 217 },
+  { id: "admin-numbering",    code: "admin.numbering",    label: "Numbering Schemes",     path: "/app/admin/numbering",    icon: "🔢", parent_id: "admin-grp-org",  sort_order: 218 },
+  { id: "admin-compliance",   code: "admin.compliance",   label: "Compliance Policies",   path: "/app/admin/compliance",   icon: "🛡️", parent_id: "admin-grp-org",  sort_order: 219 },
+
+  // Admin → RBAC
+  { id: "admin-users",       code: "admin.users",       label: "Users",              path: "/app/admin/users",       icon: "👤", parent_id: "admin-grp-rbac", sort_order: 311 },
+  { id: "admin-roles",       code: "admin.roles",       label: "Roles",              path: "/app/admin/roles",       icon: "🛡️", parent_id: "admin-grp-rbac", sort_order: 312 },
+  { id: "admin-permissions", code: "admin.permissions", label: "Permissions Matrix", path: "/app/admin/permissions", icon: "🗂️", parent_id: "admin-grp-rbac", sort_order: 313 },
+  { id: "admin-teams",       code: "admin.teams",       label: "Teams & Territories",path: "/app/admin/teams",       icon: "🧭", parent_id: "admin-grp-rbac", sort_order: 314 },
+
+  // Admin → Security
+  { id: "admin-security", code: "admin.security", label: "Security Policies", path: "/app/admin/security", icon: "🔐", parent_id: "admin-grp-sec", sort_order: 411 },
+  { id: "admin-sso",      code: "admin.sso",      label: "SSO & MFA",        path: "/app/admin/sso",      icon: "🧷", parent_id: "admin-grp-sec", sort_order: 412 },
+  { id: "admin-domains",  code: "admin.domains",  label: "Domains",          path: "/app/admin/domains",  icon: "🌐", parent_id: "admin-grp-sec", sort_order: 413 },
+  { id: "admin-audit",    code: "admin.audit",    label: "Audit Logs",       path: "/app/admin/audit",    icon: "📜", parent_id: "admin-grp-sec", sort_order: 414 },
+
+  // Admin → Data & Customization
+  { id: "admin-settings",      code: "admin.settings",      label: "Settings",        path: "/app/admin/settings",      icon: "🧩", parent_id: "admin-grp-data", sort_order: 511 },
+  { id: "admin-custom-fields", code: "admin.custom-fields", label: "Custom Fields",   path: "/app/admin/custom-fields", icon: "🏷️", parent_id: "admin-grp-data", sort_order: 512 },
+  { id: "admin-pipelines",     code: "admin.pipelines",     label: "Pipelines & Stages", path: "/app/admin/pipelines", icon: "🪜", parent_id: "admin-grp-data", sort_order: 513 },
+  { id: "admin-templates",     code: "admin.templates",     label: "Templates",       path: "/app/admin/templates",     icon: "🧾", parent_id: "admin-grp-data", sort_order: 514 },
+  { id: "admin-notifications", code: "admin.notifications", label: "Notifications",   path: "/app/admin/notifications", icon: "🔔", parent_id: "admin-grp-data", sort_order: 515 },
+  { id: "admin-import",        code: "admin.import_export", label: "Import / Export", path: "/app/admin/import",       icon: "⬇️", parent_id: "admin-grp-data", sort_order: 516 },
+  { id: "admin-backups",       code: "admin.backups",       label: "Backups",         path: "/app/admin/backups",      icon: "💾", parent_id: "admin-grp-data", sort_order: 517 },
+
+  // Admin → Integrations
+  { id: "admin-integrations", code: "admin.integrations", label: "Integrations", path: "/app/admin/integrations", icon: "🔌", parent_id: "admin-grp-int", sort_order: 611 },
+  { id: "admin-marketplace",  code: "admin.marketplace",  label: "Marketplace",  path: "/app/admin/marketplace",  icon: "🛍️", parent_id: "admin-grp-int", sort_order: 612 },
+  { id: "admin-api-keys",     code: "admin.api_keys",     label: "API Keys",     path: "/app/admin/api-keys",     icon: "🗝️", parent_id: "admin-grp-int", sort_order: 613 },
+  { id: "admin-webhooks",     code: "admin.webhooks",     label: "Webhooks",     path: "/app/admin/webhooks",     icon: "🪝", parent_id: "admin-grp-int", sort_order: 614 },
+  { id: "admin-features",     code: "admin.features",     label: "Feature Flags",path: "/app/admin/features",     icon: "🚩", parent_id: "admin-grp-int", sort_order: 615 },
+
+  // Admin → AI & Automation
+  { id: "admin-ai",         code: "admin.ai",         label: "AI Settings",      path: "/app/admin/ai",         icon: "✨", parent_id: "admin-grp-ai", sort_order: 711 },
+  { id: "admin-automation", code: "admin.automation", label: "Automation Rules", path: "/app/admin/automation", icon: "🤖", parent_id: "admin-grp-ai", sort_order: 712 },
+  { id: "admin-approvals",  code: "admin.approvals",  label: "Approvals",        path: "/app/admin/approvals",  icon: "✅", parent_id: "admin-grp-ai", sort_order: 713 },
+
+  // Admin → Billing & Observability
+  { id: "admin-billing", code: "admin.billing", label: "Billing & Subscription", path: "/app/admin/billing", icon: "💳", parent_id: "admin-grp-bill", sort_order: 811 },
+  { id: "admin-usage",   code: "admin.usage",   label: "Usage & Limits",        path: "/app/admin/usage",   icon: "📈", parent_id: "admin-grp-bill", sort_order: 812 },
+  { id: "admin-logs",    code: "admin.logs",    label: "System Logs",           path: "/app/admin/logs",    icon: "🧾", parent_id: "admin-grp-bill", sort_order: 813 },
+
+  // ---------------- CRM CHILDREN ----------------
+  { id: "crm-leads",     code: "crm.leads",     label: "Leads",            path: "/app/crm/leads",     icon: "📇", parent_id: "crm-root", sort_order: 11 },
+  { id: "crm-discover",  code: "crm.discover",  label: "Discover (AI)",    path: "/app/crm/discover",  icon: "✨", parent_id: "crm-root", sort_order: 12 },
+  { id: "crm-companies", code: "crm.companies", label: "Companies",        path: "/app/crm/companies", icon: "🏢", parent_id: "crm-root", sort_order: 13 },
+  { id: "crm-contacts",  code: "crm.contacts",  label: "Contacts",         path: "/app/crm/contacts",  icon: "👥", parent_id: "crm-root", sort_order: 14 },
+  { id: "crm-calls",     code: "crm.calls",     label: "Calls",            path: "/app/crm/calls",     icon: "📞", parent_id: "crm-root", sort_order: 15 },
+  { id: "crm-deals",     code: "crm.deals",     label: "Deals / Pipeline", path: "/app/crm/deals",     icon: "📊", parent_id: "crm-root", sort_order: 16 },
+  { id: "crm-reports",   code: "crm.reports",   label: "Reports",          path: "/app/crm/reports",   icon: "📈", parent_id: "crm-root", sort_order: 91 },
+
+  // CRM → Incentives (Commission)
+  { id: "crm-incentives",           code: "crm.incentives",           label: "Incentives / Commission", icon: "🏆", parent_id: "crm-root", sort_order: 70 },
+  { id: "crm-incentives-plans",     code: "crm.incentives.plans",     label: "Plans",        path: "/app/crm/incentives/plans",     icon: "🗂️", parent_id: "crm-incentives", sort_order: 701 },
+  { id: "crm-incentives-rules",     code: "crm.incentives.rules",     label: "Rules",        path: "/app/crm/incentives/rules",     icon: "⚖️", parent_id: "crm-incentives", sort_order: 702 },
+  { id: "crm-incentives-tiers",     code: "crm.incentives.tiers",     label: "Slabs & Tiers",path: "/app/crm/incentives/tiers",     icon: "🪜", parent_id: "crm-incentives", sort_order: 703 },
+  { id: "crm-incentives-programs",  code: "crm.incentives.programs",  label: "Programs",     path: "/app/crm/incentives/programs",  icon: "🎯", parent_id: "crm-incentives", sort_order: 704 },
+  { id: "crm-incentives-payouts",   code: "crm.incentives.payouts",   label: "Payouts",      path: "/app/crm/incentives/payouts",   icon: "💸", parent_id: "crm-incentives", sort_order: 705 },
+  { id: "crm-incentives-adjust",    code: "crm.incentives.adjust",    label: "Adjustments",  path: "/app/crm/incentives/adjust",    icon: "🧾", parent_id: "crm-incentives", sort_order: 706 },
+  { id: "crm-incentives-approvals", code: "crm.incentives.approvals", label: "Approvals",    path: "/app/crm/incentives/approvals", icon: "✅", parent_id: "crm-incentives", sort_order: 707 },
+  { id: "crm-incentives-reporting", code: "crm.incentives.reporting", label: "Reports",      path: "/app/crm/incentives/reports",   icon: "📊", parent_id: "crm-incentives", sort_order: 708 },
+  { id: "crm-incentives-audit",     code: "crm.incentives.audit",     label: "Audit",        path: "/app/crm/incentives/audit",     icon: "📜", parent_id: "crm-incentives", sort_order: 709 },
+];
+
+/* =============================== helpers =============================== */
 const normPath = (p) => {
   if (!p) return null;
   const s = String(p).trim();
   return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
 };
-const isCrmLike = (m) =>
-  String(m?.code || "").startsWith("crm.") ||
-  String(m?.module_code || "") === "crm" ||
-  String(m?.path || "").startsWith("/app/crm");
-const isRootCandidate = (m) => toNull(m.parent_id) === null && (m.code === "admin" || m.code === "crm");
-const byOrder = (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0);
-
-/* ------------------------------- icon mapper ------------------------------ */
-const iconFor = (code = "") => {
-  if (code === "admin") return <Settings className="h-4 w-4" />;
-  if (code === "crm") return <Layers className="h-4 w-4" />;
-  if (code.startsWith("crm.incentive") || code.startsWith("crm.incentives")) return <BadgePercent className="h-4 w-4" />;
-  if (code.includes("rules")) return <ClipboardList className="h-4 w-4" />;
-  if (code.includes("tiers")) return <Percent className="h-4 w-4" />;
-  if (code.includes("program")) return <FolderTree className="h-4 w-4" />;
-  if (code.includes("payout")) return <Banknote className="h-4 w-4" />;
-  if (code.includes("adjust")) return <Cog className="h-4 w-4" />;
-  if (code.includes("approval")) return <ShieldCheck className="h-4 w-4" />;
-  if (code.includes("report")) return <BarChart3 className="h-4 w-4" />;
-  if (code.includes("audit")) return <FileText className="h-4 w-4" />;
-  return <Layers className="h-4 w-4" />;
+const byOrderThenName = (a, b) => {
+  const ao = Number.isFinite(a.sort_order) ? a.sort_order : 999999;
+  const bo = Number.isFinite(b.sort_order) ? b.sort_order : 999999;
+  if (ao !== bo) return ao - bo;
+  const an = String(a.label || a.name || a.code || "");
+  const bn = String(b.label || b.name || b.code || "");
+  return an.localeCompare(bn, undefined, { sensitivity: "base" });
 };
-
-/* ---------------------------- hardcoded fallback --------------------------- */
-const FALLBACK = [
-  // roots
-  { id: "r-admin", code: "admin", label: "Admin", path: "/app/admin", parent_id: null, sort_order: 10 },
-  { id: "r-crm", code: "crm", label: "CRM", path: "/app/crm", parent_id: null, sort_order: 20 },
-  // Admin demo children
-  { id: "a-01", code: "admin.users", label: "Users", path: "/app/admin/users", parent_id: "r-admin", sort_order: 11 },
-  { id: "a-02", code: "admin.companies", label: "Companies", path: "/app/admin/companies", parent_id: "r-admin", sort_order: 12 },
-  { id: "a-03", code: "admin.settings", label: "Settings", path: "/app/admin/settings", parent_id: "r-admin", sort_order: 13 },
-  // CRM scaffold (incl. Incentives subtree)
-  { id: "c-00", code: "crm.leads", label: "Leads", path: "/app/crm/leads", parent_id: "r-crm", sort_order: 21 },
-  { id: "c-01", code: "crm.companies", label: "Companies", path: "/app/crm/companies", parent_id: "r-crm", sort_order: 22 },
-  { id: "c-10", code: "crm.incentives", label: "Incentives", path: "/app/crm/incentives", parent_id: "r-crm", sort_order: 30 },
-  { id: "c-11", code: "crm.incentives.plans", label: "Plans", path: "/app/crm/incentives/plans", parent_id: "c-10", sort_order: 31 },
-  { id: "c-12", code: "crm.incentives.rules", label: "Rules", path: "/app/crm/incentives/rules", parent_id: "c-10", sort_order: 32 },
-  { id: "c-13", code: "crm.incentives.tiers", label: "Tiers", path: "/app/crm/incentives/tiers", parent_id: "c-10", sort_order: 33 },
-  { id: "c-14", code: "crm.incentives.programs", label: "Programs", path: "/app/crm/incentives/programs", parent_id: "c-10", sort_order: 34 },
-  { id: "c-15", code: "crm.incentives.payouts", label: "Payouts", path: "/app/crm/incentives/payouts", parent_id: "c-10", sort_order: 35 },
-  { id: "c-16", code: "crm.incentives.adjustments", label: "Adjustments", path: "/app/crm/incentives/adjustments", parent_id: "c-10", sort_order: 36 },
-  { id: "c-17", code: "crm.incentives.approvals", label: "Approvals", path: "/app/crm/incentives/approvals", parent_id: "c-10", sort_order: 37 },
-  { id: "c-18", code: "crm.incentives.reports", label: "Reports", path: "/app/crm/incentives/reports", parent_id: "c-10", sort_order: 38 },
-  { id: "c-19", code: "crm.incentives.audit", label: "Audit", path: "/app/crm/incentives/audit", parent_id: "c-10", sort_order: 39 },
-];
-
-/* ----------------------------- tree construction --------------------------- */
-function buildTree(dbMenus) {
-  const items = (Array.isArray(dbMenus) ? dbMenus : []).map((m) => ({
-    ...m,
-    id: String(m.id ?? m.code ?? Math.random()).trim(),
-    code: String(m.code ?? m.name ?? m.label ?? "").trim(),
-    label: String(m.label ?? m.name ?? m.code ?? "").trim(),
-    path: normPath(m.path),
-    parent_id: toNull(m.parent_id),
-    module_code: m.module_code ?? null,
-    sort_order: m.sort_order ?? 0,
-  }));
-
-  const idMap = new Map(items.map((x) => [x.id, x]));
+function buildTreeDbFirst(items) {
+  const byId = new Map();
   const children = new Map();
-  for (const it of items) {
-    if (!children.has(it.parent_id)) children.set(it.parent_id, []);
-    children.get(it.parent_id).push(it);
+  (items || []).forEach((raw) => {
+    const n = {
+      id: raw.id,
+      code: raw.code,
+      label: raw.label ?? raw.name ?? raw.code ?? "",
+      name: raw.label ?? raw.name ?? raw.code ?? "",
+      path: normPath(raw.path || ""),
+      icon: raw.icon ?? null,
+      parent_id: raw.parent_id ?? null,
+      module_code: raw.module_code ?? null,
+      sort_order: raw.sort_order ?? null,
+    };
+    if (!n.id) return;
+    byId.set(n.id, n);
+    children.set(n.id, []);
+  });
+
+  // Attach strictly when parent exists
+  byId.forEach((n) => {
+    if (n.parent_id && byId.has(n.parent_id)) {
+      children.get(n.parent_id).push(n);
+    }
+  });
+
+  const sortRec = (node) => {
+    const kids = children.get(node.id) || [];
+    kids.sort(byOrderThenName);
+    return { ...node, children: kids.map(sortRec) };
+  };
+
+  // Strict roots: parent_id NULL (we did not include "Main" at all)
+  const roots = Array.from(byId.values()).filter((n) => !n.parent_id);
+  roots.sort(byOrderThenName);
+  return roots.map(sortRec);
+}
+
+/* =========================== search / highlight ========================== */
+function walk(nodes, fn, parentId = null) {
+  (nodes || []).forEach((n) => {
+    fn(n, parentId);
+    if (n.children?.length) walk(n.children, fn, n.id);
+  });
+}
+function buildParentMap(nodes) {
+  const m = new Map();
+  walk(nodes, (n, p) => m.set(n.id, p));
+  return m;
+}
+function ancestorsOf(id, parentMap) {
+  const list = [];
+  let cur = parentMap.get(id);
+  while (cur) {
+    list.push(cur);
+    cur = parentMap.get(cur);
   }
-  for (const arr of children.values()) arr.sort(byOrder);
+  return list;
+}
+function findNodeByPath(nodes, path) {
+  let found = null;
+  walk(nodes, (n) => {
+    if (!found && n.path && path && path.startsWith(n.path)) found = n;
+  });
+  return found;
+}
+function filterTree(nodes, query) {
+  const q = query.trim().toLowerCase();
+  if (!q) return { pruned: nodes, expandIds: new Set() };
 
-  const roots = (children.get(null) || []).filter(isRootCandidate).sort(byOrder);
+  const expandIds = new Set();
+  const hit = (n) =>
+    String(n.label || n.name || n.code || "")
+      .toLowerCase()
+      .includes(q);
 
-  // If no CRM root but crm-like items exist, synthesize CRM root and re-parent
-  const hasCrmRoot = roots.some((r) => r.code === "crm");
-  if (!hasCrmRoot) {
-    const crmish = items.filter((m) => !isRootCandidate(m) && isCrmLike(m));
-    if (crmish.length) {
-      const crmRoot = {
-        id: "__synthetic_crm__",
-        code: "crm",
-        label: "CRM",
-        path: "/app/crm",
-        parent_id: null,
-        sort_order: (roots.at(-1)?.sort_order ?? 20) + 1,
-      };
-      roots.push(crmRoot);
-      children.set(crmRoot.id, crmish);
-
-      // prune crmish from any other parents to avoid duplicates
-      for (const m of crmish) {
-        const arr = children.get(m.parent_id);
-        if (!arr) continue;
-        const idx = arr.findIndex((x) => x.id === m.id);
-        if (idx >= 0) arr.splice(idx, 1);
-        m.parent_id = crmRoot.id;
+  const recur = (arr) => {
+    const out = [];
+    for (const n of arr) {
+      const kids = n.children ? recur(n.children) : [];
+      const selfHit = hit(n);
+      if (selfHit || kids.length) {
+        if (kids.length) expandIds.add(n.id);
+        out.push({ ...n, children: kids });
       }
     }
-  }
-
-  return { roots, children, idMap };
-}
-
-/* ------------------------------ search filter ------------------------------ */
-function filterTree({ roots, children }, q) {
-  if (!q) return { roots, children, matches: new Set() };
-  const term = q.toLowerCase();
-  const matches = new Set();
-
-  const visit = (id) => {
-    const kids = children.get(id) || [];
-    for (const k of kids) {
-      const hit =
-        k.label?.toLowerCase().includes(term) ||
-        k.code?.toLowerCase().includes(term) ||
-        k.path?.toLowerCase().includes(term);
-      if (hit) matches.add(k.id);
-      visit(k.id);
-    }
+    return out;
   };
-  for (const r of roots) {
-    const hit = r.label?.toLowerCase().includes(term) || r.code?.toLowerCase().includes(term);
-    if (hit) matches.add(r.id);
-    visit(r.id);
-  }
-  return { roots, children, matches };
+
+  return { pruned: recur(nodes), expandIds };
 }
-
-/* --------------------------------- UI bits -------------------------------- */
-function Row({ item, depth, openSet, onToggle, isActive, onLeafClick }) {
-  const hasChildren = openSet.children.has(item.id);
-  const isOpen = openSet.open.has(item.id);
-  const isLeaf = !hasChildren;
-
+function Highlight({ text, query }) {
+  if (!query) return <>{text}</>;
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const s = String(text ?? "");
+  const idx = s.toLowerCase().indexOf(q.toLowerCase());
+  if (idx === -1) return <>{text}</>;
   return (
-    <div
-      className={`group flex items-center select-none ${
-        depth === 0 ? "py-2" : "py-1"
-      } ${isActive ? "bg-white/5 rounded-lg" : ""}`}
-    >
-      {/* indent */}
-      <div style={{ width: depth * 14 }} />
-
-      {/* caret / bullet */}
-      {hasChildren ? (
-        <button
-          onClick={() => onToggle(item.id)}
-          className="mr-2 p-1 rounded-lg hover:bg-white/5 focus:outline-none"
-          aria-label={isOpen ? "Collapse" : "Expand"}
-        >
-          {isOpen ? <ChevronDown className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-        </button>
-      ) : (
-        <span className="mr-2 w-5 h-5 grid place-items-center opacity-70">•</span>
-      )}
-
-      {/* icon */}
-      <span className="mr-2 opacity-90">{iconFor(item.code)}</span>
-
-      {/* label / link */}
-      {item.path ? (
-        <NavLink
-          to={item.path}
-          className={({ isActive: active }) =>
-            `flex-1 min-w-0 truncate no-underline ${active ? "text-white" : "text-white/90 hover:text-white"}`
-          }
-          onClick={() => isLeaf && onLeafClick?.(item)}
-        >
-          {item.label || item.code}
-        </NavLink>
-      ) : (
-        <span className="flex-1 min-w-0 truncate no-underline cursor-default">{item.label || item.code}</span>
-      )}
-    </div>
+    <>
+      {s.slice(0, idx)}
+      <mark className="bg-yellow-600/40 rounded px-0.5">{s.slice(idx, idx + q.length)}</mark>
+      {s.slice(idx + q.length)}
+    </>
   );
 }
 
+/* ================================ UI bits ================================= */
+const ARROW = 18;
+const Chevron = ({ open }) => (
+  <svg width={ARROW} height={ARROW} viewBox="0 0 24 24" className="opacity-80" aria-hidden>
+    <path
+      d={open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"}
+      stroke="currentColor"
+      strokeWidth="2"
+      fill="none"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inline-block" }} />;
+
+/* ============================== COMPONENT ================================ */
 export default function AppSidebar() {
-  const { branding, menus } = useEnv();
-  const location = useLocation();
+  const { branding } = useEnv(); // use only for logo/appName; menus are hardcoded
+  const loc = useLocation();
+  const scrollerRef = useRef(null);
 
-  // compute DB-first or fallback
-  const sourceMenus = useMemo(() => (Array.isArray(menus) && menus.length ? menus : FALLBACK), [menus]);
-  const { roots, children, idMap } = useMemo(() => buildTree(sourceMenus), [sourceMenus]);
+  // Build tree from HARD-CODED list
+  const roots = useMemo(() => buildTreeDbFirst(MENUS), []);
 
-  // build child map presence for quick checks
-  const childrenPresence = useMemo(() => {
-    const map = new Map();
-    for (const r of roots) map.set(r.id, !!(children.get(r.id)?.length));
-    for (const [pid, arr] of children.entries()) map.set(pid, !!arr?.length);
-    return map;
-  }, [roots, children]);
-
-  // open state — collapsed by default
-  const [openIds, setOpenIds] = useState(() => new Set());
+  // Collapsed by default + search
+  const [openIds, setOpenIds] = useState(() => new Set()); // collapsed on init
   const [query, setQuery] = useState("");
 
-  // expose which nodes have children
-  const openSet = useMemo(
-    () => ({ open: openIds, children: childrenPresence }),
-    [openIds, childrenPresence]
-  );
+  const parentMap = useMemo(() => buildParentMap(roots), [roots]);
+  const { pruned: visibleTree, expandIds } = useMemo(() => filterTree(roots, query), [roots, query]);
 
-  // auto-open ancestors of active route
-  useEffect(() => {
-    const p = normPath(location.pathname);
-    if (!p) return;
-
-    // find the deepest item whose path is prefix of current path
-    let active = null;
-    for (const item of idMap.values()) {
-      if (!item.path) continue;
-      const ip = normPath(item.path);
-      if (ip && p.startsWith(ip)) {
-        if (!active || (ip?.length || 0) > (active.path?.length || 0)) active = item;
-      }
-    }
-    if (!active) return;
-
-    // climb ancestors to roots and open them
-    const toOpen = new Set(openIds);
-    let cursor = active;
-    const reverseParent = new Map();
-    for (const [pid, arr] of children.entries()) for (const it of arr) reverseParent.set(it.id, pid);
-
-    let guard = 0;
-    while (cursor && guard++ < 200) {
-      const pid = reverseParent.get(cursor.id);
-      if (pid === null || pid === undefined) break;
-      toOpen.add(pid);
-      cursor = idMap.get(pid);
-    }
-    setOpenIds(toOpen);
-  }, [location.pathname, idMap, children]);
-
-  // search filter (just determines which rows are emphasized/opened)
-  const { matches } = useMemo(() => filterTree({ roots, children }, query), [roots, children, query]);
-  useEffect(() => {
-    if (!query) return; // when searching, auto-open all roots for visibility
-    const nxt = new Set(openIds);
-    for (const r of roots) nxt.add(r.id);
-    setOpenIds(nxt);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [query]);
-
-  const onToggle = (id) => {
-    const next = new Set(openIds);
-    next.has(id) ? next.delete(id) : next.add(id);
-    setOpenIds(next);
+  const isOpen = (id) => openIds.has(id);
+  const openMany = (ids) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((i) => next.add(i));
+      return next;
+    });
+  const closeAll = () => setOpenIds(new Set());
+  const openAll = () => {
+    const all = new Set();
+    walk(roots, (n) => {
+      if (n.children?.length) all.add(n.id);
+    });
+    setOpenIds(all);
   };
+  const toggle = (id) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
-  const onLeafClick = () => {
-    // keep sections state; no auto-collapse
-  };
+  // Auto-open ancestors of the active route; scroll active into view
+  useEffect(() => {
+    const match = findNodeByPath(roots, loc.pathname);
+    if (match) openMany(ancestorsOf(match.id, parentMap));
+    const el = scrollerRef.current?.querySelector('a[aria-current="page"]');
+    if (el && scrollerRef.current) {
+      const { top: cTop } = scrollerRef.current.getBoundingClientRect();
+      const { top: eTop } = el.getBoundingClientRect();
+      scrollerRef.current.scrollTo({
+        top: scrollerRef.current.scrollTop + (eTop - cTop - 120),
+        behavior: "smooth",
+      });
+    }
+  }, [loc.pathname, roots, parentMap]);
 
-  /* ------------------------------ render helpers ------------------------------ */
-  const renderBranch = (node, depth = 0) => {
-    const kids = children.get(node.id) || [];
-    const hasKids = kids.length > 0;
-    const isOpen = openIds.has(node.id);
+  // While searching, open ancestors of matches
+  useEffect(() => {
+    if (query) openMany(expandIds);
+  }, [query, expandIds]);
 
-    const isActiveExact = normPath(node.path) === normPath(location.pathname);
+  /* ---------------- Node renderer ---------------- */
+  function Node({ node, depth = 0 }) {
+    const hasChildren = Array.isArray(node.children) && node.children.length > 0;
+    const open = isOpen(node.id);
+    const pad = depth > 0 ? "ml-3" : "";
+    const label = node.label || node.name || node.code || "";
 
+    // Parents/groups: toggle only (no underline, no navigation)
+    if (hasChildren) {
+      return (
+        <div className="group" key={node.id}>
+          <button
+            type="button"
+            onClick={() => toggle(node.id)}
+            className={[
+              "no-underline flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full text-left",
+              "text-gray-300 hover:bg-gray-800/50 transition",
+              pad,
+            ].join(" ")}
+            aria-expanded={open}
+            aria-controls={`children-${node.id}`}
+          >
+            <Chevron open={open} />
+            {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
+            <span className="truncate"><Highlight text={label} query={query} /></span>
+          </button>
+
+          {open && (
+            <div id={`children-${node.id}`} className="mt-1 space-y-1">
+              {node.children.map((c) => (
+                <Node key={c.id} node={c} depth={depth + 1} />
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Leaves: real links
     return (
-      <div key={node.id}>
-        <Row
-          item={node}
-          depth={depth}
-          openSet={openSet}
-          onToggle={onToggle}
-          isActive={!!isActiveExact || matches.has(node.id)}
-          onLeafClick={onLeafClick}
-        />
-        {hasKids && isOpen && (
-          <div className="ml-0">
-            {kids.map((c) => renderBranch(c, depth + 1))}
-          </div>
-        )}
+      <div className="group" key={node.id}>
+        <NavLink
+          to={node.path || "#"}
+          end
+          className={({ isActive }) =>
+            [
+              "no-underline flex items-center gap-2 px-3 py-2 rounded-lg text-sm",
+              isActive ? "bg-gray-800 text-white" : "text-gray-200 hover:bg-gray-800/50",
+              pad,
+            ].join(" ")
+          }
+        >
+          <Spacer />
+          {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
+          <span className="truncate"><Highlight text={label} query={query} /></span>
+        </NavLink>
       </div>
     );
-  };
+  }
 
-  /* ----------------------------------- UI ----------------------------------- */
   return (
-    <aside className="w-72 max-w-72 min-w-60 h-screen gg-surface text-white flex flex-col border-r border-white/10">
-      {/* Brand header */}
-      <div className="h-16 flex items-center gap-3 px-4 border-b border-white/10">
-        {branding?.logo_url ? (
-          <img src={branding.logo_url} alt="Logo" className="h-8 w-8 rounded-lg object-contain" />
-        ) : (
-          <div className="h-8 w-8 rounded-lg bg-white/10 grid place-items-center text-sm">GG</div>
-        )}
-        <div className="font-semibold tracking-wide">GeniusGrid</div>
-      </div>
-
-      {/* Search */}
-      <div className="p-3">
-        <label className="relative block">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 opacity-70">
-            <SearchIcon className="h-4 w-4" />
-          </span>
-          <input
-            className="w-full pl-9 pr-3 h-9 rounded-lg bg-white/10 focus:bg-white/15 outline-none placeholder-white/60"
-            placeholder="Search menus…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
+    <aside
+      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
+      style={{ width: "16rem", minWidth: "16rem" }}
+    >
+      {/* Header: Logo + Brand */}
+      <div className="h-14 px-3 flex items-center gap-3 border-b border-gray-800">
+        {branding?.logoUrl ? (
+          <img
+            src={branding.logoUrl}
+            alt={branding?.appName || "Logo"}
+            className="h-8 w-8 rounded-md object-contain bg-white/5 p-1"
           />
-        </label>
+        ) : (
+          <div className="h-8 w-8 rounded-md bg-gray-800 flex items-center justify-center text-lg">🧠</div>
+        )}
+        <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
-      {/* Scrollable menu area (vertical auto-scroll) */}
-      <div className="flex-1 overflow-y-auto px-3 pb-6 space-y-1">
-        {/* Only show true roots: Admin, CRM */}
-        {roots
-          .filter((r) => r.code === "admin" || r.code === "crm")
-          .sort(byOrder)
-          .map((r) => renderBranch(r, 0))}
+      {/* Search + Expand/Collapse */}
+      <div className="p-2 border-b border-gray-800">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search menu…"
+              className="w-full bg-gray-800/60 text-sm text-gray-100 rounded-lg px-8 py-2 outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-gray-400"
+            />
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-70">🔎</span>
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white"
+                aria-label="Clear"
+                title="Clear"
+              >
+                ✖
+              </button>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={openAll}
+            className="px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700"
+            title="Expand all"
+          >
+            ⤢
+          </button>
+          <button
+            type="button"
+            onClick={closeAll}
+            className="px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700"
+            title="Collapse all"
+          >
+            ⤡
+          </button>
+        </div>
       </div>
 
-      {/* Footer (optional) */}
-      <div className="h-10 border-t border-white/10 text-xs text-white/60 grid place-items-center">
-        v1 · Sidebar
+      {/* Menu list (always present since we hardcode MENUS) */}
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
+        {visibleTree.map((root) => (
+          <Node key={root.id} node={root} />
+        ))}
       </div>
     </aside>
   );
