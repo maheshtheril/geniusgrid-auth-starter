@@ -44,32 +44,32 @@ function norm(row) {
 
 /* ------------- build tree purely from DB; synthesize missing roots per module if needed ------------- */
 function buildTree(items = []) {
-  // --- normalize just what's needed ---
+  // 1) normalize minimal fields we need
   const src = items.map((row) => {
-    const codeRaw = String(row.code ?? row.label ?? "").trim();
-    const parentCodeRaw = row.parent_code != null ? String(row.parent_code).trim() : null;
+    const code = String(row.code ?? row.label ?? "").trim();
+    const parentCode = row.parent_code != null ? String(row.parent_code).trim() : null;
     const path = normPath(row.path ?? row.url ?? row.route);
     return {
       id: String(row.id),
-      code: codeRaw,
-      code_lc: codeRaw.toLowerCase(),
-      parent_id: row.parent_id ? String(row.parent_id) : null,
-      parent_code: parentCodeRaw,
-      parent_code_lc: parentCodeRaw ? parentCodeRaw.toLowerCase() : null,
+      code,
+      code_lc: code.toLowerCase(),
       name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
       path,
       icon: row.icon ?? null,
       sort_order: row.sort_order ?? row.order ?? 0,
       order: row.order ?? row.sort_order ?? 0,
-      children: [],
+      parent_id: row.parent_id ? String(row.parent_id) : null,
+      parent_code: parentCode,
+      parent_code_lc: parentCode ? parentCode.toLowerCase() : null,
       module_code_lc: row.module_code ? String(row.module_code).toLowerCase() : null,
+      children: [],
     };
   });
 
   const byId = Object.fromEntries(src.map((r) => [r.id, { ...r }]));
   const byCodeLC = Object.fromEntries(src.map((r) => [r.code_lc, byId[r.id]]));
 
-  // --- 1) attach using parent_id (authoritative) ---
+  // 2) attach by parent_id (authoritative)
   let roots = [];
   for (const r of src) {
     const node = byId[r.id];
@@ -80,7 +80,7 @@ function buildTree(items = []) {
     }
   }
 
-  // --- 2) attach using parent_code (if not already attached) ---
+  // 3) attach by parent_code (case-insensitive) for any still-unattached
   for (const r of src) {
     const node = byId[r.id];
     const alreadyChild = Object.values(byId).some((p) => p.children.includes(node));
@@ -91,70 +91,61 @@ function buildTree(items = []) {
     }
   }
 
-  // --- 2b) synthesize missing parent when parent_code exists but parent row is absent ---
-  // group unattached nodes by parent_code
-  const unattached = roots.filter((n) => n.parent_code_lc && !byCodeLC[n.parent_code_lc]);
-  if (unattached.length) {
-    const groups = unattached.reduce((acc, n) => {
-      const k = n.parent_code_lc;
-      (acc[k] ||= []).push(n);
-      return acc;
-    }, {});
-    for (const [pcode, nodes] of Object.entries(groups)) {
-      // create synthetic parent for that parent_code
-      const synthetic = {
-        id: `synthetic:code:${pcode}`,
-        code: nodes[0].parent_code,      // original casing
-        code_lc: pcode,
-        name: (nodes[0].parent_code || "").replace(/\./g, " ").replace(/\b\w/g, (m) => m.toUpperCase()) || "Main",
-        path: null,
-        icon: nodes[0]?.icon ?? undefined,
-        sort_order: Math.min(...nodes.map((n) => n.sort_order ?? n.order ?? 0)),
-        order: Math.min(...nodes.map((n) => n.order ?? n.sort_order ?? 0)),
-        children: [],
-      };
-      byId[synthetic.id] = synthetic;
-      byCodeLC[synthetic.code_lc] = synthetic;
-      // move nodes under synthetic parent
-      for (const n of nodes) {
-        synthetic.children.push(n);
-        roots = roots.filter((x) => x !== n);
-      }
-      roots.push(synthetic);
+  // 4) path-based fallback: /a/b/c -> parent /a/b if exists
+  const rowsWithPath = Object.values(byId).filter((n) => n.path);
+  function findClosestParentByPath(child) {
+    if (!child.path) return null;
+    const parts = pathParts(child.path);
+    for (let i = parts.length - 1; i >= 1; i--) {
+      const prefix = "/" + parts.slice(0, i).join("/");
+      const cand = rowsWithPath.find((r) => r.path === prefix);
+      if (cand && cand.id !== child.id) return cand;
+    }
+    return null;
+  }
+  for (const node of [...roots]) {
+    const p = findClosestParentByPath(node);
+    if (p) {
+      if (!p.children.some((c) => c.id === node.id)) p.children.push(node);
+      roots = roots.filter((x) => x !== node);
     }
   }
 
-  // --- 3) final safety: bucket multiple orphan roots by first /app/<seg> path segment ---
-  const bucketMap = new Map();
-  const getSeg = (n) => {
-    if (!n.path) return null;
-    const parts = pathParts(n.path);
-    // expect paths like /app/<seg>/...
-    return parts[0] === "app" && parts[1] ? parts[1].toLowerCase() : null;
-  };
-  for (const n of roots) {
-    const seg = getSeg(n);
-    if (!seg) continue;
-    if (!bucketMap.has(seg)) bucketMap.set(seg, []);
-    bucketMap.get(seg).push(n);
-  }
-  for (const [seg, nodes] of bucketMap.entries()) {
-    // if there is already an explicit root with this code, skip
-    const explicit = roots.find((r) => r.code_lc === seg);
-    if (explicit || nodes.length < 2) continue;
+  // 5) synthesize a "Main" bucket for leftover roots that aren't admin/crm
+  const isAdminish = (n) =>
+    n.code_lc === "admin" ||
+    n.code_lc.startsWith("admin.") ||
+    /\/app\/admin(\/|$)/i.test(n.path || "");
+
+  const isCrmish = (n) =>
+    n.code_lc === "crm" ||
+    n.code_lc.startsWith("crm.") ||
+    n.module_code_lc === "crm" ||
+    /\/app\/crm(\/|$)/i.test(n.path || "");
+
+  // if you already have a real main/app root, keep it
+  const hasExplicitMain =
+    roots.some((r) => r.code_lc === "main") ||
+    roots.some((r) => r.code_lc === "app") ||
+    roots.some((r) => (r.path || "").toLowerCase() === "/app");
+
+  const mainCandidates = roots.filter(
+    (n) => !isAdminish(n) && !isCrmish(n)
+  );
+
+  if (!hasExplicitMain && mainCandidates.length) {
     const synthetic = {
-      id: `synthetic:seg:${seg}`,
-      code: seg,
-      code_lc: seg,
-      name: seg.replace(/\b\w/g, (m) => m.toUpperCase()),
-      path: `/app/${seg}`,
-      icon: nodes[0]?.icon ?? undefined,
-      sort_order: Math.min(...nodes.map((n) => n.sort_order ?? n.order ?? 0)),
-      order: Math.min(...nodes.map((n) => n.order ?? n.sort_order ?? 0)),
+      id: "root:main",
+      code: "main",
+      code_lc: "main",
+      name: "Main",
+      path: "/app",
+      icon: undefined,
+      sort_order: Math.min(...mainCandidates.map((n) => n.sort_order ?? n.order ?? 0)),
+      order: Math.min(...mainCandidates.map((n) => n.order ?? n.sort_order ?? 0)),
       children: [],
     };
-    byId[synthetic.id] = synthetic;
-    for (const n of nodes) {
+    for (const n of mainCandidates) {
       const idx = roots.indexOf(n);
       if (idx >= 0) roots.splice(idx, 1);
       synthetic.children.push(n);
@@ -162,17 +153,21 @@ function buildTree(items = []) {
     roots.push(synthetic);
   }
 
-  // --- 4) deep sort ---
+  // 6) deep sort
   const sortDeep = (arr) => {
-    arr.sort((a, b) =>
-      (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
-      String(a.name || "").localeCompare(String(b.name || ""))
+    arr.sort(
+      (a, b) =>
+        (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+        String(a.name || "").localeCompare(String(b.name || ""))
     );
     arr.forEach((n) => n.children?.length && sortDeep(n.children));
     return arr;
   };
+
   return sortDeep(roots);
 }
+
+
 
 /* ------------- UI widgets ------------- */
 function Caret({ open }) {
