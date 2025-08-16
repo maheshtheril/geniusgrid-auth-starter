@@ -1,4 +1,3 @@
-// src/components/layout/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef } from "react";
 import { useEnv } from "@/store/useEnv";
@@ -23,22 +22,23 @@ const byOrderThenLabel = (a, b) => {
   return String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" });
 };
 
-/* ONLY PARENTS (roots) — parent is strictly NULL/empty */
+/* PARENTS ONLY (root if parent_id is NULL OR parent missing in payload) */
 function getParentsOnly(items) {
   const rows = (items || []).map((raw) => ({
     id: raw.id ?? raw.ID,
     code: raw.code ?? raw.Code,
     label: raw.label ?? raw.Label ?? "",
-    path: normPath(raw.path ?? raw.Path),        // <-- fixed
+    path: normPath(raw.path ?? raw.Path),            // fixed typo
     icon: raw.icon ?? raw.Icon ?? null,
     parent_id: toNull(raw.parent_id ?? raw.parentId ?? raw.parentID),
     module_code: raw.module_code ?? raw.moduleCode ?? null,
     sort_order: toNum(raw.sort_order ?? raw.sortOrder),
   }));
 
-  const roots = rows.filter((r) => r.parent_id === null);
+  const idSet = new Set(rows.map((r) => r.id));
+  const roots = rows.filter((r) => r.parent_id === null || !idSet.has(r.parent_id));
 
-  // Optional: drop any literal "Main"
+  // drop literal "Main" if present
   const filtered = roots.filter(
     (r) => (r.code || "").toLowerCase() !== "main" && (r.label || "").toLowerCase() !== "main"
   );
