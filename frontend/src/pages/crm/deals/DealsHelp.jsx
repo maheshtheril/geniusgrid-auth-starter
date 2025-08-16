@@ -3,7 +3,7 @@ import React from "react";
 import { useNavigate } from "react-router-dom";
 import { HelpCircle, ArrowLeft } from "lucide-react";
 
-export default function DealsHelp(){
+export default function DealsHelp() {
   const navigate = useNavigate();
 
   return (
@@ -15,10 +15,12 @@ export default function DealsHelp(){
         </div>
         <div className="flex-1">
           <h2 className="text-xl font-semibold">Deals & Pipeline — Help</h2>
-          <p className="text-sm text-muted-foreground">How to use Pipeline and List views, create deals, shortcuts, and more.</p>
+          <p className="text-sm text-muted-foreground">
+            How to use Pipeline/List, create deals, shortcuts, and more.
+          </p>
         </div>
         <button
-          onClick={()=>navigate("/app/crm/deals/pipeline")}
+          onClick={() => navigate("/app/crm/deals/pipeline")}
           className="btn btn-secondary gap-2"
         >
           <ArrowLeft className="h-4" /> Back to Deals
@@ -28,7 +30,7 @@ export default function DealsHelp(){
       {/* Content */}
       <div className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="grid md:grid-cols-3 gap-4">
-          {/* Quick Index */}
+          {/* Quick links */}
           <nav className="md:col-span-1">
             <div className="text-xs uppercase text-muted-foreground mb-2">Quick links</div>
             <ul className="space-y-1 text-sm">
@@ -48,44 +50,45 @@ export default function DealsHelp(){
             <section id="overview">
               <h3 className="text-lg font-semibold">1) Overview</h3>
               <p className="text-sm text-muted-foreground">
-                The Deals module tracks opportunities from first contact to win/loss. Use
-                <strong> Pipeline</strong> for a stage-based board and <strong>List</strong> for fast filters and edits.
+                Track opportunities from first contact to won/lost. Use
+                <strong> Pipeline</strong> for stage-based flow and <strong>List</strong> for fast filtering &amp; edits.
               </p>
             </section>
 
             <section id="pipeline">
               <h3 className="text-lg font-semibold">2) Pipeline (Kanban)</h3>
               <ul className="list-disc pl-5 text-sm space-y-1">
-                <li>Drag & drop a deal card between stages to update its stage.</li>
-                <li>Columns show count and total value; open a card to edit details.</li>
-                <li>Use the header’s <em>New Deal</em> to add quickly.</li>
+                <li>Drag &amp; drop a card between stages to update stage.</li>
+                <li>Columns show count and total value.</li>
+                <li>Double-click a card to open the Deal Drawer.</li>
+                <li>Use <em>New Deal</em> in the header to add quickly.</li>
               </ul>
             </section>
 
             <section id="list">
               <h3 className="text-lg font-semibold">3) List (Table)</h3>
               <ul className="list-disc pl-5 text-sm space-y-1">
-                <li>Search by title/company; filter by Stage and Owner.</li>
+                <li>Search title/company; filter by Stage &amp; Owner.</li>
                 <li>Sort by clicking column headers.</li>
-                <li>Change Stage inline or open the drawer for full edits.</li>
+                <li>Edit core fields inline or open the drawer for full edits.</li>
               </ul>
             </section>
 
             <section id="kpis">
-              <h3 className="text-lg font-semibold">4) KPIs & Actions</h3>
+              <h3 className="text-lg font-semibold">4) KPIs &amp; Actions</h3>
               <ul className="list-disc pl-5 text-sm space-y-1">
                 <li><strong>Total Pipeline</strong>, <strong>Weighted Value</strong>, <strong>Win Rate</strong>, <strong>Active Deals</strong>.</li>
-                <li>Actions: <em>New Deal</em>, <em>Import</em>, <em>Export</em>, and this <em>Help</em>.</li>
-                <li>Global search syncs into the URL (<code>?q=</code>) so both views filter together.</li>
+                <li>Actions: <em>New Deal</em>, <em>Import</em>, <em>Export</em>, <em>Help</em>.</li>
+                <li>Global search syncs to the URL (<code>?q=</code>) so both views filter together.</li>
               </ul>
             </section>
 
             <section id="create">
               <h3 className="text-lg font-semibold">5) Creating a new deal</h3>
-              <p className="text-sm">Two supported patterns:</p>
+              <p className="text-sm">Two patterns:</p>
               <ul className="list-disc pl-5 text-sm space-y-1">
-                <li><strong>Route-based</strong>: go to <code>/app/crm/deals/new</code> and show the drawer in create mode.</li>
-                <li><strong>Drawer-in-place</strong>: open the drawer from DealsLayout without routing.</li>
+                <li><strong>Route-based</strong>: navigate to <code>/app/crm/deals/new</code> and mount the Drawer in create mode.</li>
+                <li><strong>Drawer-in-place</strong>: open the Drawer directly from DealsLayout without routing.</li>
               </ul>
             </section>
 
@@ -110,12 +113,18 @@ export default function DealsHelp(){
             <section id="troubleshoot">
               <h3 className="text-lg font-semibold">8) Troubleshooting</h3>
               <ul className="list-disc pl-5 text-sm space-y-1">
-                <li>New button does nothing → ensure <code>&lt;Outlet context={{ openNewDeal: () =&gt; setShowNew(true) }} /&gt;</code> is set in <code>DealsLayout</code> and the Pipeline button calls it.</li>
+                <li>
+                  New button does nothing → ensure{" "}
+                  <code>{`<Outlet context={{ openNewDeal: () => setShowNew(true) }} />`}</code>{" "}
+                  is set in <code>DealsLayout</code> and the Pipeline button calls it.
+                </li>
                 <li>KPIs are empty → check <code>GET /api/deals/summary</code>.</li>
               </ul>
             </section>
 
-            <div className="text-xs text-muted-foreground">Last updated: {new Date().toISOString().slice(0,10)}</div>
+            <div className="text-xs text-muted-foreground">
+              Last updated: {new Date().toISOString().slice(0,10)}
+            </div>
           </div>
         </div>
       </div>
