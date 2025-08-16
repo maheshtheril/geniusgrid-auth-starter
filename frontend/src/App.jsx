@@ -35,6 +35,7 @@ import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect";
 import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
 import DealsList from "@/pages/crm/deals/DealsList";
 
+/* -------- CRM: Extras (Contacts, Calls, Tasks, Reports, Notifications, Settings) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 
 class ErrorBoundary extends React.Component {
@@ -88,7 +89,7 @@ function Health() {
   );
 }
 
-/* Pathless outlet for grouping /app/crm routes if needed elsewhere */
+/* Pathless outlet for grouping /app/crm routes */
 const CrmOutlet = () => <Outlet />;
 
 export default function App() {
@@ -111,25 +112,25 @@ export default function App() {
 
           {/* Protected: App branch */}
           <Route path="/app/*" element={<ProtectedShell />}>
-            {/* Default inside /app — you set this to Dashboard on purpose */}
+            {/* Default inside /app — points to Dashboard */}
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* CRM top-level group */}
+            {/* CRM group */}
             <Route path="crm" element={<CrmOutlet />}>
               {/* Leads */}
               <Route path="leads" element={<LeadsPage />} />
               <Route path="leads/new" element={<LeadCreate />} />
-              {/* AI pages inside the shell */}
+              {/* AI page */}
               <Route path="discover" element={<DiscoverLeads />} />
 
-              {/* Deals — sibling of Incentives under /app/crm */}
+              {/* Deals */}
               <Route path="deals" element={<DealsLayout />}>
                 <Route index element={<DealsIndexRedirect />} />
                 <Route path="pipeline" element={<DealsPipeline />} />
                 <Route path="list" element={<DealsList />} />
               </Route>
 
-              {/* Incentives — sibling of Deals under /app/crm */}
+              {/* Incentives */}
               <Route path="incentives" element={<IncentivesLayout />}>
                 <Route index element={<IncentivesIndexRedirect />} />
                 <Route path="plans" element={<PlansPage />} />
@@ -142,16 +143,12 @@ export default function App() {
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="audit" element={<AuditPage />} />
               </Route>
+
+              {/* Extras: Contacts, Calls, Tasks, CRM Reports, Notifications, Settings */}
+              {crmExtraRoutes}
             </Route>
 
-<Route path="/app/*" element={<ProtectedShell />}>
-  <Route path="crm" element={<CrmOutlet />}>
-    {/* existing leads/deals/incentives routes */}
-    {crmExtraRoutes}
-  </Route>
-</Route>
-
-            {/* Keep your previous imports path if that's intended */}
+            {/* Non-CRM under /app */}
             <Route path="leads/imports/:id" element={<ImportReview />} />
           </Route>
 
