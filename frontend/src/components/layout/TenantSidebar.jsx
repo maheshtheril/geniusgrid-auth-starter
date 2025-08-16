@@ -179,6 +179,9 @@ export default function TenantSidebar({ onNavigate }){
 
   return (
     <aside className="w-64 shrink-0 hidden md:flex md:flex-col bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100 border-r border-white/10 p-3">
+      <div className="bg-pink-600 text-white text-xs px-2 py-1">
+  TenantSidebar.jsx LIVE
+</div>
       <div className="px-2 py-1 text-[10px] uppercase tracking-wider text-white/40">Menu</div>
       <div className="mt-2 space-y-1">
         {tree.length ? tree.map(n => <Item key={n.code} n={n} openDefault={true} onNavigate={onNavigate} />)
