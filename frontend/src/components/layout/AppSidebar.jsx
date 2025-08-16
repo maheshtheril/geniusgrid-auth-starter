@@ -1,14 +1,14 @@
+// src/components/layout/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/* ------------------ HARD-CODED TREE: Admin + FULL CRM ------------------ */
+/* ------------------ HARD-CODED TREE: Admin + FULL CRM (incl. Commissions) ------------------ */
 const TREE = [
-  // ---- Admin ----
+  /* ---------------- Admin ---------------- */
   {
     id: "c0551da9-0d0b-4dae-9160-63f8f9e3bd27",
     label: "Admin",
-    path: "/app/admin",
     icon: "⚙️",
     children: [
       {
@@ -98,11 +98,10 @@ const TREE = [
     ],
   },
 
-  // ---- CRM ----
+  /* ---------------- CRM ---------------- */
   {
     id: "561b9761-5642-4d4f-8826-8cadf9822f8a",
     label: "CRM",
-    path: "/app/crm",
     icon: "🤝",
     children: [
       {
@@ -122,7 +121,7 @@ const TREE = [
         icon: "🚀",
         children: [
           { id: "c50dd780-69b6-4384-adc7-10469d7d865c", label: "Leads", path: "/app/crm/leads", icon: "📇" },
-          { id: "803d2d5e-37c4-466a-af24-d1a7bc3dc780", label: "Contacts", path: "/app/crm/contacts", icon: "👥" },
+          { id: "803d25b-37c4-466a-af24-d1a7bc3dc780", label: "Contacts", path: "/app/crm/contacts", icon: "👥" },
           { id: "0254b519-fafb-48d7-8604-7a989f102511", label: "Companies", path: "/app/crm/companies", icon: "🏢" },
           { id: "5aa1de70-b3ab-4b98-af6d-f707e2701b7a", label: "Deals / Pipeline", path: "/app/crm/deals", icon: "📊" },
           { id: "595ba687-af32-4689-9307-4de879e9c7a2", label: "Calls", path: "/app/crm/calls", icon: "📞" },
@@ -190,15 +189,20 @@ const TREE = [
           { id: "crm.int.forms", label: "Web Forms", path: "/app/crm/integrations/forms", icon: "📝" },
         ],
       },
+      /* -------- Commissions & Incentives -------- */
       {
         id: "crm.grp.comp",
-        label: "Comp & Incentives",
+        label: "Commissions & Incentives",
         icon: "💰",
         children: [
-          { id: "crm.incentives.dashboard", label: "Incentives", path: "/app/crm/incentives", icon: "📈" },
-          { id: "crm.incentives.plans",     label: "Plans",      path: "/app/crm/incentives/plans", icon: "🗂️" },
-          { id: "crm.incentives.payouts",   label: "Payouts",    path: "/app/crm/incentives/payouts", icon: "💳" },
-          { id: "crm.incentives.leader",    label: "Leaderboard",path: "/app/crm/incentives/leaderboard", icon: "🏆" }
+          { id: "crm.incentives.dashboard",   label: "Dashboard",       path: "/app/crm/incentives",                    icon: "📈" },
+          { id: "crm.incentives.plans",       label: "Plans",           path: "/app/crm/incentives/plans",              icon: "🗂️" },
+          { id: "crm.incentives.participants",label: "Participants",     path: "/app/crm/incentives/participants",       icon: "👥" },
+          { id: "crm.incentives.events",      label: "Events",          path: "/app/crm/incentives/events",             icon: "🧾" },
+          { id: "crm.incentives.earnings",    label: "Earnings",        path: "/app/crm/incentives/earnings",           icon: "💵" },
+          { id: "crm.incentives.payouts",     label: "Payouts",         path: "/app/crm/incentives/payouts",            icon: "💳" },
+          { id: "crm.incentives.leader",      label: "Leaderboard",     path: "/app/crm/incentives/leaderboard",        icon: "🏆" },
+          { id: "crm.incentives.statements",  label: "Rep Statements",  path: "/app/crm/incentives/statements",         icon: "🧾" }
         ],
       },
     ],
@@ -216,7 +220,7 @@ const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inlin
 
 /* ------------------ Tree utilities ------------------ */
 function walk(nodes, fn, parentId = null) {
-  (nodes || []).forEach(n => {
+  (nodes || []).forEach((n) => {
     fn(n, parentId);
     if (n.children) walk(n.children, fn, n.id);
   });
@@ -252,7 +256,6 @@ function filterTree(nodes, query) {
   if (!q) return { pruned: nodes, expandIds: new Set() };
 
   const expandIds = new Set();
-
   const match = (label) => (label || "").toLowerCase().includes(q);
 
   const recur = (arr) => {
@@ -271,18 +274,19 @@ function filterTree(nodes, query) {
   return { pruned: recur(nodes), expandIds };
 }
 
-/* Highlight query match in the label */
+/* Highlight query matches */
 function Highlight({ text, query }) {
   if (!query) return <>{text}</>;
   const q = query.trim();
   if (!q) return <>{text}</>;
-  const idx = String(text).toLowerCase().indexOf(q.toLowerCase());
+  const lower = String(text || "");
+  const idx = lower.toLowerCase().indexOf(q.toLowerCase());
   if (idx === -1) return <>{text}</>;
   return (
     <>
-      {text.slice(0, idx)}
-      <mark className="bg-yellow-600/40 rounded px-0.5">{text.slice(idx, idx + q.length)}</mark>
-      {text.slice(idx + q.length)}
+      {lower.slice(0, idx)}
+      <mark className="bg-yellow-600/40 rounded px-0.5">{lower.slice(idx, idx + q.length)}</mark>
+      {lower.slice(idx + q.length)}
     </>
   );
 }
@@ -293,33 +297,35 @@ export default function AppSidebar() {
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  // open state: ids in a Set
+  // collapsed by default
   const [openIds, setOpenIds] = useState(() => new Set());
   const [query, setQuery] = useState("");
 
   const parentMap = useMemo(() => buildParentMap(TREE), []);
-  const { pruned: visibleTree, expandIds } = useMemo(
-    () => filterTree(TREE, query),
-    [query]
-  );
+  const { pruned: visibleTree, expandIds } = useMemo(() => filterTree(TREE, query), [query]);
 
   const isOpen = (id) => openIds.has(id);
-  const openMany = (ids) => setOpenIds((prev) => {
-    const next = new Set(prev);
-    ids.forEach(i => next.add(i));
-    return next;
-  });
+  const openMany = (ids) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((i) => next.add(i));
+      return next;
+    });
   const closeAll = () => setOpenIds(new Set());
   const openAll = () => {
     const all = new Set();
-    walk(TREE, (n) => { if (n.children?.length) all.add(n.id); });
+    walk(TREE, (n) => {
+      if (n.children?.length) all.add(n.id);
+    });
     setOpenIds(all);
   };
-  const toggle = (id) => setOpenIds((prev) => {
-    const next = new Set(prev);
-    if (next.has(id)) next.delete(id); else next.add(id);
-    return next;
-  });
+  const toggle = (id) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   // Auto-open ancestors of active route
   useEffect(() => {
@@ -330,11 +336,14 @@ export default function AppSidebar() {
     if (el && scrollerRef.current) {
       const { top: cTop } = scrollerRef.current.getBoundingClientRect();
       const { top: eTop } = el.getBoundingClientRect();
-      scrollerRef.current.scrollTo({ top: scrollerRef.current.scrollTop + (eTop - cTop - 120), behavior: "smooth" });
+      scrollerRef.current.scrollTo({
+        top: scrollerRef.current.scrollTop + (eTop - cTop - 120),
+        behavior: "smooth",
+      });
     }
   }, [loc.pathname, parentMap]);
 
-  // When searching, auto-open all ancestors of matches
+  // When searching, auto-open ancestors of matches
   useEffect(() => {
     if (query) openMany(expandIds);
   }, [query, expandIds]);
@@ -344,7 +353,7 @@ export default function AppSidebar() {
     const open = isOpen(node.id);
     const pad = depth > 0 ? "ml-3" : "";
 
-    // Group (toggle via chevron or row)
+    // Group (toggle with button)
     if (hasChildren) {
       return (
         <div className="group" key={node.id}>
@@ -368,7 +377,9 @@ export default function AppSidebar() {
 
           {open && (
             <div id={`children-${node.id}`} className="mt-1 space-y-1">
-              {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
+              {node.children.map((c) => (
+                <Node key={c.id} node={c} depth={depth + 1} />
+              ))}
             </div>
           )}
         </div>
@@ -400,18 +411,25 @@ export default function AppSidebar() {
   }
 
   return (
-    <aside className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col" style={{ width: "16rem", minWidth: "16rem" }}>
-      {/* Top: Logo + Brand */}
+    <aside
+      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
+      style={{ width: "16rem", minWidth: "16rem" }}
+    >
+      {/* Header: Logo + Brand */}
       <div className="h-14 px-3 flex items-center gap-3 border-b border-gray-800">
         {branding?.logoUrl ? (
-          <img src={branding.logoUrl} alt={branding?.appName || "Logo"} className="h-8 w-8 rounded-md object-contain bg-white/5 p-1" />
+          <img
+            src={branding.logoUrl}
+            alt={branding?.appName || "Logo"}
+            className="h-8 w-8 rounded-md object-contain bg-white/5 p-1"
+          />
         ) : (
           <div className="h-8 w-8 rounded-md bg-gray-800 flex items-center justify-center text-lg">🧠</div>
         )}
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
-      {/* Search + actions */}
+      {/* Search + Expand/Collapse actions */}
       <div className="p-2 border-b border-gray-800">
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
@@ -454,7 +472,7 @@ export default function AppSidebar() {
         </div>
       </div>
 
-      {/* Menu list */}
+      {/* Menu */}
       <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
         {visibleTree.length === 0 ? (
           <div className="text-xs text-gray-400 px-3 py-2">No matches.</div>
