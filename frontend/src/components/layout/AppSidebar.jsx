@@ -44,11 +44,22 @@ function norm(row) {
 
 /* ------------- build tree purely from DB; synthesize missing roots per module if needed ------------- */
 function buildTree(items = []) {
-  const src = items.map(norm);
-  const byId = Object.fromEntries(src.map((r) => [r.id, { ...r, children: [] }]));
-  const byCodeLC = Object.fromEntries(src.map((r) => [r.code_lc, byId[r.id]]));
+  // 1) normalize just enough for tree building
+  const src = items.map((row) => ({
+    id: String(row.id),
+    code: String(row.code ?? ""),
+    name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
+    path: normPath(row.path ?? row.url ?? row.route),
+    icon: row.icon ?? null,
+    sort_order: row.sort_order ?? row.order ?? 0,
+    order: row.order ?? row.sort_order ?? 0,
+    parent_id: row.parent_id ? String(row.parent_id) : null,
+  }));
 
-  // 1) attach using parent_id (authoritative)
+  // 2) index nodes
+  const byId = Object.fromEntries(src.map((r) => [r.id, { ...r, children: [] }]));
+
+  // 3) attach strictly by parent_id; if parent missing, treat as root
   const roots = [];
   for (const r of src) {
     const node = byId[r.id];
@@ -59,99 +70,16 @@ function buildTree(items = []) {
     }
   }
 
-  // 2) attach using parent_code (case-insensitive) for records that didn't have parent_id
-  for (const r of src) {
-    const node = byId[r.id];
-    if (!node.parent_id && r.parent_code_lc && byCodeLC[r.parent_code_lc]) {
-      const p = byCodeLC[r.parent_code_lc];
-      if (!p.children.some((c) => c.id === node.id)) {
-        p.children.push(node);
-        const idx = roots.indexOf(node);
-        if (idx >= 0) roots.splice(idx, 1);
-      }
-    }
-  }
-
-  // 3) path-based fallback (closest prefix like /app/crm)
-  const rowsWithPath = Object.values(byId).filter((n) => n.path);
-  function findClosestParentByPath(child) {
-    if (!child.path) return null;
-    const parts = pathParts(child.path);
-    for (let i = parts.length - 1; i >= 1; i--) {
-      const prefix = "/" + parts.slice(0, i).join("/");
-      const candidate = rowsWithPath.find((r) => r.path === prefix);
-      if (candidate && candidate.id !== child.id) return candidate;
-    }
-    return null;
-  }
-  for (const node of [...roots]) {
-    const p = findClosestParentByPath(node);
-    if (p) {
-      if (!p.children.some((c) => c.id === node.id)) p.children.push(node);
-      const idx = roots.indexOf(node);
-      if (idx >= 0) roots.splice(idx, 1);
-    }
-  }
-
-  // 4) Synthesize missing module roots (e.g., CRM) if children clearly belong to a module but the root row is absent.
-  //    We detect groups of roots by module_hint or by path prefix (/app/<module>).
-  const groupByModule = new Map();
-  function moduleKeyOf(n) {
-    const mod = n.module_hint_lc;
-    if (mod) return mod; // e.g., 'crm', 'admin'
-    const path = n.path || "";
-    const m = path.match(/^\/app\/([^/]+)/i);
-    if (m) return m[1].toLowerCase();
-    return null;
-  }
-
-  // Collect root nodes by inferred module
-  for (const n of roots.slice()) {
-    const key = moduleKeyOf(n);
-    if (!key) continue;
-    if (!groupByModule.has(key)) groupByModule.set(key, []);
-    groupByModule.get(key).push(n);
-  }
-
-  // For each module group that lacks an explicit root (a node whose code equals moduleKey),
-  // create a synthetic root and move grouped nodes under it.
-  for (const [modKey, nodes] of groupByModule.entries()) {
-    const explicitRoot =
-      roots.find((r) => r.code_lc === modKey) ||
-      Object.values(byId).find((r) => r.code_lc === modKey && !r.parent_id);
-
-    if (!explicitRoot && nodes.length > 1) {
-      // synthesize a root — name = uppercased module code, path = `/app/<module>`
-      const prettyName = modKey.toUpperCase();
-      const synthetic = {
-        id: `root:${modKey}`,
-        code: modKey,
-        code_lc: modKey,
-        name: prettyName,
-        path: `/${["app", modKey].join("/")}`,
-        icon: modKey === "admin" ? "⚙️" : modKey === "crm" ? "🤝" : "•",
-        sort_order: Math.min(...nodes.map((n) => n.sort_order ?? n.order ?? 0)),
-        order: Math.min(...nodes.map((n) => n.order ?? n.sort_order ?? 0)),
-        children: [],
-      };
-      byId[synthetic.id] = synthetic;
-      roots.push(synthetic);
-
-      // move all module nodes under this synthetic root (only those that are currently roots)
-      for (const n of nodes) {
-        const idx = roots.indexOf(n);
-        if (idx >= 0) roots.splice(idx, 1);
-        synthetic.children.push(n);
-      }
-    }
-  }
-
-  // 5) deep sort
+  // 4) deep sort
   const sortDeep = (arr) => {
-    arr.sort(cmp);
+    arr.sort((a, b) =>
+      (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
+      String(a.name || "").localeCompare(String(b.name || ""))
+    );
     arr.forEach((n) => n.children?.length && sortDeep(n.children));
     return arr;
   };
+
   return sortDeep(roots);
 }
 
