@@ -29,6 +29,11 @@ import ImportReview from "@/pages/leads/ImportReview.jsx";
  import { ReportsPage } from "@/pages/crm/incentives/ReportsPage";
  import { AuditPage } from "@/pages/crm/incentives/AuditPage";
 
+ import DealsLayout from "@/pages/crm/deals/DealsLayout";
+ import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect";
+ import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
+ import DealsList from "@/pages/crm/deals/DealsList";
+
 class ErrorBoundary extends React.Component {
   constructor(p) {
     super(p);
@@ -119,6 +124,11 @@ export default function App() {
      <Route path="approvals" element={<ApprovalsPage />} />
      <Route path="reports" element={<ReportsPage />} />
      <Route path="audit" element={<AuditPage />} />
+      <Route path="/app/crm/deals" element={<DealsLayout />}> 
+     <Route index element={<DealsIndexRedirect />} />
+     <Route path="pipeline" element={<DealsPipeline />} />
+     <Route path="list" element={<DealsList />} />
+   </Route>
    </Route>
           {/* Redirects */}
           <Route
