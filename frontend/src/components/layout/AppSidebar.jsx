@@ -3,51 +3,36 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/* ---------- tiny safe helpers ---------- */
+/* tiny safe helpers */
 const first = (...xs) => xs.find(v => v !== undefined && v !== null);
 const normPath = (p) => {
   const v = first(p);
   if (v == null) return null;
   const s = String(v).trim();
-  if (!s) return null;
-  return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
+  return s ? (s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s) : null;
 };
-const toNull = (v) => {
-  const x = first(v);
-  if (x === undefined || x === null) return null;
-  const s = String(x).trim().toLowerCase();
-  return s === "" || s === "null" ? null : x;
-};
-const numOr = (v, d = 999999) => (Number.isFinite(+v) ? +v : d);
+const isNullishOrEmpty = (v) => v === null || v === undefined || String(v).trim() === "";
 const byOrderThenLabel = (a, b) => {
-  const ao = numOr(a.sort_order);
-  const bo = numOr(b.sort_order);
+  const ao = Number.isFinite(+a.sort_order) ? +a.sort_order : 999999;
+  const bo = Number.isFinite(+b.sort_order) ? +b.sort_order : 999999;
   if (ao !== bo) return ao - bo;
   return String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" });
 };
 
-/* ---------- compute ONLY parents (roots) ---------- */
-function getParentsOnly(items) {
+/* parents only: parent_id is null/empty/missing */
+function computeParents(items) {
   const rows = (items || []).map(raw => ({
     id: first(raw.id, raw.ID),
     code: first(raw.code, raw.Code),
-    label: first(raw.label, raw.Label) || "",
+    label: first(raw.label, raw.Label, raw.name, raw.Name) || "",
     path: normPath(first(raw.path, raw.Path)),
     icon: first(raw.icon, raw.Icon) ?? null,
-    parent_id: toNull(first(raw.parent_id, raw.parentId, raw.parentID)),
-    module_code: first(raw.module_code, raw.moduleCode) ?? null,
-    sort_order: first(raw.sort_order, raw.sortOrder) ?? null,
+    parent_id: first(raw.parent_id, raw.parentId, raw.parentID),
+    sort_order: first(raw.sort_order, raw.sortOrder),
   }));
-
-  const idSet = new Set(rows.map(r => r.id));
-  // parent if parent_id is null OR parent not present (covers deleted "Main")
-  const roots = rows.filter(r => r && (!r.parent_id || !idSet.has(r.parent_id)));
-
-  // hide literal "Main" if it exists
-  const filtered = roots.filter(r => (r.label || r.code || "").trim().toLowerCase() !== "main");
-
-  filtered.sort(byOrderThenLabel);
-  return filtered;
+  const parents = rows.filter(r => isNullishOrEmpty(r.parent_id));
+  parents.sort(byOrderThenLabel);
+  return parents.filter(p => (p.label || p.code || "").trim().toLowerCase() !== "main");
 }
 
 export default function AppSidebar() {
@@ -55,56 +40,43 @@ export default function AppSidebar() {
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  const parents = useMemo(() => getParentsOnly(menus), [menus]);
+  const parents = useMemo(() => computeParents(menus), [menus]);
 
-  // Debug: see what's arriving and what we render
-  useEffect(() => {
-    console.groupCollapsed("[Sidebar] raw menus");
-    console.table((menus || []).map(m => ({
-      id: m.id, code: m.code, label: m.label, path: m.path, parent_id: m.parent_id, sort: m.sort_order
-    })));
-    console.groupEnd();
-
-    console.groupCollapsed("[Sidebar] parents computed");
-    console.table(parents.map(p => ({
-      id: p.id, label: p.label, code: p.code, path: p.path, parent_id: p.parent_id, sort: p.sort_order
-    })));
-    console.groupEnd();
-  }, [menus, parents]);
-
-  // keep active in view
+  // scroll active into view (in case a parent has a path)
   useEffect(() => {
     const el = scrollerRef.current?.querySelector('a[aria-current="page"]');
     if (el && scrollerRef.current) {
       const { top: cTop } = scrollerRef.current.getBoundingClientRect();
       const { top: eTop } = el.getBoundingClientRect();
-      const delta = eTop - cTop - 120;
-      scrollerRef.current.scrollTo({ top: scrollerRef.current.scrollTop + delta, behavior: "smooth" });
+      scrollerRef.current.scrollTo({
+        top: scrollerRef.current.scrollTop + (eTop - cTop - 120),
+        behavior: "smooth",
+      });
     }
   }, [loc.pathname]);
 
-  // lock width so it won’t collapse to icons-only
-  const fixedWidth = "16rem";
+  // debug once
+  useEffect(() => {
+    console.groupCollapsed("[Sidebar] parents-only");
+    console.table(parents.map(p => ({ id: p.id, label: p.label, code: p.code, path: p.path })));
+    console.groupEnd();
+  }, [parents]);
 
   return (
     <aside
       className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
-      style={{ width: fixedWidth, minWidth: fixedWidth, maxWidth: fixedWidth }}
+      style={{ width: "16rem", minWidth: "16rem" }}
     >
       <div className="h-14 px-3 flex items-center gap-2 border-b border-gray-800">
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
-      <div
-        ref={scrollerRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2"
-        style={{ scrollbarGutter: "stable" }}
-      >
-        {parents.length === 0 ? (
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
+        {parents.length === 0 && (
           <div className="text-xs text-red-300 bg-red-950/30 p-2 rounded">
-            No parent menus found. Check that Admin/CRM are in the payload and either have <code>parent_id = null</code> or their parent is not present.
+            No parents found. Ensure Admin/CRM rows have <code>parent_id</code> NULL/empty in the payload.
           </div>
-        ) : null}
+        )}
 
         {parents.map(node => (
           <NavLink
