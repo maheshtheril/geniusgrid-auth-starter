@@ -1,12 +1,4 @@
-// ---------- FILE: src/pages/crm/deals/DealsLayout.jsx (Pro) ----------
-// Upgrades:
-// - KPI header (Total, Weighted, Win rate, Active deals)
-// - Actions: New Deal, Import, Export
-// - Global search pipe-through via URL query (?q=)
-// - Keyboard shortcuts: N=new deal, / focus search
-// - Sticky tab bar with underline-on-scroll feedback
-// - Works with existing nested routes (/pipeline, /list)
-
+// ---------- FILE: src/pages/crm/deals/DealsLayout.jsx (Pro + New Deal Drawer) ----------
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Briefcase, Plus, Upload, Download, Search } from "lucide-react";
@@ -15,6 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEnv } from "@/store/useEnv";
+
+// NEW: import DealDrawer + create API
+import DealDrawer from "./DealDrawer";
+import { STAGES, createDeal } from "./mockApi";
 
 const TABS = [
   { to: "/app/crm/deals/pipeline", label: "Pipeline" },
@@ -31,6 +27,19 @@ export default function DealsLayout(){
 
   const [kpi, setKpi] = useState({ total: 0, weighted: 0, win_rate: 0, active: 0 });
   const [loading, setLoading] = useState(false);
+
+  // Drawer state + initial draft for new deal
+  const [showNew, setShowNew] = useState(false);
+  const initialDraft = useMemo(() => ({
+    title: "",
+    company: "",
+    amount: 0,
+    stage: STAGES?.[0]?.id || "new",
+    owner: "",
+    probability: 0.2,
+    tags: [],
+    next_step: "",
+  }), []);
 
   useEffect(() => {
     let cancel = false;
@@ -52,19 +61,31 @@ export default function DealsLayout(){
   // keyboard shortcuts
   useEffect(() => {
     const onKey = (e) => {
-      if (e.key === "/") { e.preventDefault(); searchRef.current?.focus(); }
-      if ((e.key === "n" || e.key === "N") && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault(); navigate("/app/crm/deals/new");
+      const tag = (e.target?.tagName || "").toLowerCase();
+      const typing = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
+
+      if (e.key === "/" && !typing) { e.preventDefault(); searchRef.current?.focus(); }
+      if (!typing && (e.key === "n" || e.key === "N") && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault(); setShowNew(true); // open drawer
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [navigate]);
+  }, []);
 
   const onSearch = (val) => {
     const next = new URLSearchParams(params);
     if (val) next.set("q", val); else next.delete("q");
     setParams(next, { replace: false });
+  };
+
+  // Create handler for new deal save
+  const handleCreate = async (form) => {
+    const saved = await createDeal(form);
+    // notify children if they want to refresh
+    window.dispatchEvent(new CustomEvent("deals:created", { detail: { id: saved.id } }));
+    setShowNew(false);
+    // optional: navigate("/app/crm/deals/list", { replace: true, state: { createdId: saved.id } });
   };
 
   const currencyINR = (n) => typeof n === "number"
@@ -86,11 +107,24 @@ export default function DealsLayout(){
         <div className="hidden md:flex items-center gap-2">
           <div className="relative">
             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
-            <Input ref={searchRef} defaultValue={q} onChange={(e)=>onSearch(e.target.value)} placeholder="Search deals, companies… (/)" className="pl-8 h-9 w-[280px]" />
+            <Input
+              ref={searchRef}
+              defaultValue={q}
+              onChange={(e)=>onSearch(e.target.value)}
+              placeholder="Search deals, companies… (/)"
+              className="pl-8 h-9 w-[280px]"
+            />
           </div>
-          <Button onClick={()=>navigate("/app/crm/deals/new")} className="gap-2"><Plus className="h-4"/> New Deal</Button>
-          <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/import")}> <Upload className="h-4"/> Import</Button>
-          <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/export?q="+encodeURIComponent(q))}> <Download className="h-4"/> Export</Button>
+          {/* Open drawer instead of navigate */}
+          <Button onClick={()=>setShowNew(true)} className="gap-2">
+            <Plus className="h-4"/> New Deal
+          </Button>
+          <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/import")}>
+            <Upload className="h-4"/> Import
+          </Button>
+          <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/export?q="+encodeURIComponent(q))}>
+            <Download className="h-4"/> Export
+          </Button>
         </div>
       </div>
 
@@ -120,6 +154,14 @@ export default function DealsLayout(){
       <div className="bg-card rounded-2xl border p-3 md:p-4">
         <Outlet />
       </div>
+
+      {/* New Deal Drawer */}
+      <DealDrawer
+        open={showNew}
+        onClose={()=>setShowNew(false)}
+        deal={initialDraft}
+        onSave={handleCreate}
+      />
     </div>
   );
 }
