@@ -1,12 +1,13 @@
-// src/components/layout/TenantSidebar.jsx
 import { useMemo, useState } from "react";
 import { NavLink } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import * as IconSet from "lucide-react";
 import { useEnv } from "@/store/useEnv";
 
-/* Icons */
-function EmojiIcon({ glyph, className }) { return <span className={className}>{glyph}</span>; }
+/* ───────────── Icons ───────────── */
+function EmojiIcon({ glyph, className }) {
+  return <span className={className} aria-hidden="true">{glyph}</span>;
+}
 function isEmoji(x){ try{ return /[\p{Extended_Pictographic}]/u.test(x||""); }catch{ return /[^\w\s]/.test(x||""); } }
 function iconByName(name){
   if(!name) return IconSet.Dot;
@@ -16,41 +17,127 @@ function iconByName(name){
   return IconSet[pascal] || IconSet.Dot;
 }
 
-/* Normalize a row coming from v_menu_tree_for_tenant OR your existing payload */
-function norm(r){
-  const code        = r.code ?? String(r.id ?? r.menu_id ?? r.menuId ?? "");
-  const name        = r.name ?? r.label ?? code;
-  const path        = r.path ?? r.url ?? r.route ?? null;      // keep /app
-  const icon        = r.icon ?? r.emoji ?? null;
-  const sort_order  = r.sort_order ?? r.sortOrder ?? 999;
-  const parent_code = r.parent_code ?? r.parentCode ?? null;
-  return { code, name, path, icon, sort_order, parent_code, children: [] };
+/* ───────────── Admin grouping (by code) ───────────── */
+const ADMIN = "admin";
+const ADMIN_GROUPS = [
+  { code:"admin.grp.org",  name:"Organization & Compliance", icon:"🏢", sort:21,
+    kids:new Set(["admin.org","admin.branding","admin.localization","admin.taxes","admin.units","admin.locations","admin.calendars","admin.numbering","admin.compliance"]) },
+  { code:"admin.grp.rbac", name:"Access Control (RBAC)", icon:"🛡️", sort:22,
+    kids:new Set(["admin.users","admin.roles","admin.permissions","admin.teams"]) },
+  { code:"admin.grp.sec",  name:"Security & Compliance", icon:"🔐", sort:23,
+    kids:new Set(["admin.security","admin.sso","admin.domains","admin.audit"]) },
+  { code:"admin.grp.data", name:"Data & Customization", icon:"🧩", sort:24,
+    kids:new Set(["admin.settings","admin.custom-fields","admin.pipelines","admin.templates","admin.notifications","admin.import_export","admin.backups"]) },
+  { code:"admin.grp.int",  name:"Integrations & Developer", icon:"🔌", sort:25,
+    kids:new Set(["admin.integrations","admin.marketplace","admin.api_keys","admin.webhooks","admin.features"]) },
+  { code:"admin.grp.ai",   name:"AI & Automation", icon:"✨", sort:26,
+    kids:new Set(["admin.ai","admin.automation","admin.approvals"]) },
+  { code:"admin.grp.bill", name:"Billing & Observability", icon:"💳", sort:27,
+    kids:new Set(["admin.billing","admin.usage","admin.logs"]) },
+];
+
+function findAdminGroup(code){
+  for(const g of ADMIN_GROUPS) if(g.kids.has(code)) return g.code;
+  return null;
 }
-// const stripApp = (p)=> p ? p.replace(/^\/app(?=\/|$)/,"") : p;
 
-function buildTree(rows){
-  const src = (rows||[]).map(norm).filter(x=>x.code);
-  const byCode = Object.fromEntries(src.map(x=>[x.code, x]));
+/* ───────────── Normalization ───────────── */
+function norm(r){
+  const code = r.code ?? String(r.id ?? r.menu_id ?? r.menuId ?? "");
+  const name = r.name ?? r.label ?? code;
+  const path = r.path ?? r.url ?? r.route ?? null; // keep '/app' (your router uses it)
+  const icon = r.icon ?? r.emoji ?? null;
+  const sort = r.sort_order ?? r.sortOrder ?? 999;
+  return { code, name, path, icon, sort, children: [] };
+}
 
-  // Attach by parent_code
-  const roots = [];
-  for(const n of src){
-    // Make admin groups non-clickable even if path present accidentally
-    if(n.code.startsWith("admin.grp.")) n.path = null;
+/* ───────────── Deterministic tree (no parent_id needed) ───────────── */
+function buildTree(rawRows){
+  const rows = (rawRows||[]).map(norm).filter(x=>x.code);
+  const byCode = Object.fromEntries(rows.map(r=>[r.code, r]));
+  const nodes = new Map(); // code -> node
 
-    const p = n.parent_code ? byCode[n.parent_code] : null;
-    if(p) p.children.push(n);
-    else roots.push(n);
+  const ensure = (code, init) => {
+    if(!nodes.has(code)) nodes.set(code, { code, name:init?.name??code, path:init?.path??null, icon:init?.icon??null, sort:init?.sort??999, children: [] });
+    return nodes.get(code);
+  };
+  const addChild = (parentCode, childCode) => {
+    const p = nodes.get(parentCode);
+    const c = nodes.get(childCode);
+    if(!p || !c) return;
+    if(!p.children.some(x=>x.code===childCode)) p.children.push(c);
+  };
+
+  // 1) Seed known module roots (from data)
+  //    Any top-level code without a dot (e.g., admin, crm, sales…) becomes a root.
+  for(const r of rows){
+    if(!r.code.includes(".")){
+      const root = ensure(r.code, r);
+      // prefer real row values over synthetic
+      root.name = r.name ?? root.name;
+      root.path = r.path ?? root.path;
+      root.icon = r.icon ?? root.icon;
+      root.sort = r.sort ?? root.sort;
+    }
   }
 
-  const sortFn = (a,b)=>(a.sort_order??999)-(b.sort_order??999) || String(a.name).localeCompare(b.name);
-  const sortDeep = (arr)=>{ arr.sort(sortFn); arr.forEach(x=>x.children?.length && sortDeep(x.children)); return arr; };
+  // 2) Ensure Admin root exists if any admin.* item is present
+  if(rows.some(r=>r.code.startsWith("admin"))){
+    const r = byCode[ADMIN];
+    ensure(ADMIN, { name: r?.name ?? "Admin", path: r?.path ?? "/app/admin", icon: r?.icon ?? "Settings", sort: r?.sort ?? 10 });
+  }
+
+  // 3) Ensure Admin groups exist (headings, non-clickable)
+  for(const g of ADMIN_GROUPS){
+    const row = byCode[g.code];
+    ensure(g.code, { name: row?.name ?? g.name, path: null, icon: row?.icon ?? g.icon, sort: row?.sort ?? g.sort });
+    addChild(ADMIN, g.code);
+  }
+
+  // 4) Place every item deterministically
+  for(const r of rows){
+    ensure(r.code, r); // register node with its real props
+
+    if(r.code === ADMIN) continue;
+    if(r.code.startsWith("admin.grp.")) {
+      // group headings already attached to admin (step 3)
+      nodes.get(r.code).path = null; // enforce non-clickable
+      continue;
+    }
+    if(r.code.startsWith("admin.")) {
+      const gcode = findAdminGroup(r.code);
+      if(gcode) addChild(gcode, r.code);
+      else addChild(ADMIN, r.code); // fallback if a page isn’t mapped yet
+      continue;
+    }
+
+    // Non-admin modules: use prefix before the first dot as parent.
+    // Example: "crm.leads" → parent "crm"
+    const mod = r.code.split(".")[0];
+    // Ensure module root exists even if not in data
+    if(!nodes.has(mod)){
+      const maybe = byCode[mod];
+      ensure(mod, { name: maybe?.name ?? mod.toUpperCase(), path: maybe?.path ?? `/app/${mod}`, icon: maybe?.icon ?? "Folder", sort: maybe?.sort ?? 50 });
+    }
+    if(r.code !== mod) addChild(mod, r.code);
+  }
+
+  // 5) Collect roots (nodes never added as children)
+  const childCodes = new Set();
+  for(const n of nodes.values()) for(const c of n.children) childCodes.add(c.code);
+  const roots = [...nodes.values()].filter(n => !childCodes.has(n.code) && (!n.code.startsWith("admin.grp.")));
+
+  // 6) Sort everything
+  const byName = (a,b)=> String(a.name||"").localeCompare(String(b.name||""));
+  const bySort = (a,b)=> (a.sort??999)-(b.sort??999) || byName(a,b);
+  const sortDeep = (arr)=>{ arr.sort(bySort); arr.forEach(n=>n.children?.length && sortDeep(n.children)); return arr; };
   return sortDeep(roots);
 }
 
+/* ───────────── Node component ───────────── */
 function NodeItem({ node, depth=0, defaultOpen=false, onNavigate }){
-  const hasChildren = (node.children?.length||0)>0;
-  const linkPath = node.path; // or stripApp(node.path)
+  const hasChildren = (node.children?.length||0) > 0;
+  const linkPath = node.path; // keep '/app' prefix (your routes use it)
   const isLeaf = !!linkPath && !hasChildren;
   const [open, setOpen] = useState(defaultOpen);
   const Icon = iconByName(node.icon);
@@ -71,6 +158,7 @@ function NodeItem({ node, depth=0, defaultOpen=false, onNavigate }){
       </NavLink>
     );
   }
+
   return (
     <div>
       <button
@@ -99,8 +187,9 @@ function NodeItem({ node, depth=0, defaultOpen=false, onNavigate }){
   );
 }
 
+/* ───────────── Sidebar ───────────── */
 export default function TenantSidebar({ onNavigate }){
-  const { menus } = useEnv();           // Make this call v_menu_tree_for_tenant
+  const { menus } = useEnv();  // can be v_menu_for_tenant OR your existing rows
   const tree = useMemo(()=>buildTree(menus||[]), [menus]);
   return (
     <aside className="w-64 shrink-0 hidden md:flex md:flex-col bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100 border-r border-white/10 p-3">
