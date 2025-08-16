@@ -342,4 +342,53 @@ a:hover{ text-decoration:underline }
 .gg-panel:hover { transform: translateY(-1px); box-shadow: 0 16px 36px -18px rgba(0,0,0,.75); }
 :focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(var(--gg-accent), .35) !important; border-color: rgba(var(--gg-accent), .35) !important; }
 
+/* --- Pill tabs: stronger active state --- */
+.gg-tabs {
+  display: inline-flex;
+  gap: .25rem;
+  padding: .25rem;
+  border-radius: .9rem;
+  background: rgba(255,255,255,.06);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+.gg-tab {
+  position: relative;
+  padding: .5rem 1rem;
+  border-radius: .7rem;
+  font-size: .875rem;               /* text-sm */
+  color: rgba(226,232,240,.78);     /* soft slate */
+  transition: background .15s ease, transform .15s ease, color .15s ease;
+}
+
+.gg-tab:hover {
+  background: rgba(255,255,255,.05);
+  color: rgba(226,232,240,.95);
+}
+
+.gg-tab.is-active {
+  color: #fff;
+  background: linear-gradient(180deg, rgba(255,255,255,.10), rgba(0,0,0,.12));
+  border: 1px solid rgba(255,255,255,.18);
+  box-shadow:
+    0 10px 24px -16px rgba(0,0,0,.8),
+    inset 0 0 0 1px rgba(255,255,255,.04);
+  font-weight: 600;                 /* make it bolder */
+  transform: translateY(-1px);
+}
+
+/* Gradient underline for the active tab */
+.gg-tab.is-active::after {
+  content: "";
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: -7px;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg,
+    rgb(var(--gg-primary)) 0%,
+    rgb(var(--gg-accent)) 100%);
+  opacity: .95;
+}
 
