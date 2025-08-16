@@ -22,24 +22,34 @@ const isMain = (n) => String(n.label || n.name || n.code || "").trim().toLowerCa
 function buildAdminCrmTree(items) {
   const ALLOWED_ROOT_CODES = new Set(["admin", "crm"]);
 
-  // normalize
+  // normalize source shape
   const src = Array.isArray(items) ? items : (items?.data ?? items?.items ?? []);
   const byId = new Map();
   const children = new Map();
 
   (src || []).forEach((raw) => {
+    // --- robust field normalization ---
+    const code = String(raw.code ?? raw.Code ?? "").trim();
+    const pidRaw = raw.parent_id ?? raw.parentId ?? raw.parentID ?? null;
+    const parent_id = (pidRaw === "" || String(pidRaw).toLowerCase() === "null") ? null : pidRaw;
+
     const n = {
       id: raw.id,
-      code: raw.code,
-      label: raw.label ?? raw.name ?? raw.code ?? "",
-      name: raw.label ?? raw.name ?? raw.code ?? "",
-      path: normPath(raw.path || ""),
-      icon: raw.icon ?? null,
-      parent_id: raw.parent_id ?? null,
-      module_code: raw.module_code ?? null,
-      sort_order: raw.sort_order ?? null,
+      code,
+      label: raw.label ?? raw.name ?? code,
+      name: raw.label ?? raw.name ?? code,
+      path: (() => {
+        const p = raw.path ?? raw.Path ?? "";
+        if (!p) return null;
+        const s = String(p).trim();
+        return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
+      })(),
+      icon: raw.icon ?? raw.Icon ?? null,
+      parent_id,
+      module_code: raw.module_code ?? raw.moduleCode ?? null,
+      sort_order: raw.sort_order ?? raw.sortOrder ?? null,
     };
-    if (!n.id) return;
+    if (!n.id) return;                 // skip corrupt rows
     byId.set(n.id, n);
     children.set(n.id, []);
   });
@@ -51,32 +61,36 @@ function buildAdminCrmTree(items) {
     }
   });
 
+  const byOrderThenName = (a, b) => {
+    const ao = Number.isFinite(a.sort_order) ? a.sort_order : 999999;
+    const bo = Number.isFinite(b.sort_order) ? b.sort_order : 999999;
+    if (ao !== bo) return ao - bo;
+    const an = String(a.label || a.name || a.code || "");
+    const bn = String(b.label || b.name || b.code || "");
+    return an.localeCompare(bn, undefined, { sensitivity: "base" });
+  };
+
   const sortRec = (node) => {
     const kids = children.get(node.id) || [];
     kids.sort(byOrderThenName);
     return { ...node, children: kids.map(sortRec) };
   };
 
-  // Strict parents: parent_id NULL, not "Main", and code exactly admin/crm
+  // strict parents: parent_id is null AND code is admin/crm (case-insensitive), drop any "Main"
   const strictParents = Array.from(byId.values()).filter((n) => {
-    const code = String(n.code || "").toLowerCase();
-    return !n.parent_id && !isMain(n) && ALLOWED_ROOT_CODES.has(code);
+    const codeLower = String(n.code || "").toLowerCase();
+    const nameLower = String(n.label || n.name || n.code || "").trim().toLowerCase();
+    return !n.parent_id && ALLOWED_ROOT_CODES.has(codeLower) && nameLower !== "main";
   });
 
   strictParents.sort(byOrderThenName);
   const tree = strictParents.map(sortRec);
 
-  // Debug snapshot (remove later)
-  console.groupCollapsed("[Sidebar] STRICT ROOTS (admin/crm only)");
-  console.table(
-    tree.map((r) => ({
-      id: r.id,
-      code: r.code,
-      label: r.label,
-      path: r.path,
-      children: r.children?.length || 0,
-    }))
-  );
+  // helpful debug (remove later)
+  console.groupCollapsed("[Sidebar] admin/crm raw rows");
+  console.table(Array.from(byId.values())
+    .filter(n => ["admin","crm"].includes(String(n.code).toLowerCase()))
+    .map(n => ({ id:n.id, code:n.code, parent_id:n.parent_id, path:n.path })));
   console.groupEnd();
 
   return tree;
