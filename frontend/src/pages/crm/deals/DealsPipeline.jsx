@@ -10,7 +10,7 @@ import {
   useDraggable,
 } from "@dnd-kit/core";
 import { useOutletContext } from "react-router-dom";
-import { Toolbar } from "./_shared/Toolbar";
+import { Plus, Filter } from "lucide-react";
 import DealDrawer from "./DealDrawer";
 import { STAGES, listDeals, moveDealToStage } from "./mockApi";
 
@@ -70,7 +70,7 @@ export default function DealsPipeline() {
   const [rows, setRows] = useState([]);
   const [drawer, setDrawer] = useState({ open: false, deal: null });
 
-  // Get opener from DealsLayout (drawer lives there). Fallback to global event.
+  // Get opener from DealsLayout (drawer lives there). Fallback: fire a window event.
   const outletCtx = (typeof useOutletContext === "function" ? useOutletContext() : {}) || {};
   const openNewDeal = outletCtx.openNewDeal || (() => window.dispatchEvent(new Event("deals:new")));
 
@@ -118,8 +118,25 @@ export default function DealsPipeline() {
 
   return (
     <div>
-      {/* Toolbar: New opens the main drawer in DealsLayout */}
-      <Toolbar title="Pipeline" onAdd={openNewDeal} onFilter={() => {}} />
+      {/* Local header row (doesn't rely on shared Toolbar) */}
+      <div className="mb-3">
+        <div className="flex items-center gap-2 rounded-2xl border bg-card p-2 pl-3 pr-3 shadow-sm">
+          <div className="text-base font-medium">Pipeline</div>
+          <div className="flex-1" />
+          <button type="button" className="btn btn-ghost gap-2">
+            <Filter className="h-4" />
+            Filters
+          </button>
+          <button
+            type="button"
+            onClick={openNewDeal}
+            className="btn btn-primary gap-2 !opacity-100 !pointer-events-auto"
+          >
+            <Plus className="h-4" />
+            New Deal
+          </button>
+        </div>
+      </div>
 
       <DndContext sensors={sensors} onDragEnd={onDragEnd}>
         <div
@@ -141,6 +158,16 @@ export default function DealsPipeline() {
           ))}
         </div>
       </DndContext>
+
+      {/* Mobile FAB (backup: always visible) */}
+      <button
+        type="button"
+        onClick={openNewDeal}
+        className="btn btn-primary fixed bottom-6 right-6 md:hidden shadow-lg gap-2 z-50"
+      >
+        <Plus className="h-4" />
+        New Deal
+      </button>
 
       {/* Local drawer for editing existing deals (double-click a card) */}
       <DealDrawer
