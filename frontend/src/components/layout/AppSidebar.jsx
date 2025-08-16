@@ -114,22 +114,32 @@ const TREE = [
   },
 ];
 
-/* ------------------ UI helpers ------------------ */
+/* ------------------ Icons ------------------ */
 const ARROW = 18;
-function ArrowDown() {
-  return (
-    <svg width={ARROW} height={ARROW} viewBox="0 0 24 24" className="opacity-80" aria-hidden>
-      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-const ArrowSpacer = () => <span style={{ width: ARROW, height: ARROW, display: "inline-block" }} />;
+const Chevron = ({ open }) => (
+  <svg width={ARROW} height={ARROW} viewBox="0 0 24 24" className="opacity-80" aria-hidden>
+    <path d={open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"} stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
+  </svg>
+);
+const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inline-block" }} />;
 
 /* ------------------ Component ------------------ */
 export default function AppSidebar() {
   const { branding } = useEnv();
   const loc = useLocation();
   const scrollerRef = useRef(null);
+
+  // All collapsed initially -> empty Set
+  const [openIds, setOpenIds] = useState(() => new Set());
+
+  const isOpen = (id) => openIds.has(id);
+  const toggle = (id) =>
+    setOpenIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
 
   // Keep active link in view
   useEffect(() => {
@@ -143,23 +153,31 @@ export default function AppSidebar() {
 
   function Node({ node, depth = 0 }) {
     const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-    const isRoot = depth === 0;
-    // Parents should NEVER collapse -> keep open true and no toggle
-    const [open, setOpen] = useState(isRoot ? true : true); // non-root groups default open too
+    const open = isOpen(node.id);
     const pad = depth > 0 ? "ml-3" : "";
 
-    // Non-link header (group without path)
-    if (!node.path) {
+    // Group (toggle button). If group also has a path (e.g., Admin/CRM), we still use a button to toggle.
+    if (hasChildren) {
       return (
         <div className="group" key={node.id}>
-          <div
-            className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 bg-gray-800/30 w-full", pad].join(" ")}
+          <button
+            type="button"
+            onClick={() => toggle(node.id)}
+            className={[
+              "no-underline flex items-center gap-2 px-3 py-2 rounded-lg text-sm w-full text-left",
+              "text-gray-300 hover:bg-gray-800/50",
+              pad,
+            ].join(" ")}
+            aria-expanded={open}
+            aria-controls={`children-${node.id}`}
           >
-            {hasChildren ? <ArrowDown /> : <ArrowSpacer />}
+            <Chevron open={open} />
+            {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
             <span className="truncate">{node.label}</span>
-          </div>
-          {hasChildren && open && (
-            <div className="mt-1 space-y-1">
+          </button>
+
+          {open && (
+            <div id={`children-${node.id}`} className="mt-1 space-y-1">
               {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
             </div>
           )}
@@ -167,11 +185,11 @@ export default function AppSidebar() {
       );
     }
 
-    // Link (parent or child with a path) — remove underline
+    // Leaf link
     return (
       <div className="group" key={node.id}>
         <NavLink
-          to={node.path}
+          to={node.path || "#"}
           end
           className={({ isActive }) =>
             [
@@ -180,25 +198,11 @@ export default function AppSidebar() {
               pad,
             ].join(" ")
           }
-          // Root links shouldn't toggle anything; just navigate
-          onClick={(e) => {
-            if (isRoot) {
-              // keep parents open; don't change state
-              setOpen(true);
-            }
-          }}
         >
-          {hasChildren ? <ArrowDown /> : <ArrowSpacer />}
+          <Spacer />
           {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
           <span className="truncate">{node.label}</span>
         </NavLink>
-
-        {/* children always shown (no collapse on navigation) */}
-        {hasChildren && open && (
-          <div className="mt-1 space-y-1">
-            {node.children.map((c) => <Node key={c.id} node={c} depth={depth + 1} />)}
-          </div>
-        )}
       </div>
     );
   }
