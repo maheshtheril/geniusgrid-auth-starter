@@ -2,6 +2,8 @@
 import "./styles/theme-runtime.css";
 import "./styles.css";
 import "@/styles/sidebar.css";
+import "./styles/tokens.css";
+
 
 import React from "react";
 import { createRoot } from "react-dom/client";
