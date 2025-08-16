@@ -1,0 +1,233 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GeniusGrid Incentives — Admin Guide</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{
+    --bg:#0b0d10; --card:#11151b; --muted:#9aa4b2; --text:#e6ebf0;
+    --ring1:#6366f1; --ring2:#a855f7; --border:rgba(255,255,255,.08);
+    --ok:#34d399; --warn:#f59e0b; --err:#ef4444;
+  }
+  html,body{background:var(--bg);color:var(--text);font:16px/1.55 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Ubuntu; margin:0;padding:0}
+  .wrap{max-width:980px;margin:40px auto;padding:0 20px}
+  header{margin-bottom:16px}
+  h1{font-size:30px;line-height:1.2;margin:0 0 4px}
+  h2{font-size:22px;margin:28px 0 8px}
+  h3{font-size:18px;margin:20px 0 6px}
+  p,li{color:var(--text)}
+  .muted{color:var(--muted)}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;margin:12px 0;box-shadow:0 8px 30px -18px rgba(0,0,0,.6);position:relative}
+  .ring::before{content:"";position:absolute;inset:0;padding:1px;border-radius:14px;background:linear-gradient(120deg,var(--ring1),var(--ring2));mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;-webkit-mask-composite:xor;z-index:-1}
+  .toc a{color:var(--text);text-decoration:none}
+  .toc a:hover{text-decoration:underline}
+  code, .kbd{background:#0f1320;border:1px solid var(--border);padding:2px 6px;border-radius:6px}
+  .grid{display:grid;gap:10px}
+  .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  @media (max-width:720px){.grid.cols-2{grid-template-columns:1fr}}
+  .callout{border-left:4px solid var(--ring1);padding:10px 12px;background:#0f1217;border-radius:8px}
+  .ok{border-left-color:var(--ok)}
+  .warn{border-left-color:var(--warn)}
+  .err{border-left-color:var(--err)}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:10px;border-top:1px solid var(--border)}
+  thead th{text-align:left;font-weight:600;background:#0f1217;border-top:0}
+  .badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border)}
+  .b-ok{background:rgba(52,211,153,.12);color:#86efac}
+  .b-pending{background:rgba(245,158,11,.12);color:#fcd34d}
+  .b-stop{background:rgba(239,68,68,.12);color:#fecaca}
+  footer{margin:40px 0;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>GeniusGrid Incentives — Admin Guide</h1>
+    <div class="muted">Version 2025-08-16 • For admins and ops users who configure and run incentive programs.</div>
+  </header>
+
+  <div class="card ring toc">
+    <h2>Contents</h2>
+    <ol>
+      <li><a href="#overview">Overview & Concepts</a></li>
+      <li><a href="#workflow">End‑to‑End Workflow</a></li>
+      <li><a href="#plans">Plans</a></li>
+      <li><a href="#rules">Rules</a></li>
+      <li><a href="#tiers">Tiers (Slabs)</a></li>
+      <li><a href="#programs">Programs</a></li>
+      <li><a href="#payouts">Payouts</a></li>
+      <li><a href="#adjustments">Adjustments</a></li>
+      <li><a href="#approvals">Approvals</a></li>
+      <li><a href="#reports">Reports</a></li>
+      <li><a href="#audit">Audit</a></li>
+      <li><a href="#roles">Roles & Permissions (recommended)</a></li>
+      <li><a href="#faq">FAQ & Troubleshooting</a></li>
+    </ol>
+  </div>
+
+  <section id="overview" class="card ring">
+    <h2>1) Overview & Concepts</h2>
+    <p><b>Incentives</b> lets you define how sellers earn variable pay. It’s split across clear tabs inside <span class="kbd">/app/crm/incentives/*</span>.</p>
+    <div class="grid cols-2">
+      <div class="callout">
+        <b>Key Objects</b>
+        <ul>
+          <li><b>Plan</b>: the container for a fiscal period (e.g., FY25 Growth).</li>
+          <li><b>Rule</b>: the earning logic (metric + condition ⇒ reward).</li>
+          <li><b>Tier</b>: slabs that step‑up rewards by thresholds.</li>
+          <li><b>Program</b>: optional grouping for a team/region.</li>
+          <li><b>Payout Run</b>: simulate, validate, and lock payouts.</li>
+          <li><b>Adjustment</b>: manual credit/debit entry with reason.</li>
+        </ul>
+      </div>
+      <div class="callout ok">
+        <b>UI Basics</b>
+        <ul>
+          <li><span class="kbd">New</span>, <span class="kbd">Filters</span>, <span class="kbd">Export</span> in the toolbar on each tab.</li>
+          <li>Pill tabs; active tab highlighted; content in a bordered panel.</li>
+          <li>Tables support search and clean empty states.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="workflow" class="card ring">
+    <h2>2) End‑to‑End Workflow</h2>
+    <ol>
+      <li>Create a <b>Plan</b> with dates & base (Revenue/Units/Profit).</li>
+      <li>Add <b>Rules</b> (conditions & rewards). Optional: attach <b>Tiers</b>.</li>
+      <li>(Optional) Group into <b>Programs</b> for teams/regions.</li>
+      <li>When a period ends, run <b>Payouts</b>: <i>Select Plan → Period → Scope → Simulate → Fix Issues → Lock & Publish</i>.</li>
+      <li>Record any <b>Adjustments</b> (credits/debits) with reason.</li>
+      <li>Route through <b>Approvals</b>, then export from <b>Reports</b>.</li>
+      <li>All actions are logged under <b>Audit</b>.</li>
+    </ol>
+  </section>
+
+  <section id="plans" class="card ring">
+    <h2>3) Plans</h2>
+    <p>Create fiscal containers that hold rules/tiers. Path: <span class="kbd">Incentives → Plans</span></p>
+    <div class="grid cols-2">
+      <div>
+        <h3>Create</h3>
+        <ol>
+          <li>Click <span class="kbd">New</span>.</li>
+          <li>Enter <b>Plan Name</b>, <b>Code</b>, <b>From</b>, <b>To</b>, and <b>Base</b>.</li>
+          <li>Submit to save (Starts as <span class="badge b-pending">Draft</span>).</li>
+        </ol>
+      </div>
+      <div>
+        <h3>Good practice</h3>
+        <ul>
+          <li>Use consistent codes (e.g., <code>FY25-G</code>).</li>
+          <li>Keep one active plan per team/period to avoid overlaps.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section id="rules" class="card ring">
+    <h2>4) Rules</h2>
+    <p>Define earning logic. Example: <i>Revenue ≥ 50L → +2%</i></p>
+    <table>
+      <thead><tr><th>Field</th><th>Description</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td>Rule Name</td><td>Human‑readable name</td><td>Qtr Target Bonus</td></tr>
+        <tr><td>Plan</td><td>Which plan this rule belongs to</td><td>FY25 Growth</td></tr>
+        <tr><td>Metric</td><td>What you measure</td><td>Revenue</td></tr>
+        <tr><td>Condition</td><td>Threshold logic</td><td>&ge; 50L</td></tr>
+        <tr><td>Reward</td><td>What to credit</td><td>+2%</td></tr>
+        <tr><td>Active</td><td>Toggle visibility</td><td><span class="badge b-ok">Yes</span></td></tr>
+      </tbody>
+    </table>
+    <div class="callout warn"><b>Tip:</b> Start as Draft; activate only after review.</div>
+  </section>
+
+  <section id="tiers" class="card ring">
+    <h2>5) Tiers (Slabs)</h2>
+    <p>Attach slabs to a rule for progressive rewards. Example:</p>
+    <table>
+      <thead><tr><th>From</th><th>To</th><th>Reward</th></tr></thead>
+      <tbody>
+        <tr><td>0</td><td>50L</td><td>1%</td></tr>
+        <tr><td>50L</td><td>1Cr</td><td>2%</td></tr>
+        <tr><td>1Cr</td><td>∞</td><td>3%</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="programs" class="card ring">
+    <h2>6) Programs</h2>
+    <p>Optional grouping by business unit, team or geography. Use to scope payout runs & reports.</p>
+  </section>
+
+  <section id="payouts" class="card ring">
+    <h2>7) Payouts</h2>
+    <ol>
+      <li>Open <span class="kbd">Payouts</span> → click <span class="kbd">New</span>.</li>
+      <li>Select Plan, period and (optional) program/team scope.</li>
+      <li><b>Simulate</b> and review exceptions.</li>
+      <li>Resolve data issues (deals/leads), re‑simulate.</li>
+      <li>Lock the run and <b>Publish</b> the payout file.</li>
+    </ol>
+    <div class="callout ok"><b>Approval gates:</b> Enable approvals before publish for strong control.</div>
+  </section>
+
+  <section id="adjustments" class="card ring">
+    <h2>8) Adjustments</h2>
+    <p>Manual credit/debit entries for one‑offs.</p>
+    <ul>
+      <li>Fields: <i>Date, Employee, Plan, Type (Credit/Debit), Amount, Reason, Status</i>.</li>
+      <li>Statuses: <span class="badge b-pending">Pending</span> → <span class="badge b-ok">Approved</span> / <span class="badge b-stop">Rejected</span>.</li>
+      <li>Appear in payout calculations once approved.</li>
+    </ul>
+  </section>
+
+  <section id="approvals" class="card ring">
+    <h2>9) Approvals</h2>
+    <p>Queue of items that need review (payout runs, adjustments).</p>
+    <ul>
+      <li>Actions: Approve / Reject with comments.</li>
+      <li>Everything is signed in <b>Audit</b>.</li>
+    </ul>
+  </section>
+
+  <section id="reports" class="card ring">
+    <h2>10) Reports</h2>
+    <ul>
+      <li>Filter by plan, program, date range; export CSV/XLS.</li>
+      <li>Use overview cards to track open runs, calls, tasks, revenue trend.</li>
+    </ul>
+  </section>
+
+  <section id="audit" class="card ring">
+    <h2>11) Audit</h2>
+    <p>Immutable log of who did what, when. Useful for finance & compliance.</p>
+  </section>
+
+  <section id="roles" class="card ring">
+    <h2>12) Roles & Permissions (recommended)</h2>
+    <table>
+      <thead><tr><th>Role</th><th>Typical Permissions</th></tr></thead>
+      <tbody>
+        <tr><td>Admin</td><td>All tabs incl. settings, approvals</td></tr>
+        <tr><td>Manager</td><td>Create rules/tiers, run simulations, raise adjustments</td></tr>
+        <tr><td>Finance</td><td>Lock payouts, export, audit, approvals</td></tr>
+        <tr><td>Seller</td><td>Read-only on their payouts</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section id="faq" class="card ring">
+    <h2>13) FAQ & Troubleshooting</h2>
+    <p><b>Q.</b> Adjustments page is blank? <b>A.</b> Check the route: it must be <code>/app/crm/incentives/adjustments</code> and the component export must match the import.</p>
+    <p><b>Q.</b> Tabs don’t highlight? <b>A.</b> Ensure the active tab gets class <code>is-active</code> or use <code>NavLink</code> with a function className.</p>
+    <p><b>Q.</b> Nothing shows in Incentives? <b>A.</b> Use the DB-driven sidebar, or the hardcoded CRM fallback if menus are empty.</p>
+  </section>
+
+  <footer>© GeniusGrid — Internal use. This document matches the current UI: Plans, Rules, Tiers, Programs, Payouts, Adjustments, Approvals, Reports, Audit.</footer>
+</div>
+</body>
+</html>

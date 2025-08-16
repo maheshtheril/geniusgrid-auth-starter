@@ -1,7 +1,7 @@
 // ---------- FILE: src/pages/crm/incentives/IncentivesLayout.jsx ----------
-import React from "react";
-import { NavLink, Outlet } from "react-router-dom";
-import { Trophy, Settings2 } from "lucide-react";
+import React, { useEffect } from "react";
+import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { Trophy, Settings2, CircleHelp } from "lucide-react";
 import { Panel, PillTabs } from "@/pages/crm/_shared/Surface";
 
 const TABS = [
@@ -17,6 +17,21 @@ const TABS = [
 ];
 
 export default function IncentivesLayout() {
+  const nav = useNavigate();
+
+  // Keyboard shortcut: Shift+/ (aka "?") opens Help
+  useEffect(() => {
+    const onKey = (e) => {
+      const isQuestionMark = e.key === "?" || (e.shiftKey && e.key === "/");
+      if (isQuestionMark) {
+        e.preventDefault();
+        nav("help");
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [nav]);
+
   return (
     <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
@@ -37,8 +52,17 @@ export default function IncentivesLayout() {
               Configure plans, rules & tiers; manage payouts with approvals, reports & audit.
             </p>
           </div>
+
+          {/* Right-side actions */}
           <div className="flex-1" />
-          {/* Optional: Incentives settings (route can be added later) */}
+          <NavLink
+            to="help"
+            className="gg-btn hidden md:inline-flex"
+            title="Incentives Help (Shift + /)"
+          >
+            <CircleHelp className="h-4 w-4" />
+            <span className="ml-1">Help</span>
+          </NavLink>
           <NavLink
             to="settings"
             className="gg-btn hidden md:inline-flex"

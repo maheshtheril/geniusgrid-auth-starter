@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>GeniusGrid Incentives — Teleprompter</title>
+<style>
+  :root {
+    --bg:#0b0d10; --card:#11151b; --muted:#9aa4b2; --text:#e6ebf0; --border:rgba(255,255,255,.1);
+    --accent1:#6366f1; --accent2:#a855f7;
+  }
+  html,body { margin:0; height:100%; background:var(--bg); color:var(--text); font:18px/1.6 ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto; }
+  .toolbar {
+    position:fixed; inset:12px 12px auto 12px; background:rgba(17,21,27,.7); border:1px solid var(--border); border-radius:12px; padding:8px 10px;
+    display:flex; align-items:center; gap:10px; z-index: 10; backdrop-filter: blur(6px);
+  }
+  .toolbar button, .toolbar input[type=range] {
+    height:34px; border-radius:10px; border:1px solid var(--border); background:#0f1217; color:var(--text); padding:0 10px;
+  }
+  .toolbar .pill { padding:6px 10px; background:linear-gradient(135deg, rgba(99,102,241,.2), rgba(168,85,247,.2)); border:0; }
+  .viewport { position: absolute; inset:0; padding:70px 8vw 40px; overflow:auto; scroll-behavior: smooth; }
+  .content { max-width: 980px; margin: 0 auto; transform-origin: center; }
+  h1,h2,h3 { margin: 0 0 8px; }
+  h1 { font-size: 2rem; }
+  h2 { font-size: 1.4rem; margin-top: 18px; }
+  h3 { font-size: 1.15rem; margin-top: 14px; }
+  p { margin: 0 0 10px; color: var(--text); }
+  ul { margin: 6px 0 12px 1.2rem; }
+  hr { border:0; height:1px; background:linear-gradient(90deg, transparent, var(--border), transparent); margin:18px 0; }
+  .mirror .content { transform: scaleX(-1); }
+  .highlight { background: linear-gradient(180deg, rgba(255,255,255,.04), transparent); border-left: 3px solid rgba(255,255,255,.25); padding-left: 10px; }
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="play" class="pill">▶ Play</button>
+    <button id="pause">⏸ Pause</button>
+    <button id="slower">– Speed</button>
+    <button id="faster">+ Speed</button>
+    <label>Speed <span id="speedLabel">40</span> px/s</label>
+    <input id="speed" type="range" min="10" max="120" value="40"/>
+    <label>Font <span id="fontLabel">22</span>px</label>
+    <input id="font" type="range" min="16" max="40" value="22"/>
+    <button id="mirror">🪞 Mirror</button>
+  </div>
+  <div id="viewport" class="viewport">
+    <div id="content" class="content" style="font-size:22px">
+      <p>&nbsp;</p>
+<h1>GeniusGrid Incentives — 10‑Minute Walkthrough (Presenter Script)</h1>
+<p>&nbsp;</p>
+<p>**Audience:** Sales Ops / Finance / Admins  </p>
+<p>**Goal:** Configure a plan, add a rule with tiers, simulate a payout, approve an adjustment, and export a report.</p>
+<p>&nbsp;</p>
+<hr/>
+<p>&nbsp;</p>
+<h2>0:00 — Intro (what &amp; where)</h2>
+<ul>
+<li>“We’re in GeniusGrid &gt; CRM &gt; Incentives. The tabs across the top are our workflow.”</li>
+<li>Call out the toolbar: Search, Filters, Export, New.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>0:45 — Plans (create FY example)</h2>
+<ul>
+<li>Click **Plans → New**.</li>
+<li>Fill: Name “FY25 Growth”, Code “FY25-G”, From “2025-04-01”, To “2026-03-31”, Base “Revenue”.</li>
+<li>Save. Mention drafts vs active.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>2:00 — Rules (earnings logic)</h2>
+<ul>
+<li>Go to **Rules → New**.</li>
+<li>Rule Name “Qtr Target Bonus”.</li>
+<li>Plan = FY25 Growth. Metric = Revenue.</li>
+<li>Condition “&gt;= 50L”. Reward “+2%”.</li>
+<li>Save as **Active** (or leave Draft for review).</li>
+</ul>
+<p>&nbsp;</p>
+<h2>3:15 — Tiers (slabs)</h2>
+<ul>
+<li>Open **Tiers → New**, attach to the rule above.</li>
+<li>Add three slabs: 0–50L = 1%; 50L–1Cr = 2%; 1Cr+ = 3%.</li>
+<li>Save. Explain slabs step-up rewards.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>4:30 — Programs (optional)</h2>
+<ul>
+<li>Create a Program “West Region” to scope runs &amp; reports.</li>
+<li>Tip: programs help with large orgs / different targets.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>5:00 — Payouts (simulate → lock)</h2>
+<ul>
+<li>**Payouts → New.** Choose Plan “FY25 Growth”, Period “Q1”, Scope “West Region”.</li>
+<li>Click **Simulate**. Show results and any exceptions.</li>
+<li>Fix data issues in CRM (if any), **Re-simulate**.</li>
+<li>**Lock &amp; Publish** once validated.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>7:00 — Adjustments (one-off credit/debit)</h2>
+<ul>
+<li>**Adjustments → New**. Date today, Employee “Rohan S”, Plan “FY25 Growth”,</li>
+</ul>
+<p>  Type “Credit”, Amount 25,000, Reason “Quarter-end true-up”.</p>
+<ul>
+<li>Status starts as **Pending**.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>7:45 — Approvals (governance)</h2>
+<ul>
+<li>Open **Approvals**. Approve the adjustment.</li>
+<li>Mention comments and audit trail.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>8:30 — Reports (export)</h2>
+<ul>
+<li>Go to **Reports**. Filter by Plan = FY25 Growth, Q1.</li>
+<li>Export CSV/XLS for payroll.</li>
+</ul>
+<p>&nbsp;</p>
+<h2>9:15 — Audit &amp; wrap</h2>
+<ul>
+<li>Show **Audit** log: the events we just performed.</li>
+<li>Recap: Plan → Rule → Tier → Payout → Adjustment → Approval → Report → Audit.</li>
+<li>Q&amp;A.</li>
+</ul>
+<p>&nbsp;</p>
+<hr/>
+<p>&nbsp;</p>
+<h2>Recording Tips</h2>
+<ul>
+<li>Use 1920×1080, dark theme.</li>
+<li>Zoom cursors, keep clicks deliberate.</li>
+<li>Keep the toolbar and tabs visible; avoid scrolling during key steps.</li>
+<li>Add captions for numbers (e.g., “&gt;= 50L → +2%”).</li>
+</ul>
+      <p class="highlight"><em>End of script</em></p>
+    </div>
+  </div>
+<script>
+(function(){
+  const vp = document.getElementById('viewport');
+  const content = document.getElementById('content');
+  const play = document.getElementById('play');
+  const pause = document.getElementById('pause');
+  const slower = document.getElementById('slower');
+  const faster = document.getElementById('faster');
+  const speed = document.getElementById('speed');
+  const speedLabel = document.getElementById('speedLabel');
+  const font = document.getElementById('font');
+  const fontLabel = document.getElementById('fontLabel');
+  const mirrorBtn = document.getElementById('mirror');
+
+  let raf = null;
+  let running = false;
+  let pxps = parseInt(speed.value, 10);
+
+  function step(tsNow) {
+    if (!running) return;
+    vp.scrollTop += pxps / 60;
+    raf = requestAnimationFrame(step);
+  }
+
+  function start(){
+    if (running) return;
+    running = true;
+    raf = requestAnimationFrame(step);
+  }
+  function stop(){
+    running = false;
+    if (raf) cancelAnimationFrame(raf);
+  }
+
+  play.addEventListener('click', start);
+  pause.addEventListener('click', stop);
+  slower.addEventListener('click', () => { pxps = Math.max(10, pxps - 10); speed.value = pxps; speedLabel.textContent = pxps; });
+  faster.addEventListener('click', () => { pxps = Math.min(120, pxps + 10); speed.value = pxps; speedLabel.textContent = pxps; });
+  speed.addEventListener('input', (e) => { pxps = parseInt(e.target.value,10); speedLabel.textContent = pxps; });
+  font.addEventListener('input', (e) => { content.style.fontSize = e.target.value + 'px'; fontLabel.textContent = e.target.value; });
+  mirrorBtn.addEventListener('click', () => { document.body.classList.toggle('mirror'); });
+
+  // Keyboard: space play/pause, up/down speed
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space') { e.preventDefault(); running ? stop() : start(); }
+    if (e.key === 'ArrowUp') { e.preventDefault(); pxps = Math.min(120, pxps + 5); speed.value = pxps; speedLabel.textContent = pxps; }
+    if (e.key === 'ArrowDown') { e.preventDefault(); pxps = Math.max(10, pxps - 5); speed.value = pxps; speedLabel.textContent = pxps; }
+  });
+})();
+</script>
+</body>
+</html>
