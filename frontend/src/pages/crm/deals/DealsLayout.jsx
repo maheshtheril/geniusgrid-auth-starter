@@ -1,203 +1,133 @@
-// ---------- FILE: src/pages/crm/deals/DealsLayout.jsx (Pro + New Deal Drawer + Help) ----------
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Briefcase, Plus, Upload, Download, Search, HelpCircle } from "lucide-react";
-import axios from "axios";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useEnv } from "@/store/useEnv";
+// ---------- FILE: src/pages/crm/deals/DealsHelp.jsx ----------
+import React from "react";
+import { useNavigate } from "react-router-dom";
+import { HelpCircle, ArrowLeft } from "lucide-react";
 
-import DealDrawer from "./DealDrawer";
-import { STAGES, createDeal } from "./mockApi";
-
-const TABS = [
-  { to: "/app/crm/deals/pipeline", label: "Pipeline" },
-  { to: "/app/crm/deals/list", label: "List" },
-];
-
-export default function DealsLayout(){
-  const loc = useLocation();
+export default function DealsHelp() {
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const q = params.get("q") || "";
-  const searchRef = useRef(null);
-  const { API_BASE } = useEnv?.() || { API_BASE: "/api" };
-
-  const [kpi, setKpi] = useState({ total: 0, weighted: 0, win_rate: 0, active: 0 });
-  const [loading, setLoading] = useState(false);
-
-  const [showNew, setShowNew] = useState(false);
-  const initialDraft = useMemo(() => ({
-    title: "",
-    company: "",
-    amount: 0,
-    stage: STAGES?.[0]?.id || "new",
-    owner: "",
-    probability: 0.2,
-    tags: [],
-    next_step: "",
-  }), []);
-
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      try {
-        setLoading(true);
-        const { data } = await axios.get(`${API_BASE}/deals/summary`, { params: { q } });
-        if (!cancel) setKpi({
-          total: Number(data?.total_amount || 0),
-          weighted: Number(data?.weighted_amount || 0),
-          win_rate: Number(data?.win_rate || 0),
-          active: Number(data?.active_count || 0),
-        });
-      } catch (e) {
-        console.warn(e);
-      } finally {
-        if (!cancel) setLoading(false);
-      }
-    })();
-    return () => { cancel = true; };
-  }, [API_BASE, q]);
-
-  // keyboard shortcuts
-  useEffect(() => {
-    const onKey = (e) => {
-      const tag = (e.target?.tagName || "").toLowerCase();
-      const typing = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
-
-      if (e.key === "/" && !typing) { e.preventDefault(); searchRef.current?.focus(); }
-      if (!typing && (e.key === "n" || e.key === "N") && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault(); setShowNew(true);
-      }
-      if (!typing && e.key === "?") {
-        e.preventDefault(); navigate("/app/crm/deals/help");
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [navigate]);
-
-  const onSearch = (val) => {
-    const next = new URLSearchParams(params);
-    if (val) next.set("q", val); else next.delete("q");
-    setParams(next, { replace: false });
-  };
-
-  const handleCreate = async (form) => {
-    const saved = await createDeal(form);
-    window.dispatchEvent(new CustomEvent("deals:created", { detail: { id: saved.id } }));
-    setShowNew(false);
-  };
-
-  const currencyINR = (n) => typeof n === "number"
-    ? n.toLocaleString("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 })
-    : "—";
 
   return (
-    <div className="p-4 md:p-6 space-y-4">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="rounded-2xl border bg-gradient-to-b from-background to-muted/30 p-3 md:p-4 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-2xl bg-primary/10 grid place-items-center shadow-inner">
-            <Briefcase className="h-5 w-5" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold leading-tight">Deals</h1>
-            <p className="text-sm text-muted-foreground">Manage pipeline and close faster with AI assistance.</p>
-          </div>
-          <div className="flex-1" />
-
-          {/* Actions: desktop */}
-          <div className="hidden md:flex items-center gap-2">
-            <div className="relative">
-              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 opacity-60" />
-              <Input
-                ref={searchRef}
-                defaultValue={q}
-                onChange={(e)=>onSearch(e.target.value)}
-                placeholder="Search deals, companies… (/)"
-                className="pl-8 h-9 w-[280px] shadow-sm focus:shadow focus:ring-0"
-              />
-            </div>
-            <Button onClick={()=>setShowNew(true)} className="gap-2 shadow hover:shadow-md active:scale-[0.99] transition">
-              <Plus className="h-4"/> New Deal
-            </Button>
-            <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/import")}>
-              <Upload className="h-4"/> Import
-            </Button>
-            <Button variant="secondary" className="gap-2" onClick={()=>navigate(`/app/crm/deals/export?q=${encodeURIComponent(q)}`)}>
-              <Download className="h-4"/> Export
-            </Button>
-            {/* Help button visible on desktop */}
-            <Button variant="secondary" className="gap-2" onClick={()=>navigate("/app/crm/deals/help")}>
-              <HelpCircle className="h-4" /> Help
-            </Button>
-          </div>
+      <div className="rounded-2xl border bg-card p-4 shadow-sm flex items-center gap-3">
+        <div className="h-10 w-10 rounded-2xl bg-primary/10 grid place-items-center">
+          <HelpCircle className="h-5 w-5" />
         </div>
-      </div>
-
-      {/* KPIs */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <KpiCard title="Total Pipeline" value={currencyINR(kpi.total)} loading={loading} />
-        <KpiCard title="Weighted Value" value={currencyINR(kpi.weighted)} loading={loading} />
-        <KpiCard title="Win Rate" value={`${Math.round((kpi.win_rate||0)*100)}%`} loading={loading} />
-        <KpiCard title="Active Deals" value={kpi.active?.toLocaleString?.() || 0} loading={loading} />
-      </div>
-
-      {/* Tabs */}
-      <div className="w-full overflow-x-auto sticky top-0 z-10 bg-background/60 backdrop-blur supports-[backdrop-filter]:bg-background/40">
-        <div className="inline-flex gap-1 p-1 rounded-xl bg-muted">
-          {TABS.map(t => (
-            <NavLink key={t.to} to={t.to}
-              className={({isActive}) => `px-4 h-9 inline-flex items-center rounded-lg whitespace-nowrap text-sm transition ${
-                isActive || loc.pathname.startsWith(t.to) ? 'bg-background shadow-sm border' : 'hover:bg-background/60'
-              }`}>
-              {t.label}
-            </NavLink>
-          ))}
+        <div className="flex-1">
+          <h2 className="text-xl font-semibold">Deals & Pipeline — Help</h2>
+          <p className="text-sm text-muted-foreground">
+            How to use Pipeline/List, create deals, shortcuts, and more.
+          </p>
         </div>
+        <button
+          onClick={() => navigate("/app/crm/deals/pipeline")}
+          className="btn btn-secondary gap-2"
+        >
+          <ArrowLeft className="h-4" /> Back to Deals
+        </button>
       </div>
 
       {/* Content */}
-      <div className="bg-card rounded-2xl border p-3 md:p-4">
-        {/* Provide opener to children (Pipeline/List) */}
-        <Outlet context={{ openNewDeal: () => setShowNew(true) }} />
-      </div>
+      <div className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="grid md:grid-cols-3 gap-4">
+          {/* Quick links */}
+          <nav className="md:col-span-1">
+            <div className="text-xs uppercase text-muted-foreground mb-2">Quick links</div>
+            <ul className="space-y-1 text-sm">
+              <li><a href="#overview" className="hover:underline">Overview</a></li>
+              <li><a href="#pipeline" className="hover:underline">Pipeline (Kanban)</a></li>
+              <li><a href="#list" className="hover:underline">List (Table)</a></li>
+              <li><a href="#kpis" className="hover:underline">KPIs & Actions</a></li>
+              <li><a href="#create" className="hover:underline">Create a new deal</a></li>
+              <li><a href="#drawer" className="hover:underline">Deal Drawer</a></li>
+              <li><a href="#shortcuts" className="hover:underline">Keyboard shortcuts</a></li>
+              <li><a href="#troubleshoot" className="hover:underline">Troubleshooting</a></li>
+            </ul>
+          </nav>
 
-      {/* New Deal Drawer */}
-      <DealDrawer
-        open={showNew}
-        onClose={()=>setShowNew(false)}
-        deal={initialDraft}
-        onSave={handleCreate}
-      />
+          {/* Body */}
+          <div className="md:col-span-2 space-y-6">
+            <section id="overview">
+              <h3 className="text-lg font-semibold">1) Overview</h3>
+              <p className="text-sm text-muted-foreground">
+                Track opportunities from first contact to won/lost. Use
+                <strong> Pipeline</strong> for stage-based flow and <strong>List</strong> for fast filtering & edits.
+              </p>
+            </section>
 
-      {/* Mobile Help FAB (shows on small screens where header actions are hidden) */}
-      <Button
-        onClick={()=>navigate("/app/crm/deals/help")}
-        className="md:hidden fixed bottom-6 right-6 h-11 rounded-full px-5 gap-2 shadow-lg"
-        aria-label="Help"
-        title="Help"
-      >
-        <HelpCircle className="h-5" />
-        Help
-      </Button>
-    </div>
-  );
-}
+            <section id="pipeline">
+              <h3 className="text-lg font-semibold">2) Pipeline (Kanban)</h3>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li>Drag & drop a card between stages to update stage.</li>
+                <li>Columns show count and total value.</li>
+                <li>Double-click a card to open the Deal Drawer.</li>
+                <li>Use <em>New Deal</em> in the header to add quickly.</li>
+              </ul>
+            </section>
 
-function KpiCard({ title, value, loading }){
-  return (
-    <Card className="hover:shadow-sm transition">
-      <CardHeader className="py-3">
-        <CardTitle className="text-xs uppercase tracking-wide text-muted-foreground">{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="text-2xl font-semibold tabular-nums leading-tight">
-          {loading ? <span className="inline-block h-6 w-24 rounded bg-muted animate-pulse"/> : value}
+            <section id="list">
+              <h3 className="text-lg font-semibold">3) List (Table)</h3>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li>Search title/company; filter by Stage & Owner.</li>
+                <li>Sort by clicking column headers.</li>
+                <li>Edit core fields inline or open the drawer for full edits.</li>
+              </ul>
+            </section>
+
+            <section id="kpis">
+              <h3 className="text-lg font-semibold">4) KPIs & Actions</h3>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li><strong>Total Pipeline</strong>, <strong>Weighted Value</strong>, <strong>Win Rate</strong>, <strong>Active Deals</strong>.</li>
+                <li>Actions: <em>New Deal</em>, <em>Import</em>, <em>Export</em>, <em>Help</em>.</li>
+                <li>Global search syncs to the URL (<code>?q=</code>) so both views filter together.</li>
+              </ul>
+            </section>
+
+            <section id="create">
+              <h3 className="text-lg font-semibold">5) Creating a new deal</h3>
+              <p className="text-sm">Two patterns:</p>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li><strong>Route-based</strong>: navigate to <code>/app/crm/deals/new</code> and mount the Drawer in create mode.</li>
+                <li><strong>Drawer-in-place</strong>: open the Drawer directly from DealsLayout without routing.</li>
+              </ul>
+            </section>
+
+            <section id="drawer">
+              <h3 className="text-lg font-semibold">6) Deal Drawer</h3>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li>Fields: Title, Company, Amount, Owner, Stage, Probability, Tags, Next Step, Notes.</li>
+                <li>Shortcuts: <kbd>Esc</kbd> closes, <kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd> saves.</li>
+              </ul>
+            </section>
+
+            <section id="shortcuts">
+              <h3 className="text-lg font-semibold">7) Keyboard shortcuts</h3>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li><kbd>/</kbd> focus search</li>
+                <li><kbd>N</kbd> new deal</li>
+                <li><kbd>Esc</kbd> close drawer</li>
+                <li><kbd>Ctrl/Cmd</kbd>+<kbd>S</kbd> save</li>
+              </ul>
+            </section>
+
+            <section id="troubleshoot">
+              <h3 className="text-lg font-semibold">8) Troubleshooting</h3>
+              <ul className="list-disc pl-5 text-sm space-y-1">
+                <li>
+                  New button does nothing → ensure{" "}
+                  <code>{`<Outlet context={{ openNewDeal: () => setShowNew(true) }} />`}</code>{" "}
+                  is set in <code>DealsLayout</code> and the Pipeline button calls it.
+                </li>
+                <li>KPIs are empty → check <code>GET /api/deals/summary</code>.</li>
+              </ul>
+            </section>
+
+            <div className="text-xs text-muted-foreground">
+              Last updated: {new Date().toISOString().slice(0,10)}
+            </div>
+          </div>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
