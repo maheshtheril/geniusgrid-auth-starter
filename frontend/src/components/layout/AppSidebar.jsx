@@ -1,4 +1,3 @@
-// src/components/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef } from "react";
 import { useEnv } from "@/store/useEnv";
@@ -12,36 +11,40 @@ const normPath = (p) => {
 };
 const toNull = (v) => {
   if (v === undefined || v === null) return null;
-  const s = String(v).trim().toLowerCase();
-  return s === "" || s === "null" ? null : v;
+  const s = String(v).trim();
+  return s === "" || s.toLowerCase() === "null" ? null : v;
 };
-const numOr = (v, d = 999999) => (Number.isFinite(+v) ? +v : d);
+const toNum = (v) => (Number.isFinite(+v) ? +v : null);
 const byOrderThenLabel = (a, b) => {
-  const ao = numOr(a.sort_order);
-  const bo = numOr(b.sort_order);
+  const ao = a.sort_order ?? 999999;
+  const bo = b.sort_order ?? 999999;
   if (ao !== bo) return ao - bo;
   return String(a.label || "").localeCompare(String(b.label || ""), undefined, { sensitivity: "base" });
 };
 
-/* get ONLY parent (root) menus */
-function getParents(items) {
+/* ONLY PARENTS (roots) — parent is strictly NULL/empty */
+function getParentsOnly(items) {
   const rows = (items || []).map((raw) => ({
-    id: raw.id,
-    code: raw.code,
-    label: raw.label || "",
-    path: normPath(raw.path),
-    icon: raw.icon ?? null,
-    parent_id: toNull(raw.parent_id),
-    module_code: raw.module_code ?? null,
-    sort_order: raw.sort_order ?? null,
+    id: raw.id ?? raw.ID,
+    code: raw.code ?? raw.Code,
+    label: raw.label ?? raw.Label ?? "",
+    path: normPath(raw.path ?? raw Path),
+    icon: raw.icon ?? raw.Icon ?? null,
+    parent_id: toNull(raw.parent_id ?? raw.parentId ?? raw.parentID),
+    module_code: raw.module_code ?? raw.moduleCode ?? null,
+    sort_order: toNum(raw.sort_order ?? raw.sortOrder),
   }));
 
-  const idSet = new Set(rows.map((r) => r.id));
-  // root if parent_id is null OR parent not present in this payload
-  const parents = rows.filter((r) => !r.parent_id || !idSet.has(r.parent_id));
-  parents.sort(byOrderThenLabel);
-  // hide any literal "Main"
-  return parents.filter((p) => String(p.label).trim().toLowerCase() !== "main");
+  // Strict roots: parent_id must be NULL/empty
+  const roots = rows.filter((r) => r.parent_id === null);
+
+  // Optional: drop any literal "Main"
+  const filtered = roots.filter(
+    (r) => (r.code || "").toLowerCase() !== "main" && (r.label || "").toLowerCase() !== "main"
+  );
+
+  filtered.sort(byOrderThenLabel);
+  return filtered;
 }
 
 export default function AppSidebar() {
@@ -49,7 +52,7 @@ export default function AppSidebar() {
   const loc = useLocation();
   const scrollerRef = useRef(null);
 
-  const parents = useMemo(() => getParents(menus), [menus]);
+  const parents = useMemo(() => getParentsOnly(menus), [menus]);
 
   // keep active in view
   useEffect(() => {
@@ -62,7 +65,6 @@ export default function AppSidebar() {
     }
   }, [loc.pathname]);
 
-  // lock width to avoid icon-only collapse
   const fixedWidth = "16rem";
 
   return (
@@ -74,11 +76,7 @@ export default function AppSidebar() {
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
-      <div
-        ref={scrollerRef}
-        className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2"
-        style={{ scrollbarGutter: "stable" }}
-      >
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
         {parents.map((node) => (
           <NavLink
             key={node.id}
@@ -91,7 +89,7 @@ export default function AppSidebar() {
               ].join(" ")
             }
           >
-            {/* optional icon (emoji/string from DB) */}
+            {/* optional DB icon (emoji/string) */}
             {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
             <span className="truncate">{node.label || node.code}</span>
           </NavLink>
