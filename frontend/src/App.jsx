@@ -3,7 +3,7 @@ import "./index.css";
 import "./styles.css";
 import "./styles/theme.css";
 
-import { Routes, Route, Navigate, Link } from "react-router-dom";
+import { Routes, Route, Navigate, Link, Outlet } from "react-router-dom";
 
 import LoginPage from "./pages/LoginPage.jsx";
 import Signup from "./pages/Signup.jsx";
@@ -16,23 +16,24 @@ import LeadCreate from "@/pages/LeadCreate.jsx"; // needs vite alias "@"
 import DiscoverLeads from "@/pages/leads/DiscoverLeads.jsx";
 import ImportReview from "@/pages/leads/ImportReview.jsx";
 
- 
- import IncentivesLayout from "@/pages/crm/incentives/IncentivesLayout";
- import IncentivesIndexRedirect from "@/pages/crm/incentives/IndexRedirect";
- import { PlansPage } from "@/pages/crm/incentives/PlansPage";
- import { RulesPage } from "@/pages/crm/incentives/RulesPage";
- import { TiersPage } from "@/pages/crm/incentives/TiersPage";
- import { ProgramsPage } from "@/pages/crm/incentives/ProgramsPage";
- import { PayoutsPage } from "@/pages/crm/incentives/PayoutsPage";
- import { AdjustmentsPage } from "@/pages/crm/incentives/AdjustmentsPage";
- import { ApprovalsPage } from "@/pages/crm/incentives/ApprovalsPage";
- import { ReportsPage } from "@/pages/crm/incentives/ReportsPage";
- import { AuditPage } from "@/pages/crm/incentives/AuditPage";
+/* -------- CRM: Incentives -------- */
+import IncentivesLayout from "@/pages/crm/incentives/IncentivesLayout";
+import IncentivesIndexRedirect from "@/pages/crm/incentives/IndexRedirect";
+import { PlansPage } from "@/pages/crm/incentives/PlansPage";
+import { RulesPage } from "@/pages/crm/incentives/RulesPage";
+import { TiersPage } from "@/pages/crm/incentives/TiersPage";
+import { ProgramsPage } from "@/pages/crm/incentives/ProgramsPage";
+import { PayoutsPage } from "@/pages/crm/incentives/PayoutsPage";
+import { AdjustmentsPage } from "@/pages/crm/incentives/AdjustmentsPage";
+import { ApprovalsPage } from "@/pages/crm/incentives/ApprovalsPage";
+import { ReportsPage } from "@/pages/crm/incentives/ReportsPage";
+import { AuditPage } from "@/pages/crm/incentives/AuditPage";
 
- import DealsLayout from "@/pages/crm/deals/DealsLayout";
- import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect";
- import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
- import DealsList from "@/pages/crm/deals/DealsList";
+/* -------- CRM: Deals -------- */
+import DealsLayout from "@/pages/crm/deals/DealsLayout";
+import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect";
+import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
+import DealsList from "@/pages/crm/deals/DealsList";
 
 class ErrorBoundary extends React.Component {
   constructor(p) {
@@ -85,6 +86,9 @@ function Health() {
   );
 }
 
+/* Pathless outlet for grouping /app/crm routes if needed elsewhere */
+const CrmOutlet = () => <Outlet />;
+
 export default function App() {
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200">
@@ -97,44 +101,53 @@ export default function App() {
           <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/health" element={<Health />} />
 
-          {/* Protected branches */}
+          {/* Protected: Dashboard branch */}
           <Route path="/dashboard/*" element={<ProtectedShell />}>
             <Route index element={<DashboardPage />} />
             <Route path="companies" element={<CompaniesPage />} />
           </Route>
 
+          {/* Protected: App branch */}
           <Route path="/app/*" element={<ProtectedShell />}>
-            {/* 🔄 Changed default from Leads to Dashboard */}
+            {/* Default inside /app — you set this to Dashboard on purpose */}
             <Route index element={<Navigate to="/dashboard" replace />} />
-            <Route path="crm/leads" element={<LeadsPage />} />
-            <Route path="crm/leads/new" element={<LeadCreate />} />
-            {/* ⬇️ AI pages now inside the shell */}
-            <Route path="crm/discover" element={<DiscoverLeads />} />
-            <Route path="leads/imports/:id" element={<ImportReview />} />
 
+            {/* CRM top-level group */}
+            <Route path="crm" element={<CrmOutlet />}>
+              {/* Leads */}
+              <Route path="leads" element={<LeadsPage />} />
+              <Route path="leads/new" element={<LeadCreate />} />
+              {/* AI pages inside the shell */}
+              <Route path="discover" element={<DiscoverLeads />} />
+
+              {/* Deals — sibling of Incentives under /app/crm */}
+              <Route path="deals" element={<DealsLayout />}>
+                <Route index element={<DealsIndexRedirect />} />
+                <Route path="pipeline" element={<DealsPipeline />} />
+                <Route path="list" element={<DealsList />} />
+              </Route>
+
+              {/* Incentives — sibling of Deals under /app/crm */}
+              <Route path="incentives" element={<IncentivesLayout />}>
+                <Route index element={<IncentivesIndexRedirect />} />
+                <Route path="plans" element={<PlansPage />} />
+                <Route path="rules" element={<RulesPage />} />
+                <Route path="tiers" element={<TiersPage />} />
+                <Route path="programs" element={<ProgramsPage />} />
+                <Route path="payouts" element={<PayoutsPage />} />
+                <Route path="adjustments" element={<AdjustmentsPage />} />
+                <Route path="approvals" element={<ApprovalsPage />} />
+                <Route path="reports" element={<ReportsPage />} />
+                <Route path="audit" element={<AuditPage />} />
+              </Route>
+            </Route>
+
+            {/* Keep your previous imports path if that's intended */}
+            <Route path="leads/imports/:id" element={<ImportReview />} />
           </Route>
-          <Route path="/app/crm/incentives" element={<IncentivesLayout />}> 
-    <Route index element={<IncentivesIndexRedirect />} />
-     <Route path="plans" element={<PlansPage />} />
-     <Route path="rules" element={<RulesPage />} />
-     <Route path="tiers" element={<TiersPage />} />
-     <Route path="programs" element={<ProgramsPage />} />
-     <Route path="payouts" element={<PayoutsPage />} />
-     <Route path="adjustments" element={<AdjustmentsPage />} />
-     <Route path="approvals" element={<ApprovalsPage />} />
-     <Route path="reports" element={<ReportsPage />} />
-     <Route path="audit" element={<AuditPage />} />
-      <Route path="/app/crm/deals" element={<DealsLayout />}> 
-     <Route index element={<DealsIndexRedirect />} />
-     <Route path="pipeline" element={<DealsPipeline />} />
-     <Route path="list" element={<DealsList />} />
-   </Route>
-   </Route>
-          {/* Redirects */}
-          <Route
-            path="/dashboard/app/*"
-            element={<Navigate to="/app" replace />}
-          />
+
+          {/* Redirect helpers */}
+          <Route path="/dashboard/app/*" element={<Navigate to="/app" replace />} />
           <Route path="*" element={<Navigate to="/health" replace />} />
         </Routes>
       </ErrorBoundary>
