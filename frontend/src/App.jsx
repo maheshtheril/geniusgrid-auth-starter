@@ -38,6 +38,8 @@ import DealsList from "@/pages/crm/deals/DealsList";
 /* -------- CRM: Extras (Contacts, Calls, Tasks, Reports, Notifications, Settings) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 
+import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
+
 class ErrorBoundary extends React.Component {
   constructor(p) {
     super(p);
@@ -146,6 +148,7 @@ export default function App() {
 
               {/* Extras: Contacts, Calls, Tasks, CRM Reports, Notifications, Settings */}
               {crmExtraRoutes}
+              {crmCompanyRoutes}
             </Route>
 
             {/* Non-CRM under /app */}
