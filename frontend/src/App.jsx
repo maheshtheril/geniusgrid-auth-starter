@@ -1,7 +1,7 @@
 // ---------- FILE: src/pages/crm/deals/DealsLayout.jsx (No Help) ----------
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Briefcase, Plus, Upload, Download, Search } from "lucide-react"; // ← no HelpCircle
+import { Briefcase, Plus, Upload, Download, Search } from "lucide-react";
 import axios from "axios";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,7 +70,7 @@ export default function DealsLayout(){
       if (!typing && (e.key === "n" || e.key === "N") && !e.ctrlKey && !e.metaKey) {
         e.preventDefault(); setShowNew(true); // open drawer
       }
-      // ⛔ removed "?" → help
+      // (Help removed)
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -127,7 +127,6 @@ export default function DealsLayout(){
             <Button variant="secondary" className="gap-2" onClick={()=>navigate(`/app/crm/deals/export?q=${encodeURIComponent(q)}`)}>
               <Download className="h-4"/> Export
             </Button>
-            {/* ⛔ removed Help button */}
           </div>
         </div>
       </div>
@@ -166,8 +165,6 @@ export default function DealsLayout(){
         deal={initialDraft}
         onSave={handleCreate}
       />
-
-      {/* ⛔ removed mobile Help FAB */}
     </div>
   );
 }
