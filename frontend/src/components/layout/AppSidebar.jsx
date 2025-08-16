@@ -1,3 +1,4 @@
+// src/components/layout/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef } from "react";
 import { useEnv } from "@/store/useEnv";
@@ -28,14 +29,13 @@ function getParentsOnly(items) {
     id: raw.id ?? raw.ID,
     code: raw.code ?? raw.Code,
     label: raw.label ?? raw.Label ?? "",
-    path: normPath(raw.path ?? raw Path),
+    path: normPath(raw.path ?? raw.Path),        // <-- fixed
     icon: raw.icon ?? raw.Icon ?? null,
     parent_id: toNull(raw.parent_id ?? raw.parentId ?? raw.parentID),
     module_code: raw.module_code ?? raw.moduleCode ?? null,
     sort_order: toNum(raw.sort_order ?? raw.sortOrder),
   }));
 
-  // Strict roots: parent_id must be NULL/empty
   const roots = rows.filter((r) => r.parent_id === null);
 
   // Optional: drop any literal "Main"
@@ -89,7 +89,6 @@ export default function AppSidebar() {
               ].join(" ")
             }
           >
-            {/* optional DB icon (emoji/string) */}
             {node.icon ? <span className="w-4 h-4">{node.icon}</span> : <span className="w-4 h-4" />}
             <span className="truncate">{node.label || node.code}</span>
           </NavLink>
