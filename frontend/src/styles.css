@@ -73,3 +73,22 @@
   padding:12px 16px; border-top:1px solid var(--border);
   color: var(--muted); font-size:.9rem;
 }
+/* Ensure flex/grid ancestors allow vertical scrolling inside children */
+#root, .app-shell { min-height: 0; height: 100dvh; }
+.app-shell { display: flex; }
+
+/* Sidebar + scroll region */
+.app-sidebar { min-height: 0; }
+.app-sidebar .nav-scroll { min-height: 0; overflow-y: auto; overflow-x: hidden; }
+
+/* Prevent horizontal overflow from long labels */
+.app-nav, .nav-node, .app-link { min-width: 0; }
+.app-link { display: flex; align-items: center; gap: .5rem; border-radius: .5rem; padding: .4rem .5rem; text-decoration: none; }
+.app-link .nav-label, .app-link span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.app-link:hover { background: rgba(255,255,255,.06); }
+.app-link.active { background: rgba(255,255,255,.12); font-weight: 600; }
+
+/* Optional: nicer sidebar scrollbar */
+.app-sidebar .nav-scroll::-webkit-scrollbar { width: 10px; }
+.app-sidebar .nav-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 8px; }
+.app-sidebar .nav-scroll:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,.25); }

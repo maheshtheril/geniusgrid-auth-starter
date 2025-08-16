@@ -1,5 +1,5 @@
 // -----------------------------------------------
-// src/components/AppSidebar.jsx  (structure-first + brand header)
+// src/components/Sidebar.jsx  (structure-first + brand header)
 // -----------------------------------------------
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -13,15 +13,6 @@ function normPath(p) {
 }
 function pathParts(p) {
   return (normPath(p) || "").split("/").filter(Boolean);
-}
-function isParentPath(p, items) {
-  const parts = pathParts(p);
-  return items.some(
-    (r) =>
-      r.path &&
-      r.path.startsWith(p + "/") &&
-      pathParts(r.path).length > parts.length
-  );
 }
 const cmp = (a, b) =>
   (a.sort_order ?? a.order ?? 0) - (b.sort_order ?? b.order ?? 0) ||
@@ -84,14 +75,12 @@ function buildTree(items = []) {
     }
     return null;
   }
-  for (const node of Object.values(byId)) {
-    if (roots.includes(node)) {
-      const p = findClosestParentByPath(node);
-      if (p) {
-        p.children.push(node);
-        const idx = roots.indexOf(node);
-        if (idx >= 0) roots.splice(idx, 1);
-      }
+  for (const node of [...roots]) {
+    const p = findClosestParentByPath(node);
+    if (p) {
+      if (!p.children.some((c) => c.id === node.id)) p.children.push(node);
+      const idx = roots.indexOf(node);
+      if (idx >= 0) roots.splice(idx, 1);
     }
   }
 
@@ -202,12 +191,13 @@ function Collapse({ open, children, id }) {
       ref={ref}
       style={{
         maxHeight: typeof height === "number" ? height + "px" : height,
-        overflow: "hidden",
+        overflow: "hidden",        // keeps animation clean
         transition: "max-height .2s ease",
         marginLeft: 10,
         paddingLeft: 8,
         borderLeft: "1px solid var(--border)",
         willChange: "max-height",
+        contain: "layout",         // avoid layout thrash
       }}
     >
       {children}
@@ -217,6 +207,7 @@ function Collapse({ open, children, id }) {
 
 /* ------------- simple icon renderer ------------- */
 function NodeIcon({ icon }) {
+  // emoji supported; fallback dot
   if (!icon) return <span className="nav-dot" />;
   return (
     <span className="nav-emoji" aria-hidden>
@@ -230,7 +221,6 @@ function Leaf({ node, depth, onActiveRef }) {
   const location = useLocation();
   const ref = useRef(null);
   useEffect(() => {
-    // if this leaf is active, ask parent to scroll it into view
     const isActive = node.path && location.pathname === node.path;
     if (isActive && ref.current && onActiveRef) onActiveRef(ref.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -245,7 +235,7 @@ function Leaf({ node, depth, onActiveRef }) {
         style={{ paddingLeft: 12 + depth * 14 }}
       >
         <NodeIcon icon={node.icon} />
-        <span>{node.name}</span>
+        <span className="truncate">{node.name}</span>
       </NavLink>
     </div>
   );
@@ -270,18 +260,12 @@ function Group({ node, depth, parents, openSet, setOpen, onActiveRef }) {
         className="app-link nav-toggle"
         style={{ paddingLeft: 12 + depth * 14 }}
         onClick={toggle}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            toggle();
-          }
-        }}
         aria-expanded={isOpen}
         aria-controls={idSlug}
         title={node.name}
       >
         <NodeIcon icon={node.icon} />
-        <span className="nav-label">{node.name}</span>
+        <span className="nav-label truncate">{node.name}</span>
         <span className="ml-auto opacity-60"><Caret open={isOpen} /></span>
       </button>
 
@@ -309,24 +293,6 @@ function Group({ node, depth, parents, openSet, setOpen, onActiveRef }) {
 /* ------------- Sidebar ------------- */
 export default function AppSidebar() {
   const { menus, branding, tenant } = useEnv() || {};
-  const location = useLocation();
-
-  // Brand header (falls back gracefully)
-  const appName =
-    branding?.app_name ||
-    branding?.appName ||
-    "GeniusGrid";
-  const tenantName =
-    tenant?.name ||
-    branding?.tenant_name ||
-    branding?.tenantName ||
-    "";
-  const logoUrl =
-    branding?.logo_url ||
-    branding?.logoUrl ||
-    branding?.logo ||
-    null;
-
   const tree = useMemo(() => buildTree(menus || []), [menus]);
 
   // determine which nodes are parents
@@ -344,7 +310,7 @@ export default function AppSidebar() {
 
   useLocation(); // keep NavLink active state in sync
 
-  // Persisted open groups (kept as-is from your version)
+  // Persisted open groups (left as-is)
   const [open, setOpen] = useState(() => {
     try {
       const raw = localStorage.getItem("__gg_menu_open_keys");
@@ -357,8 +323,7 @@ export default function AppSidebar() {
     localStorage.setItem("__gg_menu_open_keys", JSON.stringify([...open]));
   }, [open]);
 
-  // ---- New: scroll handling (menu scroll area only) ----
-  const sidebarRef = useRef(null);
+  // ---- vertical scroll only (inside .nav-scroll) ----
   const scrollAreaRef = useRef(null);
   const onActiveRef = (el) => {
     const scroller = scrollAreaRef.current;
@@ -367,34 +332,32 @@ export default function AppSidebar() {
     const scRect = scroller.getBoundingClientRect();
     const above = elRect.top < scRect.top;
     const below = elRect.bottom > scRect.bottom;
-    if (above || below) {
-      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
+    if (above || below) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
   };
+
+  // Brand header (falls back gracefully)
+  const appName   = branding?.app_name || branding?.appName || "GeniusGrid";
+  const tenantName = tenant?.name || branding?.tenant_name || branding?.tenantName || "";
+  const logoUrl    = branding?.logo_url || branding?.logoUrl || branding?.logo || null;
 
   return (
     <aside
       className="app-sidebar"
-      ref={sidebarRef}
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "100dvh",
-        minHeight: 0,
+        height: "100dvh",   // full viewport height including mobile safe areas
+        minHeight: 0,       // CRITICAL so flex child can shrink & scroll
         width: 280,
         maxWidth: 320,
         borderRight: "1px solid var(--border)",
-        overflow: "hidden", // inner scroll will handle overflow
+        overflow: "hidden", // prevent page-level scrollbars; inner handles it
       }}
     >
-      {/* ---- Brand header (App + Tenant) ---- */}
+      {/* ---- Brand header ---- */}
       <NavLink to="/app" className="flex items-center gap-3 px-3 py-2 mb-2 rounded-xl hover:bg-white/5">
         {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt={`${appName} logo`}
-            className="w-8 h-8 rounded-md object-contain bg-white/10"
-          />
+          <img src={logoUrl} alt={`${appName} logo`} className="w-8 h-8 rounded-md object-contain bg-white/10" />
         ) : (
           <div className="w-8 h-8 rounded-md grid place-items-center bg-white/10 text-white/80 text-sm font-semibold">
             {String(appName).slice(0, 2).toUpperCase()}
@@ -402,20 +365,19 @@ export default function AppSidebar() {
         )}
         <div className="min-w-0">
           <div className="text-sm font-semibold leading-tight truncate">{appName}</div>
-          {tenantName ? (
-            <div className="text-[11px] text-white/60 leading-tight truncate">{tenantName}</div>
-          ) : null}
+          {tenantName ? <div className="text-[11px] text-white/60 leading-tight truncate">{tenantName}</div> : null}
         </div>
       </NavLink>
 
-      {/* ---- Scrollable middle section (Menu header + nav) ---- */}
+      {/* ---- Scrollable middle (vertical only) ---- */}
       <div
         className="nav-scroll"
         ref={scrollAreaRef}
         style={{
           flex: "1 1 auto",
-          minHeight: 0,          // critical for overflow in flex
-          overflowY: "auto",
+          minHeight: 0,         // CRITICAL (fixes “half page cut”)
+          overflowY: "auto",    // vertical scroll
+          overflowX: "hidden",  // no horizontal scroll
           overscrollBehavior: "contain",
           scrollBehavior: "smooth",
           paddingBottom: "0.75rem",
@@ -423,7 +385,7 @@ export default function AppSidebar() {
       >
         <div className="sidebar-head">Menu</div>
 
-        <nav className="app-nav">
+        <nav className="app-nav" style={{ paddingRight: 8 }}>
           {tree.length ? (
             tree.map((n) =>
               allParents.has(n) ? (
