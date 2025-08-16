@@ -157,7 +157,7 @@ export default function DealsLayout(){
 
       {/* Content */}
       <div className="bg-card rounded-2xl border p-3 md:p-4">
-        <Outlet />
+      <Outlet context={{ openNewDeal: () => setShowNew(true) }} />
       </div>
 
       {/* New Deal Drawer */}
