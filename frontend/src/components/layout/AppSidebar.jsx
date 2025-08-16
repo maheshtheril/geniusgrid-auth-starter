@@ -36,11 +36,8 @@ function buildTree(items) {
 
   const roots = [];
   byId.forEach((n) => {
-    if (n.parent_id && byId.has(n.parent_id)) {
-      children.get(n.parent_id).push(n);
-    } else {
-      roots.push(n);
-    }
+    if (n.parent_id && byId.has(n.parent_id)) children.get(n.parent_id).push(n);
+    else roots.push(n);
   });
 
   const sortRec = (node) => {
@@ -50,10 +47,12 @@ function buildTree(items) {
   };
 
   roots.sort(byOrderThenLabel);
-  return roots.map(sortRec);
+  // hard-remove any root literally labeled "Main"
+  const tree = roots.filter(r => String(r.label).trim().toLowerCase() !== "main").map(sortRec);
+  return tree;
 }
 
-/* tiny chevrons (no extra deps) */
+/* inline chevrons */
 const ChevronRight = ({ className = "w-3.5 h-3.5" }) => (
   <svg viewBox="0 0 24 24" className={className} aria-hidden><path fill="currentColor" d="M9 18l6-6-6-6"/></svg>
 );
@@ -68,7 +67,7 @@ export default function AppSidebar() {
 
   const roots = useMemo(() => buildTree(menus || []), [menus]);
 
-  // Keep active item in view
+  // Keep active link in view
   useEffect(() => {
     const el = scrollerRef.current?.querySelector('a[aria-current="page"]');
     if (el && scrollerRef.current) {
@@ -85,7 +84,7 @@ export default function AppSidebar() {
     const [open, setOpen] = useState(isRoot); // roots open by default
     const pad = depth > 0 ? "ml-3" : "";
 
-    // ROOTS render as headers (non-click) so we start with parent, not submenus
+    // ROOTS render as headers (non-link)
     if (isRoot) {
       return (
         <div className="group" key={node.id}>
@@ -93,9 +92,9 @@ export default function AppSidebar() {
             type="button"
             onClick={() => hasChildren && setOpen(v => !v)}
             className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
+            aria-expanded={open}
           >
             {hasChildren ? (open ? <ChevronDown className="opacity-70" /> : <ChevronRight className="opacity-70" />) : <span className="w-3.5 h-3.5" />}
-            {node.icon ? <span className="w-4 h-4">{node.icon}</span> : null}
             <span className="truncate">{node.label}</span>
           </button>
           {hasChildren && open && (
@@ -123,7 +122,6 @@ export default function AppSidebar() {
             }
           >
             <span className="w-3.5 h-3.5" />
-            {node.icon ? <span className="w-4 h-4">{node.icon}</span> : null}
             <span className="truncate">{node.label}</span>
           </NavLink>
           {hasChildren && (
@@ -142,9 +140,9 @@ export default function AppSidebar() {
           type="button"
           onClick={() => hasChildren && setOpen(v => !v)}
           className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
+          aria-expanded={open}
         >
           {hasChildren ? (open ? <ChevronDown className="opacity-70" /> : <ChevronRight className="opacity-70" />) : <span className="w-3.5 h-3.5" />}
-          {node.icon ? <span className="w-4 h-4">{node.icon}</span> : null}
           <span className="truncate">{node.label}</span>
         </button>
         {hasChildren && open && (
@@ -156,8 +154,15 @@ export default function AppSidebar() {
     );
   }
 
+  // FORCE full-width (prevents icon-only "mini" collapse from container styles)
+  const fixedWidth = 256; // 16rem
+
   return (
-    <aside className="w-64 shrink-0 bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col">
+    <aside
+      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
+      style={{ flex: `0 0 ${fixedWidth}px`, width: fixedWidth, minWidth: fixedWidth, maxWidth: fixedWidth }}
+      data-collapsed="false"
+    >
       <div className="h-14 px-3 flex items-center gap-2 border-b border-gray-800">
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
