@@ -16,6 +16,19 @@ import LeadCreate from "@/pages/LeadCreate.jsx"; // needs vite alias "@"
 import DiscoverLeads from "@/pages/leads/DiscoverLeads.jsx";
 import ImportReview from "@/pages/leads/ImportReview.jsx";
 
+ 
+ import IncentivesLayout from "@/pages/crm/incentives/IncentivesLayout";
+ import IncentivesIndexRedirect from "@/pages/crm/incentives/IndexRedirect";
+ import { PlansPage } from "@/pages/crm/incentives/PlansPage";
+ import { RulesPage } from "@/pages/crm/incentives/RulesPage";
+ import { TiersPage } from "@/pages/crm/incentives/TiersPage";
+ import { ProgramsPage } from "@/pages/crm/incentives/ProgramsPage";
+ import { PayoutsPage } from "@/pages/crm/incentives/PayoutsPage";
+ import { AdjustmentsPage } from "@/pages/crm/incentives/AdjustmentsPage";
+ import { ApprovalsPage } from "@/pages/crm/incentives/ApprovalsPage";
+ import { ReportsPage } from "@/pages/crm/incentives/ReportsPage";
+ import { AuditPage } from "@/pages/crm/incentives/AuditPage";
+
 class ErrorBoundary extends React.Component {
   constructor(p) {
     super(p);
@@ -93,8 +106,20 @@ export default function App() {
             {/* ⬇️ AI pages now inside the shell */}
             <Route path="crm/discover" element={<DiscoverLeads />} />
             <Route path="leads/imports/:id" element={<ImportReview />} />
-          </Route>
 
+          </Route>
+          <Route path="/app/crm/incentives" element={<IncentivesLayout />}> 
+    <Route index element={<IncentivesIndexRedirect />} />
+     <Route path="plans" element={<PlansPage />} />
+     <Route path="rules" element={<RulesPage />} />
+     <Route path="tiers" element={<TiersPage />} />
+     <Route path="programs" element={<ProgramsPage />} />
+     <Route path="payouts" element={<PayoutsPage />} />
+     <Route path="adjustments" element={<AdjustmentsPage />} />
+     <Route path="approvals" element={<ApprovalsPage />} />
+     <Route path="reports" element={<ReportsPage />} />
+     <Route path="audit" element={<AuditPage />} />
+   </Route>
           {/* Redirects */}
           <Route
             path="/dashboard/app/*"
