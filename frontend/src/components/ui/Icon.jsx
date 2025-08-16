@@ -1,9 +1,13 @@
-// -----------------------------------------------
-// src/components/ui/Icon.jsx
-// -----------------------------------------------
-import * as Icons from "lucide-react";
-export default function Icon({ name = "Dot", className = "w-4 h-4" }) {
-  const Cmp = Icons[name] || Icons.Dot;
-  return <Cmp className={className} aria-hidden />;
-}
+import React from "react";
 
+export default function Icon({ name, className = "", ...props }) {
+  // simple fallback icon
+  return (
+    <span
+      className={`inline-block w-5 h-5 bg-muted text-xs grid place-items-center rounded ${className}`}
+      {...props}
+    >
+      {name?.[0] || "?"}
+    </span>
+  );
+}
