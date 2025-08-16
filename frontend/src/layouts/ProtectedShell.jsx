@@ -1,30 +1,38 @@
-// src/layouts/ProtectedShell.jsx
-import React, { memo, useMemo } from "react";
-import ProtectedLayout from "./ProtectedLayout";
-import AppSidebar from "@/components/layout/AppSidebar";
-import AppTopbar from "@/components/layout/AppTopbar";
-import { Outlet, useLocation } from "react-router-dom";
+// src/layouts/ProtectedLayout.jsx
+import { useEffect, useRef } from "react";
+import { useEnv } from "@/store/useEnv";
+import { useNavigate } from "react-router-dom";
 
-function ProtectedShell() {
-  const { pathname } = useLocation();
+export default function ProtectedLayout({ children }) {
+  const { ready, bootstrap } = useEnv();
+  const bootedRef = useRef(false);
+  const navigate = useNavigate();
 
-  const sidebarEl = useMemo(() => <AppSidebar />, []);
-  const topbarEl  = useMemo(() => <AppTopbar />, []);
-  const outletEl  = useMemo(() => <Outlet />, [pathname]);
+  useEffect(() => {
+    if (bootedRef.current) return;
+    bootedRef.current = true;
 
-  return (
-    <ProtectedLayout>
-      <div className="app-shell">
-        {sidebarEl}
-        <main className="app-main">
-          {topbarEl}
-          <div className="app-content">
-            {outletEl}
-          </div>
-        </main>
+    (async () => {
+      try {
+        await bootstrap();                // should set ready=true on success
+      } catch (e) {
+        const status = e?.response?.status || e?.status;
+        if (status === 401) {
+          navigate("/login", { replace: true });  // <-- key change
+          return;
+        }
+        console.error("bootstrap failed", e);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!ready) {
+    return (
+      <div className="h-screen w-screen grid place-items-center text-sm opacity-70">
+        Loading workspace…
       </div>
-    </ProtectedLayout>
-  );
+    );
+  }
+  return children;
 }
-
-export default memo(ProtectedShell);
