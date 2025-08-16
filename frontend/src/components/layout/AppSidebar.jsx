@@ -85,7 +85,7 @@ const MENUS = [
   { id: "crm-incentives-tiers",     code: "crm.incentives.tiers",     label: "Slabs & Tiers",path: "/app/crm/incentives/tiers",     icon: "🪜", parent_id: "crm-incentives", sort_order: 703 },
   { id: "crm-incentives-programs",  code: "crm.incentives.programs",  label: "Programs",     path: "/app/crm/incentives/programs",  icon: "🎯", parent_id: "crm-incentives", sort_order: 704 },
   { id: "crm-incentives-payouts",   code: "crm.incentives.payouts",   label: "Payouts",      path: "/app/crm/incentives/payouts",   icon: "💸", parent_id: "crm-incentives", sort_order: 705 },
-  { id: "crm-incentives-adjust",    code: "crm.incentives.adjust",    label: "Adjustments",  path: "/app/crm/incentives/adjust",    icon: "🧾", parent_id: "crm-incentives", sort_order: 706 },
+  { id: "crm-incentives-adjust",    code: "crm.incentives.adjust",    label: "Adjustments",  path: "/app/crm/incentives/Adjustments",    icon: "🧾", parent_id: "crm-incentives", sort_order: 706 },
   { id: "crm-incentives-approvals", code: "crm.incentives.approvals", label: "Approvals",    path: "/app/crm/incentives/approvals", icon: "✅", parent_id: "crm-incentives", sort_order: 707 },
   { id: "crm-incentives-reporting", code: "crm.incentives.reporting", label: "Reports",      path: "/app/crm/incentives/reports",   icon: "📊", parent_id: "crm-incentives", sort_order: 708 },
   { id: "crm-incentives-audit",     code: "crm.incentives.audit",     label: "Audit",        path: "/app/crm/incentives/audit",     icon: "📜", parent_id: "crm-incentives", sort_order: 709 },
