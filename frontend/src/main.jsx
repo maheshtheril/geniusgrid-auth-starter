@@ -1,6 +1,7 @@
 // src/main.jsx
 import "./styles/theme-runtime.css";
 import "./styles.css";
+import "@/styles/sidebar.css";
 
 import React from "react";
 import { createRoot } from "react-dom/client";

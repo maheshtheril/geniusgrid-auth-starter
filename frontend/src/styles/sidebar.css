@@ -1,0 +1,12 @@
+/* relies on Tailwind; swap @apply for raw CSS if needed */
+.app-sidebar { @apply hidden md:flex md:flex-col w-64 shrink-0 bg-gradient-to-b from-slate-950 to-slate-900 text-slate-100 border-r border-white/10 p-3; }
+.sidebar-head { @apply px-2 py-1 text-[10px] uppercase tracking-wider text-white/40; }
+.app-nav { @apply mt-2 space-y-1; }
+
+.app-link { @apply flex items-center gap-2 rounded-xl px-3 py-2 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors; }
+.app-link.active { @apply bg-white/10 text-white border-l-2 border-l-blue-500; }
+
+.nav-toggle { @apply w-full text-left font-medium; }
+.nav-dot { @apply w-1.5 h-1.5 rounded-full bg-white/40 mr-1; }
+
+.sidebar-foot { @apply mt-auto pt-4 text-[10px] text-white/30; }
