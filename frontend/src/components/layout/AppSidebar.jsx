@@ -18,26 +18,34 @@ const cmp = (a, b) =>
   (a.sort_order ?? a.order ?? 0) - (b.sort_order ?? b.order ?? 0) ||
   String(a.name || "").localeCompare(String(b.name || ""));
 
-/* ------------- normalize menu row ------------- */
+/* ------------- normalize menu row (case-insensitive fields) ------------- */
 function norm(row) {
+  const codeRaw = String(row.code ?? row.name ?? "").trim();
+  const parentCodeRaw = row.parent_code != null ? String(row.parent_code).trim() : null;
+  const path = normPath(row.path ?? row.url ?? row.route);
+  const moduleRaw = row.module ?? row.module_code ?? row.moduleCode ?? null;
+
   return {
     id: String(row.id ?? row.menu_id ?? row.menuId ?? row.code ?? Math.random().toString(36).slice(2)),
-    code: String(row.code ?? row.name ?? ""),
+    code: codeRaw,
+    code_lc: codeRaw.toLowerCase(),
+    parent_code: parentCodeRaw,
+    parent_code_lc: parentCodeRaw ? parentCodeRaw.toLowerCase() : null,
     name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
-    path: normPath(row.path ?? row.url ?? row.route),
+    path,
     icon: row.icon ?? null,
     sort_order: row.sort_order ?? row.order ?? 0,
     order: row.order ?? row.sort_order ?? 0,
     parent_id: row.parent_id ? String(row.parent_id) : null,
-    parent_code: row.parent_code ?? null,
+    module_hint_lc: moduleRaw ? String(moduleRaw).toLowerCase() : null,
   };
 }
 
-/* ------------- build tree (parent_id → parent_code → path) ------------- */
+/* ------------- build tree (parent_id → parent_code → path + robust Admin/CRM bucketing) ------------- */
 function buildTree(items = []) {
   const src = items.map(norm);
   const byId = Object.fromEntries(src.map((r) => [r.id, { ...r, children: [] }]));
-  const byCode = Object.fromEntries(src.map((r) => [r.code, byId[r.id]]));
+  const byCodeLC = Object.fromEntries(src.map((r) => [r.code_lc, byId[r.id]]));
 
   // 1) attach using parent_id
   const roots = [];
@@ -50,11 +58,11 @@ function buildTree(items = []) {
     }
   }
 
-  // 2) attach using parent_code
+  // 2) attach using parent_code (case-insensitive)
   for (const r of src) {
     const node = byId[r.id];
-    if (!node.parent_id && r.parent_code && byCode[r.parent_code]) {
-      const p = byCode[r.parent_code];
+    if (!node.parent_id && r.parent_code_lc && byCodeLC[r.parent_code_lc]) {
+      const p = byCodeLC[r.parent_code_lc];
       if (!p.children.some((c) => c.id === node.id)) {
         p.children.push(node);
         const idx = roots.indexOf(node);
@@ -84,15 +92,50 @@ function buildTree(items = []) {
     }
   }
 
-  // 4) ensure Admin/CRM roots exist if children exist
-  const needAdmin = src.some((r) => r.code === "admin" || r.code.startsWith("admin."));
-  const needCrm = src.some((r) => r.code === "crm" || r.code.startsWith("crm."));
+  // 4) robust bucket detection (admin/crm) via code/parent/module/path
+  const isAdminish = (r) => {
+    const code = r.code_lc || "";
+    const pcode = r.parent_code_lc || "";
+    const mod = r.module_hint_lc || "";
+    const path = r.path || "";
+    return (
+      code === "admin" ||
+      code.startsWith("admin.") ||
+      pcode === "admin" ||
+      pcode?.startsWith?.("admin.") ||
+      mod === "admin" ||
+      /\/app\/admin(\/|$)/i.test(path)
+    );
+  };
+
+  const isCrmish = (r) => {
+    const code = r.code_lc || "";
+    const pcode = r.parent_code_lc || "";
+    const mod = r.module_hint_lc || "";
+    const path = r.path || "";
+    return (
+      code === "crm" ||
+      code.startsWith("crm.") ||
+      pcode === "crm" ||
+      pcode?.startsWith?.("crm.") ||
+      mod === "crm" ||
+      /\/app\/crm(\/|$)/i.test(path)
+    );
+  };
+
+  const needAdmin = src.some(isAdminish);
+  const needCrm   = src.some(isCrmish);
+
   function ensureRoot(code, name, path, icon, order = 10) {
-    let node = Object.values(byId).find((n) => n.code === code);
+    const code_lc = code.toLowerCase();
+    let node =
+      Object.values(byId).find((n) => n.code_lc === code_lc) ||
+      Object.values(byId).find((n) => n.code === code);
     if (!node) {
       node = {
-        id: `root:${code}`,
+        id: `root:${code_lc}`,
         code,
+        code_lc,
         name,
         path: normPath(path),
         icon,
@@ -105,37 +148,35 @@ function buildTree(items = []) {
     }
     return node;
   }
+
   const adminRoot = needAdmin ? ensureRoot("admin", "Admin", "/app/admin", "⚙️", 10) : null;
   const crmRoot   = needCrm   ? ensureRoot("crm",   "CRM",   "/app/crm",   "🤝", 10) : null;
 
-  // 5) move stray admin.* under Admin root
+  // 5) move stray nodes under their buckets (works for case-variant codes & path/module hints)
   if (adminRoot) {
-    Object.values(byId)
-      .filter((n) => n.code?.startsWith("admin.") && n !== adminRoot)
-      .forEach((n) => {
-        const isRoot = roots.includes(n);
-        if (isRoot) {
-          adminRoot.children.push(n);
-          const idx = roots.indexOf(n);
-          if (idx >= 0) roots.splice(idx, 1);
-        }
-      });
+    Object.values(byId).forEach((n) => {
+      if (n === adminRoot) return;
+      const isRoot = roots.includes(n);
+      if (isRoot && isAdminish(n)) {
+        adminRoot.children.push(n);
+        const idx = roots.indexOf(n);
+        if (idx >= 0) roots.splice(idx, 1);
+      }
+    });
   }
-  // 6) move stray crm.* under CRM root
   if (crmRoot) {
-    Object.values(byId)
-      .filter((n) => n.code?.startsWith("crm.") && n !== crmRoot)
-      .forEach((n) => {
-        const isRoot = roots.includes(n);
-        if (isRoot) {
-          crmRoot.children.push(n);
-          const idx = roots.indexOf(n);
-          if (idx >= 0) roots.splice(idx, 1);
-        }
-      });
+    Object.values(byId).forEach((n) => {
+      if (n === crmRoot) return;
+      const isRoot = roots.includes(n);
+      if (isRoot && isCrmish(n)) {
+        crmRoot.children.push(n);
+        const idx = roots.indexOf(n);
+        if (idx >= 0) roots.splice(idx, 1);
+      }
+    });
   }
 
-  // 7) sort
+  // 6) sort
   const sortDeep = (arr) => {
     arr.sort(cmp);
     arr.forEach((n) => n.children?.length && sortDeep(n.children));
@@ -191,13 +232,13 @@ function Collapse({ open, children, id }) {
       ref={ref}
       style={{
         maxHeight: typeof height === "number" ? height + "px" : height,
-        overflow: "hidden",        // keeps animation clean
+        overflow: "hidden",
         transition: "max-height .2s ease",
         marginLeft: 10,
         paddingLeft: 8,
         borderLeft: "1px solid var(--border)",
         willChange: "max-height",
-        contain: "layout",         // avoid layout thrash
+        contain: "layout",
       }}
     >
       {children}
@@ -207,7 +248,6 @@ function Collapse({ open, children, id }) {
 
 /* ------------- simple icon renderer ------------- */
 function NodeIcon({ icon }) {
-  // emoji supported; fallback dot
   if (!icon) return <span className="nav-dot" />;
   return (
     <span className="nav-emoji" aria-hidden>
@@ -310,7 +350,7 @@ export default function AppSidebar() {
 
   useLocation(); // keep NavLink active state in sync
 
-  // Persisted open groups (left as-is)
+  // Persisted open groups
   const [open, setOpen] = useState(() => {
     try {
       const raw = localStorage.getItem("__gg_menu_open_keys");
@@ -332,11 +372,11 @@ export default function AppSidebar() {
     const scRect = scroller.getBoundingClientRect();
     const above = elRect.top < scRect.top;
     const below = elRect.bottom > scRect.bottom;
-    if (above || below) el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    if (above || below) el.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
   };
 
   // Brand header (falls back gracefully)
-  const appName   = branding?.app_name || branding?.appName || "GeniusGrid";
+  const appName    = branding?.app_name || branding?.appName || "GeniusGrid";
   const tenantName = tenant?.name || branding?.tenant_name || branding?.tenantName || "";
   const logoUrl    = branding?.logo_url || branding?.logoUrl || branding?.logo || null;
 
@@ -346,12 +386,12 @@ export default function AppSidebar() {
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "100dvh",   // full viewport height including mobile safe areas
-        minHeight: 0,       // CRITICAL so flex child can shrink & scroll
+        height: "100dvh",
+        minHeight: 0,
         width: 280,
         maxWidth: 320,
         borderRight: "1px solid var(--border)",
-        overflow: "hidden", // prevent page-level scrollbars; inner handles it
+        overflow: "hidden",
       }}
     >
       {/* ---- Brand header ---- */}
@@ -375,9 +415,9 @@ export default function AppSidebar() {
         ref={scrollAreaRef}
         style={{
           flex: "1 1 auto",
-          minHeight: 0,         // CRITICAL (fixes “half page cut”)
-          overflowY: "auto",    // vertical scroll
-          overflowX: "hidden",  // no horizontal scroll
+          minHeight: 0,
+          overflowY: "auto",
+          overflowX: "hidden",
           overscrollBehavior: "contain",
           scrollBehavior: "smooth",
           paddingBottom: "0.75rem",
