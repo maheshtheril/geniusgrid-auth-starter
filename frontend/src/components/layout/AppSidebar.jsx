@@ -3,7 +3,7 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
 
-/* ---------- arrow size (change here) ---------- */
+/* ---------- arrow size ---------- */
 const ARROW_SIZE = 24;
 
 /* ---------- helpers ---------- */
@@ -51,7 +51,6 @@ function buildTree(items) {
     return { ...node, children: kids.map(sortRec) };
   };
 
-  // Sort, remove any root literally labeled "Main"
   roots.sort(byOrderThenLabel);
   return roots
     .filter((r) => String(r.label).trim().toLowerCase() !== "main")
@@ -61,13 +60,7 @@ function buildTree(items) {
 /* ---------- visuals ---------- */
 function Arrow({ open, size = ARROW_SIZE, className = "opacity-80" }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      className={`shrink-0 ${className}`}
-      aria-hidden
-    >
+    <svg width={size} height={size} viewBox="0 0 24 24" className={`shrink-0 ${className}`} aria-hidden>
       <path
         d={open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"}
         stroke="currentColor"
@@ -80,11 +73,7 @@ function Arrow({ open, size = ARROW_SIZE, className = "opacity-80" }) {
   );
 }
 function Placeholder() {
-  return (
-    <span
-      style={{ width: ARROW_SIZE, height: ARROW_SIZE, display: "inline-block" }}
-    />
-  );
+  return <span style={{ width: ARROW_SIZE, height: ARROW_SIZE, display: "inline-block" }} />;
 }
 
 export default function AppSidebar() {
@@ -101,10 +90,7 @@ export default function AppSidebar() {
       const { top: cTop } = scrollerRef.current.getBoundingClientRect();
       const { top: eTop } = el.getBoundingClientRect();
       const delta = eTop - cTop - 120;
-      scrollerRef.current.scrollTo({
-        top: scrollerRef.current.scrollTop + delta,
-        behavior: "smooth",
-      });
+      scrollerRef.current.scrollTo({ top: scrollerRef.current.scrollTop + delta, behavior: "smooth" });
     }
   }, [loc.pathname]);
 
@@ -114,21 +100,17 @@ export default function AppSidebar() {
     const [open, setOpen] = useState(isRoot); // roots open by default
     const pad = depth > 0 ? "ml-3" : "";
 
-    // ROOTS render as headers (non-link) so we start with parent, not submenus
     if (isRoot) {
       return (
         <div className="group" key={node.id}>
           <button
             type="button"
             onClick={() => hasChildren && setOpen((v) => !v)}
-            className={[
-              "flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800/50 w-full text-left",
-              pad,
-            ].join(" ")}
+            className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
             aria-expanded={open}
           >
             {hasChildren ? <Arrow open={open} /> : <Placeholder />}
-            <span className="truncate">{node.label}</span>
+            <span className="gg-nav-text truncate">{node.label || node.code}</span>
           </button>
           {hasChildren && open && (
             <div className="mt-1 space-y-1">
@@ -141,7 +123,6 @@ export default function AppSidebar() {
       );
     }
 
-    // Non-root with a path: clickable link
     if (node.path) {
       return (
         <div key={node.id}>
@@ -157,7 +138,7 @@ export default function AppSidebar() {
             }
           >
             <Placeholder />
-            <span className="truncate">{node.label}</span>
+            <span className="gg-nav-text truncate">{node.label || node.code}</span>
           </NavLink>
           {hasChildren && (
             <div className="mt-1 space-y-1">
@@ -170,20 +151,16 @@ export default function AppSidebar() {
       );
     }
 
-    // Non-root without a path: collapsible header
     return (
       <div className="group" key={node.id}>
         <button
           type="button"
           onClick={() => hasChildren && setOpen((v) => !v)}
-          className={[
-            "flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800/50 w-full text-left",
-            pad,
-          ].join(" ")}
+          className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-200 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
           aria-expanded={open}
         >
           {hasChildren ? <Arrow open={open} /> : <Placeholder />}
-          <span className="truncate">{node.label}</span>
+          <span className="gg-nav-text truncate">{node.label || node.code}</span>
         </button>
         {hasChildren && open && (
           <div className="mt-1 space-y-1">
@@ -196,7 +173,6 @@ export default function AppSidebar() {
     );
   }
 
-  // lock width to prevent icon-only collapse from external styles
   const fixedWidth = "16rem";
 
   return (
@@ -205,10 +181,24 @@ export default function AppSidebar() {
       className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
       style={{ width: fixedWidth, minWidth: fixedWidth, maxWidth: fixedWidth }}
     >
+      {/* Force labels visible even if a global 'collapsed' style exists */}
+      <style>{`
+        [data-gg-sidebar] .gg-nav-text{
+          display:inline !important;
+          opacity:1 !important;
+          visibility:visible !important;
+          color:inherit !important;
+          width:auto !important;
+          max-width:none !important;
+          white-space:nowrap !important;
+          font-size:0.875rem !important;
+          overflow:visible !important;
+        }
+        [data-gg-sidebar]{ width:${fixedWidth} !important; min-width:${fixedWidth} !important; }
+      `}</style>
+
       <div className="h-14 px-3 flex items-center gap-2 border-b border-gray-800">
-        <div className="text-lg font-semibold truncate">
-          {branding?.appName || "GeniusGrid"}
-        </div>
+        <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
 
       <div
