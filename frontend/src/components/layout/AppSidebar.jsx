@@ -2,6 +2,9 @@ import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
 
+/* ---------- size: tweak this to change arrow size everywhere ---------- */
+const ARROW_PX = 18;
+
 /* ---------- helpers ---------- */
 const normPath = (p) => {
   if (!p) return null;
@@ -48,16 +51,19 @@ function buildTree(items) {
 
   roots.sort(byOrderThenLabel);
   // hard-remove any root literally labeled "Main"
-  const tree = roots.filter(r => String(r.label).trim().toLowerCase() !== "main").map(sortRec);
-  return tree;
+  return roots.filter(r => String(r.label).trim().toLowerCase() !== "main").map(sortRec);
 }
 
-/* inline chevrons */
-const ChevronRight = ({ className = "w-3.5 h-3.5" }) => (
-  <svg viewBox="0 0 24 24" className={className} aria-hidden><path fill="currentColor" d="M9 18l6-6-6-6"/></svg>
+/* inline chevrons (bigger by ARROW_PX) */
+const ChevronRight = ({ size = ARROW_PX, className = "opacity-70" }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} className={className} aria-hidden>
+    <path fill="currentColor" d="M9 18l6-6-6-6" />
+  </svg>
 );
-const ChevronDown  = ({ className = "w-3.5 h-3.5" }) => (
-  <svg viewBox="0 0 24 24" className={className} aria-hidden><path fill="currentColor" d="M6 9l6 6 6-6"/></svg>
+const ChevronDown = ({ size = ARROW_PX, className = "opacity-70" }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} className={className} aria-hidden>
+    <path fill="currentColor" d="M6 9l6 6 6-6" />
+  </svg>
 );
 
 export default function AppSidebar() {
@@ -78,13 +84,17 @@ export default function AppSidebar() {
     }
   }, [loc.pathname]);
 
+  function Placeholder() {
+    return <span style={{ width: ARROW_PX, height: ARROW_PX, display: "inline-block" }} />;
+  }
+
   function Node({ node, depth = 0 }) {
     const hasChildren = node.children?.length > 0;
     const isRoot = depth === 0;
     const [open, setOpen] = useState(isRoot); // roots open by default
     const pad = depth > 0 ? "ml-3" : "";
 
-    // ROOTS render as headers (non-link)
+    // ROOT: header (non-link)
     if (isRoot) {
       return (
         <div className="group" key={node.id}>
@@ -94,7 +104,7 @@ export default function AppSidebar() {
             className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
             aria-expanded={open}
           >
-            {hasChildren ? (open ? <ChevronDown className="opacity-70" /> : <ChevronRight className="opacity-70" />) : <span className="w-3.5 h-3.5" />}
+            {hasChildren ? (open ? <ChevronDown /> : <ChevronRight />) : <Placeholder />}
             <span className="truncate">{node.label}</span>
           </button>
           {hasChildren && open && (
@@ -121,7 +131,7 @@ export default function AppSidebar() {
               ].join(" ")
             }
           >
-            <span className="w-3.5 h-3.5" />
+            <Placeholder />
             <span className="truncate">{node.label}</span>
           </NavLink>
           {hasChildren && (
@@ -142,7 +152,7 @@ export default function AppSidebar() {
           className={["flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-gray-300 hover:bg-gray-800/50 w-full text-left", pad].join(" ")}
           aria-expanded={open}
         >
-          {hasChildren ? (open ? <ChevronDown className="opacity-70" /> : <ChevronRight className="opacity-70" />) : <span className="w-3.5 h-3.5" />}
+          {hasChildren ? (open ? <ChevronDown /> : <ChevronRight />) : <Placeholder />}
           <span className="truncate">{node.label}</span>
         </button>
         {hasChildren && open && (
@@ -154,18 +164,16 @@ export default function AppSidebar() {
     );
   }
 
-  // FORCE full-width (prevents icon-only "mini" collapse from container styles)
-  const fixedWidth = 256; // 16rem
-
   return (
     <aside
+      data-gg-sidebar
       className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
-      style={{ flex: `0 0 ${fixedWidth}px`, width: fixedWidth, minWidth: fixedWidth, maxWidth: fixedWidth }}
-      data-collapsed="false"
+      style={{ width: "16rem", minWidth: "16rem", maxWidth: "16rem" }}
     >
       <div className="h-14 px-3 flex items-center gap-2 border-b border-gray-800">
         <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
       </div>
+
       <div
         ref={scrollerRef}
         className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2"
