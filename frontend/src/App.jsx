@@ -35,6 +35,8 @@ import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect";
 import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
 import DealsList from "@/pages/crm/deals/DealsList";
 
+import { crmExtraRoutes } from "@/pages/crm/routes.extra";
+
 class ErrorBoundary extends React.Component {
   constructor(p) {
     super(p);
@@ -141,6 +143,13 @@ export default function App() {
                 <Route path="audit" element={<AuditPage />} />
               </Route>
             </Route>
+
+<Route path="/app/*" element={<ProtectedShell />}>
+  <Route path="crm" element={<CrmOutlet />}>
+    {/* existing leads/deals/incentives routes */}
+    {crmExtraRoutes}
+  </Route>
+</Route>
 
             {/* Keep your previous imports path if that's intended */}
             <Route path="leads/imports/:id" element={<ImportReview />} />
