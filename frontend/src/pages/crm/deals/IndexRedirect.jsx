@@ -1,5 +1,7 @@
-// ---------- FILE: src/pages/crm/deals/IndexRedirect.jsx ----------
+// src/pages/crm/deals/IndexRedirect.jsx
 import React from "react";
 import { Navigate } from "react-router-dom";
-export default function DealsIndexRedirect(){ return <Navigate to="/app/crm/deals/pipeline" replace />; }
 
+export default function DealsIndexRedirect() {
+  return <Navigate to="pipeline" replace />;
+}

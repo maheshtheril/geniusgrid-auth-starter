@@ -31,7 +31,7 @@ import { AuditPage } from "@/pages/crm/incentives/AuditPage";
 
 /* -------- CRM: Deals -------- */
 import DealsLayout from "@/pages/crm/deals/DealsLayout";
-import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect";
+// import DealsIndexRedirect from "@/pages/crm/deals/IndexRedirect"; // ← not needed anymore
 import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
 import DealsList from "@/pages/crm/deals/DealsList";
 import DealsHelp from "@/pages/crm/deals/DealsHelp";
@@ -129,10 +129,11 @@ export default function App() {
 
               {/* Deals */}
               <Route path="deals" element={<DealsLayout />}>
-                <Route index element={<DealsIndexRedirect />} />
+                {/* Index → Pipeline (explicit, no external component) */}
+                <Route index element={<Navigate to="pipeline" replace />} />
                 <Route path="pipeline" element={<DealsPipeline />} />
                 <Route path="list" element={<DealsList />} />
-                <Route path="help" element={<DealsHelp/>} /> 
+                <Route path="help" element={<DealsHelp />} />
               </Route>
 
               {/* Incentives */}
@@ -147,7 +148,7 @@ export default function App() {
                 <Route path="approvals" element={<ApprovalsPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="audit" element={<AuditPage />} />
-                <Route path="help" element={<IncentivesHelpPage />} />  {/* ✅ help route */}
+                <Route path="help" element={<IncentivesHelpPage />} />
               </Route>
 
               {/* Extras: Contacts, Calls, Tasks, CRM Reports, Notifications, Settings */}
