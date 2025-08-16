@@ -44,23 +44,33 @@ function norm(row) {
 
 /* ------------- build tree purely from DB; synthesize missing roots per module if needed ------------- */
 function buildTree(items = []) {
-  // 1) normalize just enough for tree building
-  const src = items.map((row) => ({
-    id: String(row.id),
-    code: String(row.code ?? ""),
-    name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
-    path: normPath(row.path ?? row.url ?? row.route),
-    icon: row.icon ?? null,
-    sort_order: row.sort_order ?? row.order ?? 0,
-    order: row.order ?? row.sort_order ?? 0,
-    parent_id: row.parent_id ? String(row.parent_id) : null,
-  }));
+  // --- normalize just what's needed ---
+  const src = items.map((row) => {
+    const codeRaw = String(row.code ?? row.label ?? "").trim();
+    const parentCodeRaw = row.parent_code != null ? String(row.parent_code).trim() : null;
+    const path = normPath(row.path ?? row.url ?? row.route);
+    return {
+      id: String(row.id),
+      code: codeRaw,
+      code_lc: codeRaw.toLowerCase(),
+      parent_id: row.parent_id ? String(row.parent_id) : null,
+      parent_code: parentCodeRaw,
+      parent_code_lc: parentCodeRaw ? parentCodeRaw.toLowerCase() : null,
+      name: String(row.name ?? row.label ?? row.code ?? "Untitled"),
+      path,
+      icon: row.icon ?? null,
+      sort_order: row.sort_order ?? row.order ?? 0,
+      order: row.order ?? row.sort_order ?? 0,
+      children: [],
+      module_code_lc: row.module_code ? String(row.module_code).toLowerCase() : null,
+    };
+  });
 
-  // 2) index nodes
-  const byId = Object.fromEntries(src.map((r) => [r.id, { ...r, children: [] }]));
+  const byId = Object.fromEntries(src.map((r) => [r.id, { ...r }]));
+  const byCodeLC = Object.fromEntries(src.map((r) => [r.code_lc, byId[r.id]]));
 
-  // 3) attach strictly by parent_id; if parent missing, treat as root
-  const roots = [];
+  // --- 1) attach using parent_id (authoritative) ---
+  let roots = [];
   for (const r of src) {
     const node = byId[r.id];
     if (r.parent_id && byId[r.parent_id]) {
@@ -70,7 +80,89 @@ function buildTree(items = []) {
     }
   }
 
-  // 4) deep sort
+  // --- 2) attach using parent_code (if not already attached) ---
+  for (const r of src) {
+    const node = byId[r.id];
+    const alreadyChild = Object.values(byId).some((p) => p.children.includes(node));
+    if (!alreadyChild && r.parent_code_lc && byCodeLC[r.parent_code_lc]) {
+      const p = byCodeLC[r.parent_code_lc];
+      p.children.push(node);
+      roots = roots.filter((x) => x !== node);
+    }
+  }
+
+  // --- 2b) synthesize missing parent when parent_code exists but parent row is absent ---
+  // group unattached nodes by parent_code
+  const unattached = roots.filter((n) => n.parent_code_lc && !byCodeLC[n.parent_code_lc]);
+  if (unattached.length) {
+    const groups = unattached.reduce((acc, n) => {
+      const k = n.parent_code_lc;
+      (acc[k] ||= []).push(n);
+      return acc;
+    }, {});
+    for (const [pcode, nodes] of Object.entries(groups)) {
+      // create synthetic parent for that parent_code
+      const synthetic = {
+        id: `synthetic:code:${pcode}`,
+        code: nodes[0].parent_code,      // original casing
+        code_lc: pcode,
+        name: (nodes[0].parent_code || "").replace(/\./g, " ").replace(/\b\w/g, (m) => m.toUpperCase()) || "Main",
+        path: null,
+        icon: nodes[0]?.icon ?? undefined,
+        sort_order: Math.min(...nodes.map((n) => n.sort_order ?? n.order ?? 0)),
+        order: Math.min(...nodes.map((n) => n.order ?? n.sort_order ?? 0)),
+        children: [],
+      };
+      byId[synthetic.id] = synthetic;
+      byCodeLC[synthetic.code_lc] = synthetic;
+      // move nodes under synthetic parent
+      for (const n of nodes) {
+        synthetic.children.push(n);
+        roots = roots.filter((x) => x !== n);
+      }
+      roots.push(synthetic);
+    }
+  }
+
+  // --- 3) final safety: bucket multiple orphan roots by first /app/<seg> path segment ---
+  const bucketMap = new Map();
+  const getSeg = (n) => {
+    if (!n.path) return null;
+    const parts = pathParts(n.path);
+    // expect paths like /app/<seg>/...
+    return parts[0] === "app" && parts[1] ? parts[1].toLowerCase() : null;
+  };
+  for (const n of roots) {
+    const seg = getSeg(n);
+    if (!seg) continue;
+    if (!bucketMap.has(seg)) bucketMap.set(seg, []);
+    bucketMap.get(seg).push(n);
+  }
+  for (const [seg, nodes] of bucketMap.entries()) {
+    // if there is already an explicit root with this code, skip
+    const explicit = roots.find((r) => r.code_lc === seg);
+    if (explicit || nodes.length < 2) continue;
+    const synthetic = {
+      id: `synthetic:seg:${seg}`,
+      code: seg,
+      code_lc: seg,
+      name: seg.replace(/\b\w/g, (m) => m.toUpperCase()),
+      path: `/app/${seg}`,
+      icon: nodes[0]?.icon ?? undefined,
+      sort_order: Math.min(...nodes.map((n) => n.sort_order ?? n.order ?? 0)),
+      order: Math.min(...nodes.map((n) => n.order ?? n.sort_order ?? 0)),
+      children: [],
+    };
+    byId[synthetic.id] = synthetic;
+    for (const n of nodes) {
+      const idx = roots.indexOf(n);
+      if (idx >= 0) roots.splice(idx, 1);
+      synthetic.children.push(n);
+    }
+    roots.push(synthetic);
+  }
+
+  // --- 4) deep sort ---
   const sortDeep = (arr) => {
     arr.sort((a, b) =>
       (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
@@ -79,7 +171,6 @@ function buildTree(items = []) {
     arr.forEach((n) => n.children?.length && sortDeep(n.children));
     return arr;
   };
-
   return sortDeep(roots);
 }
 
