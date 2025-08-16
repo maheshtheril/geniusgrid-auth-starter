@@ -273,3 +273,73 @@ a:hover{ text-decoration:underline }
 /* ===================== LIGHT-SPECIFIC POLISH ===================== */
 :root[data-theme="light"] .gg-panel,
 :root[data-theme="light"] .gg-surface { box-shadow: var(--elev-2); }
+
+/* --- GeniusGrid polish tokens --- */
+:root {
+  /* Tune to your brand or useEnv().branding later */
+  --gg-primary: 99 102 241;       /* indigo-500 */
+  --gg-primary-600: 79 70 229;    /* indigo-600 */
+  --gg-accent: 168 85 247;        /* fuchsia-500 */
+  --gg-card: 15 17 22;            /* dark card */
+  --gg-border: 255 255 255 / 0.08;
+}
+
+/* Glassy card with gradient ring */
+.gg-panel {
+  position: relative;
+  border-radius: 1rem; /* rounded-2xl */
+  background: rgba(17, 20, 25, 0.6);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 12px 30px -15px rgba(0,0,0,.7);
+}
+.gg-panel::before {
+  content: "";
+  position: absolute; inset: 0; z-index: -1; border-radius: inherit;
+  padding: 1px; background:
+    linear-gradient(120deg, rgba(var(--gg-primary),.45), rgba(var(--gg-accent),.35));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+
+/* Pill tabs */
+.gg-tabs {
+  display: inline-flex; gap: .25rem; padding: .25rem;
+  background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.08);
+  border-radius: .9rem;
+}
+.gg-tab {
+  padding: .5rem 1rem; border-radius: .7rem; font-size: .875rem;
+  color: rgb(226 232 240 / 0.9); transition: background .15s ease, transform .15s ease;
+}
+.gg-tab[aria-current="page"], .gg-tab.is-active {
+  background: rgb(17 24 39 / 0.8);
+  border: 1px solid rgba(255,255,255,.08);
+  box-shadow: 0 8px 20px -12px rgba(0,0,0,.6);
+}
+
+/* Badges */
+.gg-badge { padding:.125rem .5rem; border-radius:999px; font-size:.75rem }
+.gg-badge--active    { background: rgba(16,185,129,.15); color: rgb(110 231 183); }
+.gg-badge--draft     { background: rgba(251,191,36,.15); color: rgb(252 211 77); }
+.gg-badge--archived  { background: rgba(248,113,113,.15); color: rgb(252 165 165); }
+
+/* Buttons */
+.gg-btn {
+  height: 2.25rem; padding: 0 .9rem; border-radius: .7rem;
+  border: 1px solid rgba(255,255,255,.08); display:inline-flex; align-items:center; gap:.5rem;
+  background: linear-gradient(180deg, rgba(255,255,255,.04), rgba(0,0,0,.08));
+}
+.gg-btn--primary {
+  border: 0;
+  background: linear-gradient(135deg, rgb(var(--gg-primary)) 0%, rgb(var(--gg-accent)) 100%);
+  color: white;
+}
+.gg-btn:hover { transform: translateY(-1px); }
+
+.gg-panel {
+  transition: box-shadow .2s ease, transform .2s ease, border-color .2s ease;
+}
+.gg-panel:hover { transform: translateY(-1px); box-shadow: 0 16px 36px -18px rgba(0,0,0,.75); }
+:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(var(--gg-accent), .35) !important; border-color: rgba(var(--gg-accent), .35) !important; }
+
+
