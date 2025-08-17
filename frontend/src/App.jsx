@@ -38,7 +38,7 @@ import DealsList from "@/pages/crm/deals/DealsList";
 /* -------- CRM: Extras -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
-import { IncentivesHelpPage } from "@/pages/crm/incentives/HelpPage";
+
 
 class ErrorBoundary extends React.Component {
   constructor(p) { super(p); this.state = { error: null }; }
@@ -130,7 +130,7 @@ export default function App() {
                 <Route path="approvals" element={<ApprovalsPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="audit" element={<AuditPage />} />
-                <Route path="help" element={<IncentivesHelpPage />} />
+               
               </Route>
 
               {crmExtraRoutes}
