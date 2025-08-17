@@ -39,7 +39,6 @@ export default function AppTopbar() {
         )}
 
         {/* Theme toggle – cycles light/dark/night */}
-        <BuildBadge />
         <ThemeToggle compact />
 
         <UserChip email={user?.email} />
