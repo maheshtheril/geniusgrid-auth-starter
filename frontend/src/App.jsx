@@ -39,6 +39,10 @@ import DealsList from "@/pages/crm/deals/DealsList";
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
+/* -------- ADMIN: Lazy Module -------- */
+import RBACRoute from "@/routes/RBACRoute";
+const AdminModule = React.lazy(() => import("@/modules/admin/AdminModule"));
+
 class ErrorBoundary extends React.Component {
   constructor(p) {
     super(p);
@@ -114,6 +118,18 @@ export default function App() {
           <Route path="/app/*" element={<ProtectedShell />}>
             <Route index element={<Navigate to="/dashboard" replace />} />
 
+            {/* ADMIN */}
+            <Route
+              path="admin/*"
+              element={
+                <RBACRoute need={["admin.access"]}>
+                  <React.Suspense fallback={<div className="p-6">Loading Admin…</div>}>
+                    <AdminModule />
+                  </React.Suspense>
+                </RBACRoute>
+              }
+            />
+
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
               {/* Leads */}
@@ -140,8 +156,7 @@ export default function App() {
                 <Route path="approvals" element={<ApprovalsPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="audit" element={<AuditPage />} />
-                {/* Help/Settings now served as static HTML in /public/help,
-                    so no React routes here */}
+                {/* Help/Settings now served as static HTML in /public/help */}
               </Route>
 
               {crmExtraRoutes}
