@@ -1,40 +1,38 @@
-import Page from "./Page";
+// ---------- FILE: src/pages/admin/routes.jsx ----------
 import React from "react";
-import { Route, Outlet } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
 
-import Users from "./Users";
-import Roles from "./Roles";
-import Companies from "./Companies";
-import Tenants from "./Tenants";
-import Settings from "./Settings";
-import Audit from "./Audit";
-import Notifications from "./Notifications";
-import Reports from "./Reports";
-import Billing from "./Billing";
-import Integrations from "./Integrations";
-import ApiKeys from "./ApiKeys";
-import Security from "./Security";
-import Data from "./Data";
-import Branding from "./Branding";
+/* Admin shell (full-width) */
+function AdminLayout({ children }) {
+  return (
+    <div className="min-h-[calc(100vh-56px)] p-4 md:p-6">
+      <div className="mb-4 text-xl font-semibold">Admin</div>
+      {children}
+    </div>
+  );
+}
 
-export const adminRoutes = (
-  <Route path="admin" element={<Outlet />}>
-    <Route index element={<Users />} />
-    <Route path="users" element={<Users />} />
-    <Route path="roles" element={<Roles />} />
-    <Route path="companies" element={<Companies />} />
-    <Route path="tenants" element={<Tenants />} />
-    <Route path="settings" element={<Settings />} />
-    <Route path="audit" element={<Audit />} />
-    <Route path="notifications" element={<Notifications />} />
-    <Route path="reports" element={<Reports />} />
-    <Route path="billing" element={<Billing />} />
-    <Route path="integrations" element={<Integrations />} />
-    <Route path="api-keys" element={<ApiKeys />} />
-    <Route path="security" element={<Security />} />
-    <Route path="data" element={<Data />} />
-    <Route path="branding" element={<Branding />} />
-  </Route>
-);
+/* Example pages — swap these imports for your real ones */
+function AdminUsers()      { return <div>👤 Users</div>; }
+function AdminRoles()      { return <div>🔐 Roles & Permissions</div>; }
+function AdminSettings()   { return <div>⚙️ System Settings</div>; }
+function AdminAuditLogs()  { return <div>📜 Audit Logs</div>; }
 
-export default adminRoutes;
+/* ✅ DEFAULT EXPORT: a real component that renders nested <Routes> */
+export default function AdminRoutes() {
+  return (
+    <AdminLayout>
+      <Routes>
+        <Route index element={<Navigate to="users" replace />} />
+
+        <Route path="users"     element={<AdminUsers />} />
+        <Route path="roles"     element={<AdminRoles />} />
+        <Route path="settings"  element={<AdminSettings />} />
+        <Route path="audit"     element={<AdminAuditLogs />} />
+
+        {/* catch-all inside /admin */}
+        <Route path="*" element={<Navigate to="users" replace />} />
+      </Routes>
+    </AdminLayout>
+  );
+}
