@@ -1,3 +1,4 @@
+import "flag-icons/css/flag-icons.min.css";
 // src/components/leads/AddLeadDrawer.jsx — refined UI + robust backend payload
 // - Phone input takes max width; country dropdown & dial code are compact
 // - Backend hardening: E.164-ish phone, stringified custom_fields in FormData/JSON

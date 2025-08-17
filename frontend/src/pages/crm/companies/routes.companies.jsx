@@ -1,7 +1,8 @@
+import { lazy, Suspense } from "react";
 // ---------- FILE: src/pages/crm/companies/routes.companies.jsx ----------
 import React from "react";
 import { Route } from "react-router-dom";
-import CompaniesPage from "@/pages/CompaniesPage"; // your existing list page
+const CompaniesPage = lazy(() => import("@/pages/CompaniesPage.jsx")); // your existing list page
 import CompanyLayout from "./CompanyLayout";
 import CompanyIndexRedirect from "./IndexRedirect";
 import CompanyOverview from "./CompanyOverview";
@@ -12,7 +13,7 @@ import CompanyActivity from "./CompanyActivity";
 export const crmCompanyRoutes = (
   <>
     {/* Companies list under CRM */}
-    <Route path="companies" element={<CompaniesPage />} />
+    <Route path="companies" element={<Suspense fallback={<div className="p-4 text-sm">Loading Companies…</div>}><CompaniesPage /></Suspense>} />
 
     {/* Company detail */}
     <Route path="companies/:companyId" element={<CompanyLayout />}>

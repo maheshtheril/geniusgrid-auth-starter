@@ -2,7 +2,7 @@
 // src/pages/DashboardPage.jsx (cards + charts)
 // -----------------------------------------------
 import { useEnv } from "@/store/useEnv";
-import Icon from "@/components/ui/Icon";
+import { Icon } from "@/components/ui/Icon";
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 const demoSeries = [

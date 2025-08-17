@@ -9,7 +9,7 @@ export default defineConfig(async ({ mode }) => {
 
   const plugins = [react()];
 
-  // Lazy-load visualizer only when ANALYZE=true
+  // Lazy-load visualizer only when ANALYZE=true (so prod builds don’t need the package)
   if (analyze) {
     try {
       const { visualizer } = await import("rollup-plugin-visualizer");
@@ -19,13 +19,13 @@ export default defineConfig(async ({ mode }) => {
           template: "treemap",
           gzipSize: true,
           brotliSize: true,
-          open: true, // opens locally; on Render it won't open (no GUI)
+          open: true, // local only; won’t open on remote CI
         })
       );
-    } catch (err) {
+    } catch {
       console.warn(
-        "ANALYZE=true but 'rollup-plugin-visualizer' is not installed.\n" +
-          "Install it locally with: npm i -D rollup-plugin-visualizer"
+        "ANALYZE=true but 'rollup-plugin-visualizer' is not installed. " +
+          "Install with: npm i -D rollup-plugin-visualizer"
       );
     }
   }
@@ -54,12 +54,15 @@ export default defineConfig(async ({ mode }) => {
         output: {
           manualChunks(id) {
             if (id.includes("node_modules")) {
+              if (id.includes("/@radix-ui/")) return "vendor-radix";
+              if (id.includes("lucide-react")) return "vendor-lucide";      // icons
               if (id.includes("recharts")) return "vendor-recharts";
               if (id.includes("framer-motion")) return "vendor-motion";
-              if (id.includes("lucide-react")) return "vendor-icons";
               if (id.includes("react-router")) return "vendor-router";
               if (id.includes("axios")) return "vendor-axios";
               if (id.includes("zustand")) return "vendor-state";
+              if (id.includes("date-fns") || id.includes("dayjs")) return "vendor-date";
+              if (id.includes("lodash")) return "vendor-lodash";
               return "vendor";
             }
           },
