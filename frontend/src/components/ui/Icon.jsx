@@ -21,3 +21,5 @@ export function Icon({ name, ...props }) {
   const Cmp = ICONS[name] ?? CircleHelp;
   return <Cmp {...props} />;
 }
+
+export default Icon;

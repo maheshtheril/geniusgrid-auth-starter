@@ -9,7 +9,7 @@ import { createPortal } from "react-dom";
 import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Plus, Info } from "lucide-react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
-import "flag-icons/css/flag-icons.min.css"; // SVG flags
+import "@/styles/flags.scss"; // SVG flags
 
 const safeRandomId = () => (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
 
