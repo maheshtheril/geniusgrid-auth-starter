@@ -1,3 +1,4 @@
+// src/layouts/ProtectedShell.jsx
 import React, { useState } from "react";
 import { Outlet, NavLink } from "react-router-dom";
 import AppSidebar from "@/components/layout/AppSidebar";
@@ -7,7 +8,7 @@ export default function ProtectedShell() {
 
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200 flex">
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar (always visible on md+) */}
       <div className="hidden md:block">
         <AppSidebar />
       </div>
@@ -15,13 +16,13 @@ export default function ProtectedShell() {
       {/* Mobile drawer */}
       {navOpen && (
         <>
-          <div
-            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          <button
+            className="fixed inset-0 z-[99] bg-black/50 md:hidden"
             onClick={() => setNavOpen(false)}
-            aria-hidden
+            aria-label="Close menu backdrop"
           />
-          <div className="fixed inset-y-0 left-0 z-50 w-72 md:hidden bg-gray-900">
-            <AppSidebar />
+          <div className="fixed inset-y-0 left-0 z-[100] w-72 md:hidden bg-gray-900 shadow-2xl">
+            <AppSidebar onRequestClose={() => setNavOpen(false)} />
           </div>
         </>
       )}
