@@ -23,13 +23,14 @@ const DiscoverLeads = React.lazy(() => import("@/pages/leads/DiscoverLeads.jsx")
 const ImportReview  = React.lazy(() => import("@/pages/leads/ImportReview.jsx"));
 
 /* -------- CRM: Deals (lazy) -------- */
-const DealsLayout   = React.lazy(() => import("@/pages/crm/deals/DealsLayout"));
-const DealsPipeline = React.lazy(() => import("@/pages/crm/deals/DealsPipeline"));
-const DealsList     = React.lazy(() => import("@/pages/crm/deals/DealsList"));
+// NOTE: ensure extension so bundler resolves the actual file, not the folder object
+const DealsLayout   = React.lazy(() => import("@/pages/crm/deals/DealsLayout.jsx"));
+const DealsPipeline = React.lazy(() => import("@/pages/crm/deals/DealsPipeline.jsx"));
+const DealsList     = React.lazy(() => import("@/pages/crm/deals/DealsList.jsx"));
 
 /* -------- CRM: Incentives (lazy) -------- */
-const IncentivesLayout        = React.lazy(() => import("@/pages/crm/incentives/IncentivesLayout"));
-const IncentivesIndexRedirect = React.lazy(() => import("@/pages/crm/incentives/IndexRedirect"));
+const IncentivesLayout        = React.lazy(() => import("@/pages/crm/incentives/IncentivesLayout.jsx"));
+const IncentivesIndexRedirect = React.lazy(() => import("@/pages/crm/incentives/IndexRedirect.jsx"));
 const PlansPage       = React.lazy(() => import("@/pages/crm/incentives/PlansPage").then(m => ({ default: m.PlansPage })));
 const RulesPage       = React.lazy(() => import("@/pages/crm/incentives/RulesPage").then(m => ({ default: m.RulesPage })));
 const TiersPage       = React.lazy(() => import("@/pages/crm/incentives/TiersPage").then(m => ({ default: m.TiersPage })));
@@ -40,13 +41,29 @@ const ApprovalsPage   = React.lazy(() => import("@/pages/crm/incentives/Approval
 const ReportsPage     = React.lazy(() => import("@/pages/crm/incentives/ReportsPage").then(m => ({ default: m.ReportsPage })));
 const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPage").then(m => ({ default: m.AuditPage })));
 
-/* -------- CRM: Extras (non-lazy objects with nested routes) -------- */
+/* -------- CRM: Extras (may be arrays of route-configs or <Route> elements) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
 /* -------- ADMIN: lazy route wrapper (full-width layout inside) -------- */
-const AdminRoutes = React.lazy(() => import("@/pages/admin/routes"));
+const AdminRoutes = React.lazy(() => import("@/pages/admin/routes.jsx"));
 
+/* ---------- Helpers: safely render route configs ---------- */
+/**
+ * Accepts an array of route configs like:
+ * [{ path: "x", element: <Comp/>, children: [...] }, ...]
+ * and returns an array of <Route> elements.
+ */
+function renderRoutes(list) {
+  if (!Array.isArray(list)) return null;
+  return list.map((r, idx) => (
+    <Route key={r.key || r.path || idx} path={r.path} element={r.element}>
+      {Array.isArray(r.children) ? renderRoutes(r.children) : null}
+    </Route>
+  ));
+}
+
+/* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
   constructor(p) {
     super(p);
@@ -65,11 +82,7 @@ class ErrorBoundary extends React.Component {
         <div className="max-w-2xl">
           <div className="text-2xl font-bold mb-2">❌ UI crashed</div>
           <pre className="whitespace-pre-wrap text-sm opacity-80">
-            {String(
-              this.state.error?.stack ||
-                this.state.error?.message ||
-                this.state.error
-            )}
+            {String(this.state.error?.stack || this.state.error?.message || this.state.error)}
           </pre>
           <div className="mt-4 space-x-3 text-indigo-300 underline">
             <Link to="/login">/login</Link>
@@ -82,6 +95,7 @@ class ErrorBoundary extends React.Component {
   }
 }
 
+/* ---------- Small utility components ---------- */
 function Health() {
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200 grid place-items-center">
@@ -175,7 +189,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN (full-width standalone admin layout) */}
+            {/* ADMIN */}
             <Route
               path="admin/*"
               element={
@@ -330,11 +344,11 @@ export default function App() {
                     </React.Suspense>
                   }
                 />
-                {/* Help/Settings now served as static HTML in /public/help */}
               </Route>
 
-              {crmExtraRoutes}
-              {crmCompanyRoutes}
+              {/* ✅ Safely inject CRM extras whether they are arrays or ready-made <Route> elements */}
+              {Array.isArray(crmExtraRoutes) ? renderRoutes(crmExtraRoutes) : crmExtraRoutes}
+              {Array.isArray(crmCompanyRoutes) ? renderRoutes(crmCompanyRoutes) : crmCompanyRoutes}
             </Route>
 
             {/* Non-CRM under /app */}
