@@ -1,13 +1,32 @@
 import React from "react";
-export function Button({ as:Tag="button", variant="default", size="md", className="", ...p }){
-  const base = "inline-flex items-center justify-center rounded-lg border transition focus:outline-none focus:ring-2 focus:ring-[hsl(var(--ring))]/60";
+const cx = (...a) => a.filter(Boolean).join(" ");
+
+export function Button({ asChild, variant="default", size="md", className="", ...props }) {
+  const Tag = asChild ? "span" : "button";
   const variants = {
-    default: "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] border-transparent hover:opacity-90 shadow",
-    secondary: "bg-[hsl(var(--secondary))] text-[hsl(var(--secondary-foreground))] border border-[hsl(var(--border))] hover:bg-[hsl(var(--secondary))]/80",
-    outline: "bg-transparent border border-[hsl(var(--border))] hover:bg-[hsl(var(--muted))]/50",
-    ghost: "bg-transparent hover:bg-[hsl(var(--muted))]/40"
+    default: "bg-primary text-primary-foreground hover:opacity-90",
+    secondary: "bg-secondary text-secondary-foreground hover:opacity-90",
+    outline: "border border-border hover:bg-muted/40",
+    ghost: "hover:bg-muted/40",
+    link: "underline underline-offset-4 text-primary hover:opacity-80",
+    destructive: "bg-destructive text-destructive-foreground hover:opacity-90",
   };
-  const sizes = { sm:"h-8 px-3 text-sm", md:"h-9 px-4", lg:"h-10 px-5 text-base" };
-  return <Tag className={`${base} ${variants[variant]||variants.default} ${sizes[size]||sizes.md} ${className}`} {...p} />;
+  const sizes = {
+    sm: "h-8 px-3 text-sm",
+    md: "h-9 px-4 text-sm",
+    lg: "h-10 px-5",
+    icon: "h-9 w-9 p-0",
+  };
+  return (
+    <Tag
+      className={cx(
+        "inline-flex items-center justify-center rounded-lg transition-colors",
+        "disabled:opacity-50 disabled:pointer-events-none",
+        variants[variant] || variants.default,
+        sizes[size] || sizes.md,
+        className
+      )}
+      {...props}
+    />
+  );
 }
-export default Button;

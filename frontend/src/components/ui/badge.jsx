@@ -1,18 +1,21 @@
 import React from "react";
-export function Badge({ children, variant = "default", className = "" }) {
+const cx = (...a) => a.filter(Boolean).join(" ");
+
+export function Badge({ variant="default", className="", ...props }) {
   const variants = {
-    default: "bg-primary/10 text-primary border border-primary/20",
-    secondary: "bg-muted text-foreground border border-border",
-    success: "bg-green-100 text-green-700 border border-green-300",
-    danger: "bg-red-100 text-red-700 border border-red-300",
+    default: "bg-muted text-foreground",
+    secondary: "bg-secondary text-secondary-foreground",
+    destructive: "bg-destructive text-destructive-foreground",
     outline: "border border-border",
   };
   return (
     <span
-      className={`inline-flex items-center px-2 py-0.5 text-xs font-medium rounded ${variants[variant] || variants.default} ${className}`}
-    >
-      {children}
-    </span>
+      className={cx(
+        "inline-flex items-center rounded-full px-2.5 h-7 text-xs font-medium",
+        variants[variant] || variants.default,
+        className
+      )}
+      {...props}
+    />
   );
 }
-export default Badge;

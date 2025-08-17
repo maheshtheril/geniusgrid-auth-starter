@@ -1,15 +1,16 @@
 import React from "react";
 const cx = (...a) => a.filter(Boolean).join(" ");
 
-export const Input = React.forwardRef(function Input(
-  { className="", type="text", ...props }, ref
-){
+export const Textarea = React.forwardRef(function Textarea(
+  { className = "", rows = 4, ...props },
+  ref
+) {
   return (
-    <input
+    <textarea
       ref={ref}
-      type={type}
+      rows={rows}
       className={cx(
-        "gg-input w-full h-9 px-3 rounded-lg border border-border bg-background",
+        "gg-input w-full min-h-[90px] px-3 py-2 rounded-lg border border-border bg-background",
         "focus:outline-none focus:ring-2 focus:ring-primary/40",
         "placeholder:text-muted-foreground",
         className
@@ -18,3 +19,5 @@ export const Input = React.forwardRef(function Input(
     />
   );
 });
+
+export default Textarea;

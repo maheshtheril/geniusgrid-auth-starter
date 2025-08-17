@@ -1,71 +1,59 @@
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
+const cx = (...a) => a.filter(Boolean).join(" ");
 
-/**
- * Minimal emulation of shadcn/ui Select that keeps your JSX tree working:
- * <Select value onValueChange>
- *   <SelectTrigger><SelectValue placeholder="..." /></SelectTrigger>
- *   <SelectContent>
- *     <SelectItem value="...">Label</SelectItem>
- *   </SelectContent>
- * </Select>
- *
- * Internally renders a native <select> for simplicity.
- */
-
-const Ctx = createContext({ val: "", set: () => {} });
-
-export function Select({ value, defaultValue = "", onValueChange, children }) {
-  const [val, setVal] = useState(value ?? defaultValue);
-  const set = (v) => {
-    setVal(v);
-    onValueChange?.(v);
-  };
-  const api = useMemo(() => ({ val, set }), [val]);
-  return <Ctx.Provider value={api}>{children}</Ctx.Provider>;
+export function Select({ value:cv, onValueChange, defaultValue, children }) {
+  const [u, setU] = useState(defaultValue);
+  const value = cv ?? u;
+  const set = (v) => { if (cv === undefined) setU(v); onValueChange?.(v); };
+  return React.Children.map(children, ch => React.isValidElement(ch) ? React.cloneElement(ch, { __selectValue:value, __setSelect:set }) : ch);
 }
 
-export function SelectTrigger({ className = "", children, ...props }) {
-  // purely presentational wrapper in this stub
+export function SelectTrigger({ className="", children, __selectValue, __setSelect, ...props }) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef(null);
   return (
-    <div className={`relative inline-flex items-center ${className}`} {...props}>
-      {children}
+    <div className="relative">
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={() => setOpen(o=>!o)}
+        className={cx("gg-input h-9 px-3 rounded-lg w-full text-left flex items-center justify-between", className)}
+        {...props}
+      >
+        <span className="truncate">{children}</span>
+        <span className="opacity-60">▾</span>
+      </button>
+      {open && (
+        <div
+          className="absolute z-50 mt-2 w-full rounded-xl border border-border bg-popover shadow-xl p-1"
+          onMouseLeave={() => setOpen(false)}
+        >
+          {React.Children.map(props.childrenList || props.children, ch =>
+            React.isValidElement(ch) ? React.cloneElement(ch, { __selectClose: () => setOpen(false), __setSelect }) : ch
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
-export function SelectValue({ placeholder }) {
-  const { val } = useContext(Ctx) || {};
-  return <span>{val || placeholder || ""}</span>;
+export function SelectValue({ placeholder, value, __selectValue }) {
+  return <span>{value ?? __selectValue ?? placeholder}</span>;
 }
 
-export function SelectContent({ className = "", children }) {
-  const { val, set } = useContext(Ctx) || {};
-  // flatten <SelectItem>s from children
-  const items = [];
-  React.Children.forEach(children, (ch) => {
-    if (React.isValidElement(ch) && ch.type === SelectItem) {
-      items.push({ value: ch.props.value, label: ch.props.children });
-    }
-  });
+export function SelectContent({ className="", children, ...props }) {
+  return <div className={cx("max-h-64 overflow-auto", className)} {...props}>{children}</div>;
+}
+
+export function SelectItem({ value, className="", children, __setSelect, __selectClose, ...props }) {
   return (
-    <select
-      className={`h-9 px-3 border rounded-md bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 ${className}`}
-      value={val || ""}
-      onChange={(e) => set(e.target.value)}
+    <div
+      role="option"
+      onClick={() => { __setSelect?.(value); __selectClose?.(); }}
+      className={cx("px-3 py-2 rounded-lg cursor-pointer hover:bg-muted/60", className)}
+      {...props}
     >
-      {items.map((it) => (
-        <option key={it.value} value={it.value}>
-          {it.label}
-        </option>
-      ))}
-    </select>
+      {children ?? String(value)}
+    </div>
   );
 }
-
-export function SelectItem({ value, children }) {
-  // only used as a marker; real <option> rendered in SelectContent
-  return <option value={value}>{children}</option>;
-}
-
-// default export for "import Select from ...", also supports named imports
-export default Select;
