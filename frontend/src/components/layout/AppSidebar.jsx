@@ -1,4 +1,3 @@
-// src/components/layout/AppSidebar.jsx
 import { NavLink, useLocation } from "react-router-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useEnv } from "@/store/useEnv";
@@ -7,18 +6,18 @@ import { useEnv } from "@/store/useEnv";
    HARD-CODED MENUS (parents + children). DB is ignored on purpose.
    ======================================================================== */
 const MENUS = [
-  // ---------------- ROOTS ----------------
+  // ROOTS
   { id: "admin-root", code: "admin", label: "Admin", path: null, icon: "⚙️", parent_id: null, module_code: "core", sort_order: 10 },
   { id: "crm-root",   code: "crm",   label: "CRM",   path: null, icon: "🤝", parent_id: null, module_code: "crm",  sort_order: 10 },
 
-  // ---------------- ADMIN GROUPS ----------------
-  { id: "admin-grp-org",  code: "admin.grp.org",  label: "Organization & Compliance",           icon: "🏢", parent_id: "admin-root", sort_order: 21 },
-  { id: "admin-grp-rbac", code: "admin.grp.rbac", label: "Access Control (RBAC)",               icon: "🛡️", parent_id: "admin-root", sort_order: 22 },
-  { id: "admin-grp-sec",  code: "admin.grp.sec",  label: "Security & Compliance",               icon: "🔐", parent_id: "admin-root", sort_order: 23 },
-  { id: "admin-grp-data", code: "admin.grp.data", label: "Data & Customization",                icon: "🧩", parent_id: "admin-root", sort_order: 24 },
-  { id: "admin-grp-int",  code: "admin.grp.int",  label: "Integrations & Developer",            icon: "🔌", parent_id: "admin-root", sort_order: 25 },
-  { id: "admin-grp-ai",   code: "admin.grp.ai",   label: "AI & Automation",                     icon: "✨", parent_id: "admin-root", sort_order: 26 },
-  { id: "admin-grp-bill", code: "admin.grp.bill", label: "Billing & Observability",             icon: "💳", parent_id: "admin-root", sort_order: 27 },
+  // ADMIN GROUPS
+  { id: "admin-grp-org",  code: "admin.grp.org",  label: "Organization & Compliance", icon: "🏢", parent_id: "admin-root", sort_order: 21 },
+  { id: "admin-grp-rbac", code: "admin.grp.rbac", label: "Access Control (RBAC)",     icon: "🛡️", parent_id: "admin-root", sort_order: 22 },
+  { id: "admin-grp-sec",  code: "admin.grp.sec",  label: "Security & Compliance",     icon: "🔐", parent_id: "admin-root", sort_order: 23 },
+  { id: "admin-grp-data", code: "admin.grp.data", label: "Data & Customization",      icon: "🧩", parent_id: "admin-root", sort_order: 24 },
+  { id: "admin-grp-int",  code: "admin.grp.int",  label: "Integrations & Developer",  icon: "🔌", parent_id: "admin-root", sort_order: 25 },
+  { id: "admin-grp-ai",   code: "admin.grp.ai",   label: "AI & Automation",           icon: "✨", parent_id: "admin-root", sort_order: 26 },
+  { id: "admin-grp-bill", code: "admin.grp.bill", label: "Billing & Observability",   icon: "💳", parent_id: "admin-root", sort_order: 27 },
 
   // Admin → Organization & Compliance
   { id: "admin-org",          code: "admin.org",          label: "Organization Profile",  path: "/app/admin/org",          icon: "🏢", parent_id: "admin-grp-org",  sort_order: 211 },
@@ -69,7 +68,7 @@ const MENUS = [
   { id: "admin-usage",   code: "admin.usage",   label: "Usage & Limits",        path: "/app/admin/usage",   icon: "📈", parent_id: "admin-grp-bill", sort_order: 812 },
   { id: "admin-logs",    code: "admin.logs",    label: "System Logs",           path: "/app/admin/logs",    icon: "🧾", parent_id: "admin-grp-bill", sort_order: 813 },
 
-  // ---------------- CRM CHILDREN ----------------
+  // CRM children
   { id: "crm-leads",     code: "crm.leads",     label: "Leads",            path: "/app/crm/leads",     icon: "📇", parent_id: "crm-root", sort_order: 11 },
   { id: "crm-discover",  code: "crm.discover",  label: "Discover (AI)",    path: "/app/crm/discover",  icon: "✨", parent_id: "crm-root", sort_order: 12 },
   { id: "crm-companies", code: "crm.companies", label: "Companies",        path: "/app/crm/companies", icon: "🏢", parent_id: "crm-root", sort_order: 13 },
@@ -78,25 +77,21 @@ const MENUS = [
   { id: "crm-deals",     code: "crm.deals",     label: "Deals / Pipeline", path: "/app/crm/deals",     icon: "📊", parent_id: "crm-root", sort_order: 16 },
   { id: "crm-reports",   code: "crm.reports",   label: "Reports",          path: "/app/crm/reports",   icon: "📈", parent_id: "crm-root", sort_order: 91 },
 
-  // CRM → Incentives (Commission)
+  // Incentives group
   { id: "crm-incentives",           code: "crm.incentives",           label: "Incentives / Commission", icon: "🏆", parent_id: "crm-root", sort_order: 70 },
   { id: "crm-incentives-plans",     code: "crm.incentives.plans",     label: "Plans",        path: "/app/crm/incentives/plans",     icon: "🗂️", parent_id: "crm-incentives", sort_order: 701 },
   { id: "crm-incentives-rules",     code: "crm.incentives.rules",     label: "Rules",        path: "/app/crm/incentives/rules",     icon: "⚖️", parent_id: "crm-incentives", sort_order: 702 },
   { id: "crm-incentives-tiers",     code: "crm.incentives.tiers",     label: "Slabs & Tiers",path: "/app/crm/incentives/tiers",     icon: "🪜", parent_id: "crm-incentives", sort_order: 703 },
   { id: "crm-incentives-programs",  code: "crm.incentives.programs",  label: "Programs",     path: "/app/crm/incentives/programs",  icon: "🎯", parent_id: "crm-incentives", sort_order: 704 },
   { id: "crm-incentives-payouts",   code: "crm.incentives.payouts",   label: "Payouts",      path: "/app/crm/incentives/payouts",   icon: "💸", parent_id: "crm-incentives", sort_order: 705 },
-  { id: "crm-incentives-adjust",    code: "crm.incentives.adjust",    label: "Adjustments",  path: "/app/crm/incentives/Adjustments",    icon: "🧾", parent_id: "crm-incentives", sort_order: 706 },
+  { id: "crm-incentives-adjust",    code: "crm.incentives.adjust",    label: "Adjustments",  path: "/app/crm/incentives/Adjustments", icon: "🧾", parent_id: "crm-incentives", sort_order: 706 },
   { id: "crm-incentives-approvals", code: "crm.incentives.approvals", label: "Approvals",    path: "/app/crm/incentives/approvals", icon: "✅", parent_id: "crm-incentives", sort_order: 707 },
   { id: "crm-incentives-reporting", code: "crm.incentives.reporting", label: "Reports",      path: "/app/crm/incentives/reports",   icon: "📊", parent_id: "crm-incentives", sort_order: 708 },
   { id: "crm-incentives-audit",     code: "crm.incentives.audit",     label: "Audit",        path: "/app/crm/incentives/audit",     icon: "📜", parent_id: "crm-incentives", sort_order: 709 },
 ];
 
 /* =============================== helpers =============================== */
-const normPath = (p) => {
-  if (!p) return null;
-  const s = String(p).trim();
-  return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
-};
+const normPath = (p) => (!p ? null : (String(p).trim().startsWith("/") ? String(p).trim().replace(/\/+$/, "") : "/" + String(p).trim()));
 const byOrderThenName = (a, b) => {
   const ao = Number.isFinite(a.sort_order) ? a.sort_order : 999999;
   const bo = Number.isFinite(b.sort_order) ? b.sort_order : 999999;
@@ -134,24 +129,10 @@ function buildTreeDbFirst(items) {
   roots.sort(byOrderThenName);
   return roots.map(sortRec);
 }
-
-/* =========================== search / highlight ========================== */
-function walk(nodes, fn, parentId = null) {
-  (nodes || []).forEach((n) => { fn(n, parentId); if (n.children?.length) walk(n.children, fn, n.id); });
-}
-function buildParentMap(nodes) {
-  const m = new Map(); walk(nodes, (n, p) => m.set(n.id, p)); return m;
-}
-function ancestorsOf(id, parentMap) {
-  const list = []; let cur = parentMap.get(id);
-  while (cur) { list.push(cur); cur = parentMap.get(cur); }
-  return list;
-}
-function findNodeByPath(nodes, path) {
-  let found = null;
-  walk(nodes, (n) => { if (!found && n.path && path && path.startsWith(n.path)) found = n; });
-  return found;
-}
+function walk(nodes, fn, parentId = null) { (nodes || []).forEach((n) => { fn(n, parentId); if (n.children?.length) walk(n.children, fn, n.id); }); }
+function buildParentMap(nodes) { const m = new Map(); walk(nodes, (n, p) => m.set(n.id, p)); return m; }
+function ancestorsOf(id, parentMap) { const list = []; let cur = parentMap.get(id); while (cur) { list.push(cur); cur = parentMap.get(cur); } return list; }
+function findNodeByPath(nodes, path) { let found = null; walk(nodes, (n) => { if (!found && n.path && path && path.startsWith(n.path)) found = n; }); return found; }
 function filterTree(nodes, query) {
   const q = query.trim().toLowerCase();
   if (!q) return { pruned: nodes, expandIds: new Set() };
@@ -268,7 +249,7 @@ export default function AppSidebar({ onRequestClose }) {
   }
 
   return (
-    <aside className="h-full flex flex-col bg-gray-900 text-gray-100 border-r border-gray-800">
+    <aside className="h-full flex flex-col bg-gray-900 text-gray-100">
       {/* Header: brand + expand/collapse + close (mobile) */}
       <div className="h-14 px-3 flex items-center justify-between gap-2 border-b border-gray-800">
         <div className="flex items-center gap-3 min-w-0">
@@ -288,8 +269,8 @@ export default function AppSidebar({ onRequestClose }) {
         </div>
       </div>
 
-      {/* Scroll area with sticky search */}
-      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+      {/* Sticky search + menu */}
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden" ref={scrollerRef}>
         <div className="p-2 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
           <div className="relative">
             <input

@@ -1,39 +1,39 @@
-import React, { useEffect, useState } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
+import React, { useState } from "react";
+import { Outlet, NavLink } from "react-router-dom";
 import AppSidebar from "../components/layout/AppSidebar";
 
 export default function ProtectedShell() {
   const [navOpen, setNavOpen] = useState(false);
-  const loc = useLocation();
-
-  // Close mobile drawer on route change
-  useEffect(() => { if (navOpen) setNavOpen(false); }, [loc.pathname, navOpen]);
 
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200">
-      {/* DESKTOP sidebar (fixed, always visible on md+) */}
-      <div className="hidden md:block fixed inset-y-0 left-0 w-64 z-50 bg-gray-900 border-r border-gray-800">
-        <AppSidebar />
+      {/* ----- Sidebar (desktop always; mobile only when navOpen) ----- */}
+      <div
+        className={[
+          "fixed inset-y-0 left-0 z-[100] bg-gray-900 border-r border-gray-800",
+          // widths per breakpoint
+          "w-72 md:w-64 lg:w-72",
+          // visibility logic
+          navOpen ? "block" : "hidden md:block",
+        ].join(" ")}
+      >
+        <AppSidebar onRequestClose={() => setNavOpen(false)} />
       </div>
 
-      {/* MOBILE drawer */}
+      {/* Mobile overlay */}
       {navOpen && (
-        <>
-          <button
-            className="fixed inset-0 z-40 bg-black/50 md:hidden"
-            onClick={() => setNavOpen(false)}
-            aria-label="Close menu"
-          />
-          <div className="fixed inset-y-0 left-0 w-72 z-50 md:hidden bg-gray-900 shadow-2xl border-r border-gray-800">
-            <AppSidebar onRequestClose={() => setNavOpen(false)} />
-          </div>
-        </>
+        <button
+          className="fixed inset-0 z-[90] bg-black/50 md:hidden"
+          onClick={() => setNavOpen(false)}
+          aria-label="Close menu overlay"
+        />
       )}
 
-      {/* MAIN column (leave space for desktop sidebar) */}
-      <div className="md:pl-64 min-h-screen flex flex-col">
+      {/* ----- Main column (leave space for fixed sidebar on md+) ----- */}
+      <div className="min-h-screen flex flex-col md:pl-64 lg:pl-72">
         <header className="h-14 border-b border-gray-800 flex items-center justify-between px-3 md:px-4">
           <div className="flex items-center gap-2">
+            {/* Hamburger: shows only on mobile */}
             <button
               className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-800 hover:bg-gray-800/50"
               onClick={() => setNavOpen(true)}
@@ -43,6 +43,7 @@ export default function ProtectedShell() {
                 <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
               </svg>
             </button>
+
             <NavLink to="/dashboard" className="font-semibold no-underline text-gray-100">
               GeniusGrid
             </NavLink>
