@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Outlet, NavLink } from "react-router-dom";
-import AppSidebar from "@/components/layout/AppSidebar";
+import AppSidebar from "../components/layout/AppSidebar";
 
 export default function ProtectedShell() {
   const [navOpen, setNavOpen] = useState(false);
@@ -8,9 +8,11 @@ export default function ProtectedShell() {
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200">
       {/* DESKTOP sidebar (fixed, always visible) */}
-      <div className="hidden md:block fixed inset-y-0 left-0 w-64 z-40 bg-gray-900 border-r border-gray-800">
-        <AppSidebar onRequestClose={() => {}} />
-      </div>
+    {/* Sidebar: fixed and always visible on all breakpoints for now */}
+<div className="block fixed inset-y-0 left-0 w-64 z-40 bg-gray-900 border-r border-gray-800">
+  <AppSidebar />
+</div>
+
 
       {/* MOBILE drawer */}
       {navOpen && (
