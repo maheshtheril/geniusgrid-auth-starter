@@ -1,71 +1,39 @@
-// ---------- FILE: src/layouts/ProtectedShell.jsx ----------
-import React, { useEffect, useState } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
-
-// Use your working import style (alias or relative). Keep ONE of these:
-import AppSidebar from "@/components/layout/AppSidebar";
-// import AppSidebar from "../components/layout/AppSidebar";
+import React, { useState } from "react";
+import { Outlet, NavLink } from "react-router-dom";
+import AppSidebar from "../components/layout/AppSidebar";
 
 export default function ProtectedShell() {
   const [navOpen, setNavOpen] = useState(false);
-  const location = useLocation();
-
-  // Close the mobile drawer on route change
-  useEffect(() => {
-    if (navOpen) setNavOpen(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.pathname]);
-
-  // ESC to close (mobile drawer)
-  useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && setNavOpen(false);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // Lock body scroll when drawer is open (mobile)
-  useEffect(() => {
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = navOpen ? "hidden" : prev || "";
-    return () => (document.body.style.overflow = prev);
-  }, [navOpen]);
 
   return (
-    <div className="min-h-screen bg-[#0B0D10] text-gray-200 flex">
-      {/* DESKTOP SIDEBAR — in normal flow (not fixed), always visible on md+ */}
-      <aside className="hidden md:block w-64 flex-shrink-0 bg-gray-900 border-r border-gray-800">
-        <AppSidebar />
-      </aside>
+    <div className="min-h-screen bg-[#0B0D10] text-gray-200">
+      {/* DESKTOP sidebar (fixed, always visible) */}
+    {/* Sidebar: fixed and always visible on all breakpoints for now */}
+<div className="block fixed inset-y-0 left-0 w-64 z-40 bg-gray-900 border-r border-gray-800">
+  <AppSidebar />
+</div>
 
-      {/* MOBILE DRAWER */}
+
+      {/* MOBILE drawer */}
       {navOpen && (
         <>
-          <div
-            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          <button
+            className="fixed inset-0 z-50 bg-black/50 md:hidden"
             onClick={() => setNavOpen(false)}
-            aria-hidden
+            aria-label="Close menu"
           />
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Navigation"
-            className={[
-              "fixed inset-y-0 left-0 z-50 w-[86vw] max-w-[18rem] md:hidden",
-              "bg-gray-900 border-r border-gray-800 shadow-xl",
-              "transform transition-transform duration-300 translate-x-0",
-            ].join(" ")}
-          >
+          <div className="fixed inset-y-0 left-0 w-72 z-50 md:hidden bg-gray-900 shadow-2xl">
             <AppSidebar onRequestClose={() => setNavOpen(false)} />
           </div>
         </>
       )}
 
-      {/* MAIN COLUMN */}
-      <div className="flex-1 min-w-0 flex flex-col">
+      {/* MAIN column (leave space for desktop sidebar) */}
+      <div className="md:pl-64 min-h-screen flex flex-col">
         <header className="h-14 border-b border-gray-800 flex items-center justify-between px-3 md:px-4">
           <div className="flex items-center gap-2">
             <button
-              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-800 hover:bg-gray-800/50"
+              className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-800 hover:bg-gray-800/50"
               onClick={() => setNavOpen(true)}
               aria-label="Open menu"
             >
@@ -95,7 +63,7 @@ export default function ProtectedShell() {
           </div>
         </header>
 
-        <main id="main" className="container-page min-w-0">
+        <main className="container-page min-w-0 flex-1">
           <Outlet />
         </main>
       </div>
