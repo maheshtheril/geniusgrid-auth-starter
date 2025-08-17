@@ -1,38 +1,26 @@
-// src/components/layout/AppSidebar.jsx
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { Home, Users, Briefcase, Settings } from "lucide-react";
 
-const MENUS = [
-  { to: "/app/dashboard", label: "Dashboard", icon: Home },
-  { to: "/app/crm/leads", label: "Leads", icon: Users },
-  { to: "/app/crm/companies", label: "Companies", icon: Briefcase },
-  { to: "/app/admin/org", label: "Admin", icon: Settings },
-];
-
-export default function AppSidebar({ onRequestClose }) {
+export default function AppSidebar() {
+  const items = [
+    { to: "/app/dashboard", label: "Dashboard" },
+    { to: "/app/crm/leads", label: "Leads" },
+    { to: "/app/crm/companies", label: "Companies" },
+    { to: "/app/admin/org", label: "Admin" },
+  ];
   return (
-    <div className="h-full flex flex-col bg-card text-foreground">
-      {/* Brand */}
-      <div className="h-14 flex items-center px-4 font-bold border-b">
-        GeniusGrid
-      </div>
-
-      {/* Menu */}
+    <div className="h-full flex flex-col bg-card">
+      <div className="h-14 flex items-center px-4 font-bold border-b">GeniusGrid</div>
       <nav className="flex-1 overflow-y-auto p-2">
-        {MENUS.map(({ to, label, icon: Icon }) => (
+        {items.map((i) => (
           <NavLink
-            key={to}
-            to={to}
+            key={i.to}
+            to={i.to}
             className={({ isActive }) =>
-              `flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium hover:bg-muted ${
-                isActive ? "bg-muted text-primary" : ""
-              }`
+              `block px-3 py-2 rounded-md text-sm hover:bg-muted ${isActive ? "bg-muted" : ""}`
             }
-            onClick={() => onRequestClose?.()}
           >
-            <Icon className="h-4 w-4" />
-            {label}
+            {i.label}
           </NavLink>
         ))}
       </nav>
