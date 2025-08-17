@@ -9,7 +9,7 @@ import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Plus, Info } from
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
 import { http } from "@/lib/http"; // ⬅️ for CFModal save
-import "@/styles/flags.scss";
+import "flag-icons/css/flag-icons.min.css";
 
 const safeRandomId = () =>
   (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));

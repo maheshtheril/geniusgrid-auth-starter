@@ -1,3 +1,4 @@
+import "flag-icons/css/flag-icons.min.css";
 // src/components/leads/AddLeadDrawer.jsx — refined UI + robust backend payload
 // - Phone input takes max width; country dropdown & dial code are compact
 // - Backend hardening: E.164-ish phone, stringified custom_fields in FormData/JSON
@@ -9,7 +10,7 @@ import { createPortal } from "react-dom";
 import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Plus, Info } from "lucide-react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
-import "@/styles/flags.scss"; // SVG flags
+import "flag-icons/css/flag-icons.min.css"; // SVG flags
 
 const safeRandomId = () => (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
 

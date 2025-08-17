@@ -1,3 +1,4 @@
+import "flag-icons/css/flag-icons.min.css";
 // ---------- FILE: src/pages/CompaniesPage.jsx ----------
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
