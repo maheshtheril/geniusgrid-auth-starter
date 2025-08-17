@@ -3,6 +3,48 @@ import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { ChevronRight, Loader2, Search } from "lucide-react";
 
+// ----- at top of src/components/layout/AppSidebar.jsx -----
+const API_BASE =
+  (typeof window !== "undefined" && window.__API_BASE) ||
+  import.meta.env.VITE_API_URL || ""; // e.g. "https://geniusgrid-auth-starter.onrender.com"
+const MENUS_URL = `${API_BASE.replace(/\/$/, "")}/api/tenant/menus`;
+
+// Safer fetch that detects HTML and shows helpful diagnostics
+async function fetchMenus() {
+  const res = await fetch(MENUS_URL, {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+
+  const contentType = res.headers.get("content-type") || "";
+  const text = await res.text();
+
+  if (!res.ok) {
+    // Surface the real server text (first 300 chars)
+    throw new Error(`HTTP ${res.status} from ${MENUS_URL}: ${text.slice(0, 300)}`);
+  }
+  if (!contentType.includes("application/json")) {
+    // Probably HTML from frontend/redirect/404 page
+    const hint =
+      text.trim().startsWith("<!doctype") || text.trim().startsWith("<html")
+        ? "HTML was returned (likely a 404/auth redirect/static index.html)."
+        : `Unexpected Content-Type: "${contentType}"`;
+    throw new Error(
+      `${hint} From: ${MENUS_URL}\nFirst bytes:\n${text.slice(0, 300)}`
+    );
+  }
+
+  let json;
+  try {
+    json = JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Invalid JSON from ${MENUS_URL}: ${e.message}\nFirst bytes:\n${text.slice(0, 300)}`);
+  }
+
+  // expected: { items: [...] } OR [...]
+  return Array.isArray(json?.items) ? json.items : json;
+}
+
 // --- tiny API helper (inline to avoid extra imports) ---
 async function fetchMenus() {
   const res = await fetch("/api/tenant/menus", { credentials: "include" });
