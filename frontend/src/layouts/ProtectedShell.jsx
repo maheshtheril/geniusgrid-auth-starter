@@ -7,6 +7,7 @@ import AppSidebar from "@/components/layout/AppSidebar";
 import AppTopbar from "@/components/layout/AppTopbar";
 import { useEnv } from "@/store/useEnv";
 
+// Optional: keep while testing; remove when done
 function DebugHUD() {
   const { ready, menus } = useEnv() || {};
   const { pathname } = useLocation();
@@ -33,32 +34,9 @@ function DebugHUD() {
 }
 
 function ProtectedShell() {
-  const { pathname } = useLocation();
-  const isAdmin = pathname.startsWith("/app/admin");
-
-  // keep these memoized
+  // memoize heavy children so routing doesn't re-render them
   const sidebarEl = useMemo(() => <AppSidebar />, []);
   const topbarEl  = useMemo(() => <AppTopbar />, []);
-
-  // Content wrappers:
-  // - defaultWrap keeps non-admin pages pleasantly centered (optional cap)
-  // - adminWrap removes any max-width so the console can breathe
-  const defaultWrap = {
-    width: "100%",
-    maxWidth: 1280,       // tune or remove if you want fully fluid everywhere
-    margin: "0 auto",
-    padding: "0 16px",
-    minWidth: 0,
-    boxSizing: "border-box",
-  };
-  const adminWrap = {
-    width: "100%",
-    maxWidth: "none",
-    margin: 0,
-    padding: 0,
-    minWidth: 0,
-    boxSizing: "border-box",
-  };
 
   return (
     <ProtectedLayout>
@@ -68,7 +46,8 @@ function ProtectedShell() {
           display: "flex",
           width: "100%",
           height: "100dvh",
-          minHeight: 0,            // critical so children can shrink/scroll
+          minHeight: 0,   // allows children to scroll
+          minWidth: 0,
           overflow: "hidden",
         }}
       >
@@ -79,35 +58,33 @@ function ProtectedShell() {
           style={{
             display: "flex",
             flex: "1 1 auto",
-            minHeight: 0,          // critical
+            minHeight: 0,
+            minWidth: 0,
             flexDirection: "column",
             overflow: "hidden",
           }}
         >
           {topbarEl}
 
+          {/* Full-width content area (no maxWidth cap) */}
           <div
             className="app-content"
             style={{
               flex: "1 1 auto",
-              minHeight: 0,        // critical
+              minHeight: 0,
+              minWidth: 0,
               overflowY: "auto",
               overflowX: "hidden",
               position: "relative",
-              display: "flex",
-              flexDirection: "column",
+              // a little breathing room without constraining width
+              padding: "0 12px 16px",
             }}
           >
-            {/* Page width controller */}
-            <div style={isAdmin ? adminWrap : defaultWrap}>
-              {/* DO NOT memoize Outlet */}
-              <Outlet />
-            </div>
+            <Outlet />
           </div>
         </main>
       </div>
 
-      {/* remove after testing */}
       <DebugHUD />
     </ProtectedLayout>
   );
