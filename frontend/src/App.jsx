@@ -6,36 +6,41 @@ import "./styles/theme.css";
 
 import { Routes, Route, Navigate, Link, Outlet } from "react-router-dom";
 
-import LoginPage from "./pages/LoginPage.jsx";
-import Signup from "./pages/Signup.jsx";
-import VerifyEmail from "./pages/VerifyEmail.jsx";
-import ProtectedShell from "./layouts/ProtectedShell.jsx";
-import DashboardPage from "./pages/DashboardPage.jsx";
-import LeadsPage from "./pages/LeadsPage.jsx";
-import CompaniesPage from "./pages/CompaniesPage.jsx";
-import LeadCreate from "@/pages/LeadCreate.jsx";
-import DiscoverLeads from "@/pages/leads/DiscoverLeads.jsx";
-import ImportReview from "@/pages/leads/ImportReview.jsx";
+/* -------- Lazy: Public pages -------- */
+const LoginPage    = React.lazy(() => import("./pages/LoginPage.jsx"));
+const Signup       = React.lazy(() => import("./pages/Signup.jsx"));
+const VerifyEmail  = React.lazy(() => import("./pages/VerifyEmail.jsx"));
 
-/* -------- CRM: Incentives -------- */
-import IncentivesLayout from "@/pages/crm/incentives/IncentivesLayout";
-import IncentivesIndexRedirect from "@/pages/crm/incentives/IndexRedirect";
-import { PlansPage } from "@/pages/crm/incentives/PlansPage";
-import { RulesPage } from "@/pages/crm/incentives/RulesPage";
-import { TiersPage } from "@/pages/crm/incentives/TiersPage";
-import { ProgramsPage } from "@/pages/crm/incentives/ProgramsPage";
-import { PayoutsPage } from "@/pages/crm/incentives/PayoutsPage";
-import { AdjustmentsPage } from "@/pages/crm/incentives/AdjustmentsPage";
-import { ApprovalsPage } from "@/pages/crm/incentives/ApprovalsPage";
-import { ReportsPage } from "@/pages/crm/incentives/ReportsPage";
-import { AuditPage } from "@/pages/crm/incentives/AuditPage";
+/* -------- Core layout/pages -------- */
+const ProtectedShell = React.lazy(() => import("./layouts/ProtectedShell.jsx"));
+const DashboardPage  = React.lazy(() => import("./pages/DashboardPage.jsx"));
+const LeadsPage      = React.lazy(() => import("./pages/LeadsPage.jsx"));
+const CompaniesPage  = React.lazy(() => import("./pages/CompaniesPage.jsx"));
 
-/* -------- CRM: Deals -------- */
-import DealsLayout from "@/pages/crm/deals/DealsLayout";
-import DealsPipeline from "@/pages/crm/deals/DealsPipeline";
-import DealsList from "@/pages/crm/deals/DealsList";
+/* -------- Leads extras -------- */
+const LeadCreate    = React.lazy(() => import("@/pages/LeadCreate.jsx"));
+const DiscoverLeads = React.lazy(() => import("@/pages/leads/DiscoverLeads.jsx"));
+const ImportReview  = React.lazy(() => import("@/pages/leads/ImportReview.jsx"));
 
-/* -------- CRM: Extras -------- */
+/* -------- CRM: Deals (lazy) -------- */
+const DealsLayout   = React.lazy(() => import("@/pages/crm/deals/DealsLayout"));
+const DealsPipeline = React.lazy(() => import("@/pages/crm/deals/DealsPipeline"));
+const DealsList     = React.lazy(() => import("@/pages/crm/deals/DealsList"));
+
+/* -------- CRM: Incentives (lazy) -------- */
+const IncentivesLayout      = React.lazy(() => import("@/pages/crm/incentives/IncentivesLayout"));
+const IncentivesIndexRedirect = React.lazy(() => import("@/pages/crm/incentives/IndexRedirect"));
+const PlansPage       = React.lazy(() => import("@/pages/crm/incentives/PlansPage").then(m => ({ default: m.PlansPage })));
+const RulesPage       = React.lazy(() => import("@/pages/crm/incentives/RulesPage").then(m => ({ default: m.RulesPage })));
+const TiersPage       = React.lazy(() => import("@/pages/crm/incentives/TiersPage").then(m => ({ default: m.TiersPage })));
+const ProgramsPage    = React.lazy(() => import("@/pages/crm/incentives/ProgramsPage").then(m => ({ default: m.ProgramsPage })));
+const PayoutsPage     = React.lazy(() => import("@/pages/crm/incentives/PayoutsPage").then(m => ({ default: m.PayoutsPage })));
+const AdjustmentsPage = React.lazy(() => import("@/pages/crm/incentives/AdjustmentsPage").then(m => ({ default: m.AdjustmentsPage })));
+const ApprovalsPage   = React.lazy(() => import("@/pages/crm/incentives/ApprovalsPage").then(m => ({ default: m.ApprovalsPage })));
+const ReportsPage     = React.lazy(() => import("@/pages/crm/incentives/ReportsPage").then(m => ({ default: m.ReportsPage })));
+const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPage").then(m => ({ default: m.AuditPage })));
+
+/* -------- CRM: Extras (non-lazy objects with nested routes) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
@@ -96,26 +101,82 @@ function Health() {
 
 const CrmOutlet = () => <Outlet />;
 
+const Fallback = ({ label = "Loading…" }) => (
+  <div className="p-6 text-sm text-muted-foreground">{label}</div>
+);
+
 export default function App() {
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200">
       <ErrorBoundary>
         <Routes>
           {/* Public */}
-          <Route path="/" element={<Navigate to="/login" replace />} />
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<Signup />} />
-          <Route path="/verify-email" element={<VerifyEmail />} />
+          <Route
+            path="/"
+            element={<Navigate to="/login" replace />}
+          />
+          <Route
+            path="/login"
+            element={
+              <React.Suspense fallback={<Fallback label="Loading Login…" />}>
+                <LoginPage />
+              </React.Suspense>
+            }
+          />
+          <Route
+            path="/signup"
+            element={
+              <React.Suspense fallback={<Fallback label="Loading Signup…" />}>
+                <Signup />
+              </React.Suspense>
+            }
+          />
+          <Route
+            path="/verify-email"
+            element={
+              <React.Suspense fallback={<Fallback label="Verifying email…" />}>
+                <VerifyEmail />
+              </React.Suspense>
+            }
+          />
           <Route path="/health" element={<Health />} />
 
           {/* Protected: Dashboard branch */}
-          <Route path="/dashboard/*" element={<ProtectedShell />}>
-            <Route index element={<DashboardPage />} />
-            <Route path="companies" element={<CompaniesPage />} />
+          <Route
+            path="/dashboard/*"
+            element={
+              <React.Suspense fallback={<Fallback label="Loading Shell…" />}>
+                <ProtectedShell />
+              </React.Suspense>
+            }
+          >
+            <Route
+              index
+              element={
+                <React.Suspense fallback={<Fallback label="Loading Dashboard…" />}>
+                  <DashboardPage />
+                </React.Suspense>
+              }
+            />
+            <Route
+              path="companies"
+              element={
+                <React.Suspense fallback={<Fallback label="Loading Companies…" />}>
+                  <CompaniesPage />
+                </React.Suspense>
+              }
+            />
           </Route>
 
           {/* Protected: App branch */}
-          <Route path="/app/*" element={<ProtectedShell />}>
+          <Route
+            path="/app/*"
+            element={
+              <React.Suspense fallback={<Fallback label="Loading Shell…" />}>
+                <ProtectedShell />
+              </React.Suspense>
+            }
+          >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
             {/* ADMIN */}
@@ -123,7 +184,7 @@ export default function App() {
               path="admin/*"
               element={
                 <RBACRoute need={["admin.access"]}>
-                  <React.Suspense fallback={<div className="p-6">Loading Admin…</div>}>
+                  <React.Suspense fallback={<Fallback label="Loading Admin…" />}>
                     <AdminModule />
                   </React.Suspense>
                 </RBACRoute>
@@ -133,29 +194,148 @@ export default function App() {
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
               {/* Leads */}
-              <Route path="leads" element={<LeadsPage />} />
-              <Route path="leads/new" element={<LeadCreate />} />
-              <Route path="discover" element={<DiscoverLeads />} />
+              <Route
+                path="leads"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Leads…" />}>
+                    <LeadsPage />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="leads/new"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Lead Create…" />}>
+                    <LeadCreate />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="discover"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Discover…" />}>
+                    <DiscoverLeads />
+                  </React.Suspense>
+                }
+              />
 
               {/* Deals */}
-              <Route path="deals" element={<DealsLayout />}>
+              <Route
+                path="deals"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Deals…" />}>
+                    <DealsLayout />
+                  </React.Suspense>
+                }
+              >
                 <Route index element={<Navigate to="pipeline" replace />} />
-                <Route path="pipeline" element={<DealsPipeline />} />
-                <Route path="list" element={<DealsList />} />
+                <Route
+                  path="pipeline"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Pipeline…" />}>
+                      <DealsPipeline />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="list"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Deals List…" />}>
+                      <DealsList />
+                    </React.Suspense>
+                  }
+                />
               </Route>
 
               {/* Incentives */}
-              <Route path="incentives" element={<IncentivesLayout />}>
-                <Route index element={<IncentivesIndexRedirect />} />
-                <Route path="plans" element={<PlansPage />} />
-                <Route path="rules" element={<RulesPage />} />
-                <Route path="tiers" element={<TiersPage />} />
-                <Route path="programs" element={<ProgramsPage />} />
-                <Route path="payouts" element={<PayoutsPage />} />
-                <Route path="adjustments" element={<AdjustmentsPage />} />
-                <Route path="approvals" element={<ApprovalsPage />} />
-                <Route path="reports" element={<ReportsPage />} />
-                <Route path="audit" element={<AuditPage />} />
+              <Route
+                path="incentives"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Incentives…" />}>
+                    <IncentivesLayout />
+                  </React.Suspense>
+                }
+              >
+                <Route
+                  index
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading…" />}>
+                      <IncentivesIndexRedirect />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="plans"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Plans…" />}>
+                      <PlansPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="rules"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Rules…" />}>
+                      <RulesPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="tiers"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Tiers…" />}>
+                      <TiersPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="programs"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Programs…" />}>
+                      <ProgramsPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="payouts"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Payouts…" />}>
+                      <PayoutsPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="adjustments"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Adjustments…" />}>
+                      <AdjustmentsPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="approvals"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Approvals…" />}>
+                      <ApprovalsPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="reports"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Reports…" />}>
+                      <ReportsPage />
+                    </React.Suspense>
+                  }
+                />
+                <Route
+                  path="audit"
+                  element={
+                    <React.Suspense fallback={<Fallback label="Loading Audit…" />}>
+                      <AuditPage />
+                    </React.Suspense>
+                  }
+                />
                 {/* Help/Settings now served as static HTML in /public/help */}
               </Route>
 
@@ -164,7 +344,14 @@ export default function App() {
             </Route>
 
             {/* Non-CRM under /app */}
-            <Route path="leads/imports/:id" element={<ImportReview />} />
+            <Route
+              path="leads/imports/:id"
+              element={
+                <React.Suspense fallback={<Fallback label="Loading Import Review…" />}>
+                  <ImportReview />
+                </React.Suspense>
+              }
+            />
           </Route>
 
           {/* Redirect helpers */}
