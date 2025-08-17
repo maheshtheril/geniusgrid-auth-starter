@@ -1,14 +1,27 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
-// If you store permissions elsewhere, adjust this hook/import:
-import { useEnv } from "@/store/useEnv";
+import { useAuth } from "@/store/useAuth"; // your auth source
 
-/**
- * RBACRoute
- * Usage: <RBACRoute need={["admin.access"]}><AdminModule/></RBACRoute>
- */
-export default function RBACRoute({ need = [], children }) {
-  const { userPermissions = [] } = useEnv?.() || {};
-  const allowed = Array.isArray(need) && need.every(code => userPermissions.includes(code));
-  return allowed ? children : <Navigate to="/dashboard" replace />;
+export default function RBACRoute({
+  need = [],         // e.g., ["admin.access"]
+  any = false,       // any vs all
+  children,
+}) {
+  const { isAuthenticated, permissions } = useAuth();
+
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  const has = (p) => permissions?.includes(p);
+  const allowed =
+    need.length === 0 ? true : (any ? need.some(has) : need.every(has));
+
+  if (!allowed) {
+    if (import.meta.env.DEV) {
+      // Dev-only visibility
+      // eslint-disable-next-line no-console
+      console.warn("RBAC denied:", { need, have: permissions });
+    }
+    return <Navigate to="/dashboard" replace />;
+  }
+  return children;
 }
