@@ -82,7 +82,7 @@ function ProtectedShell() {
               padding: "0 12px 16px",
             }}
           >
-            <div data-route={isAdminRoute ? "admin" : "default"} style={{width: "100%"}}><Outlet /></div>
+            <Outlet />
           </div>
         </main>
       </div>
