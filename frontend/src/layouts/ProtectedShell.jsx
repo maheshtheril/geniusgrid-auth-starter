@@ -8,8 +8,8 @@ export default function ProtectedShell() {
 
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200">
-      {/* DESKTOP: fixed, always visible */}
-      <div className="hidden md:block fixed inset-y-0 left-0 w-64 z-40 border-r border-gray-800 bg-gray-900">
+      {/* DESKTOP: fixed, ALWAYS visible */}
+      <div className="fixed inset-y-0 left-0 w-64 z-40 border-r border-gray-800 bg-gray-900 hidden md:block">
         <AppSidebar />
       </div>
 
@@ -27,9 +27,8 @@ export default function ProtectedShell() {
         </>
       )}
 
-      {/* MAIN COLUMN (padded to make room for desktop sidebar) */}
+      {/* MAIN: padded to make room for the desktop sidebar */}
       <div className="md:pl-64 min-h-screen flex flex-col">
-        {/* Top bar */}
         <header className="h-14 border-b border-gray-800 flex items-center justify-between px-3 md:px-4">
           <div className="flex items-center gap-2">
             {/* Hamburger only on mobile */}
@@ -64,7 +63,6 @@ export default function ProtectedShell() {
           </div>
         </header>
 
-        {/* Page content */}
         <main className="container-page min-w-0 flex-1">
           <Outlet />
         </main>
