@@ -29,6 +29,8 @@ import { AdjustmentsPage } from "@/pages/crm/incentives/AdjustmentsPage";
 import { ApprovalsPage } from "@/pages/crm/incentives/ApprovalsPage";
 import { ReportsPage } from "@/pages/crm/incentives/ReportsPage";
 import { AuditPage } from "@/pages/crm/incentives/AuditPage";
+import IncentivesHelp from "@/pages/crm/incentives/IncentivesHelp";
+import IncentivesSettings from "@/pages/crm/incentives/IncentivesSettings";
 
 /* -------- CRM: Deals -------- */
 import DealsLayout from "@/pages/crm/deals/DealsLayout";
@@ -39,11 +41,17 @@ import DealsList from "@/pages/crm/deals/DealsList";
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-
 class ErrorBoundary extends React.Component {
-  constructor(p) { super(p); this.state = { error: null }; }
-  static getDerivedStateFromError(error) { return { error }; }
-  componentDidCatch(error, info) { console.error("Render error:", error, info); }
+  constructor(p) {
+    super(p);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    console.error("Render error:", error, info);
+  }
   render() {
     if (!this.state.error) return this.props.children;
     return (
@@ -51,7 +59,11 @@ class ErrorBoundary extends React.Component {
         <div className="max-w-2xl">
           <div className="text-2xl font-bold mb-2">❌ UI crashed</div>
           <pre className="whitespace-pre-wrap text-sm opacity-80">
-            {String(this.state.error?.stack || this.state.error?.message || this.state.error)}
+            {String(
+              this.state.error?.stack ||
+                this.state.error?.message ||
+                this.state.error
+            )}
           </pre>
           <div className="mt-4 space-x-3 text-indigo-300 underline">
             <Link to="/login">/login</Link>
@@ -112,11 +124,11 @@ export default function App() {
               <Route path="discover" element={<DiscoverLeads />} />
 
               {/* Deals */}
-            <Route path="deals" element={<DealsLayout />}>
-  <Route index element={<Navigate to="pipeline" replace />} />
-  <Route path="pipeline" element={<DealsPipeline />} />
-  <Route path="list" element={<DealsList />} />
-</Route>
+              <Route path="deals" element={<DealsLayout />}>
+                <Route index element={<Navigate to="pipeline" replace />} />
+                <Route path="pipeline" element={<DealsPipeline />} />
+                <Route path="list" element={<DealsList />} />
+              </Route>
 
               {/* Incentives */}
               <Route path="incentives" element={<IncentivesLayout />}>
@@ -130,7 +142,9 @@ export default function App() {
                 <Route path="approvals" element={<ApprovalsPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="audit" element={<AuditPage />} />
-               
+                {/* Added Help + Settings */}
+                <Route path="help" element={<IncentivesHelp />} />
+                <Route path="settings" element={<IncentivesSettings />} />
               </Route>
 
               {crmExtraRoutes}
