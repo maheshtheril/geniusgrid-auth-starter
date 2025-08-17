@@ -55,7 +55,7 @@ const CalendarsHolidays   = React.lazy(() => import("@/pages/CalendarsHolidays.j
 const NumberingSchemes    = React.lazy(() => import("@/pages/NumberingSchemes.jsx"));
 const CompliancePolicies  = React.lazy(() => import("@/pages/CompliancePolicies.jsx"));
 
-/* -------- Admin: RBAC & Security (new) -------- */
+/* -------- Admin: RBAC & Security -------- */
 const AdminUsers         = React.lazy(() => import("@/pages/AdminUsers.jsx"));
 const AdminRoles         = React.lazy(() => import("@/pages/AdminRoles.jsx"));
 const PermissionsMatrix  = React.lazy(() => import("@/pages/PermissionsMatrix.jsx"));
@@ -64,6 +64,32 @@ const SecurityPolicies   = React.lazy(() => import("@/pages/SecurityPolicies.jsx
 const SsoMfa             = React.lazy(() => import("@/pages/SsoMfa.jsx"));
 const Domains            = React.lazy(() => import("@/pages/Domains.jsx"));
 const AuditLogs          = React.lazy(() => import("@/pages/AuditLogs.jsx"));
+
+/* -------- Admin: Data & Customization -------- */
+const AdminSettings      = React.lazy(() => import("@/pages/AdminSettings.jsx"));
+const CustomFields       = React.lazy(() => import("@/pages/CustomFields.jsx"));
+const PipelinesStages    = React.lazy(() => import("@/pages/PipelinesStages.jsx"));
+const TemplatesAdmin     = React.lazy(() => import("@/pages/TemplatesAdmin.jsx"));
+const NotificationsAdmin = React.lazy(() => import("@/pages/NotificationsAdmin.jsx"));
+const ImportExport       = React.lazy(() => import("@/pages/ImportExport.jsx"));
+const BackupsAdmin       = React.lazy(() => import("@/pages/BackupsAdmin.jsx"));
+
+/* -------- Admin: Integrations & Developer -------- */
+const IntegrationsAdmin  = React.lazy(() => import("@/pages/IntegrationsAdmin.jsx"));
+const MarketplaceAdmin   = React.lazy(() => import("@/pages/MarketplaceAdmin.jsx"));
+const ApiKeysAdmin       = React.lazy(() => import("@/pages/ApiKeysAdmin.jsx"));
+const WebhooksAdmin      = React.lazy(() => import("@/pages/WebhooksAdmin.jsx"));
+const FeatureFlagsAdmin  = React.lazy(() => import("@/pages/FeatureFlagsAdmin.jsx"));
+
+/* -------- Admin: AI & Automation -------- */
+const AiSettings         = React.lazy(() => import("@/pages/AiSettings.jsx"));
+const AutomationRules    = React.lazy(() => import("@/pages/AutomationRules.jsx"));
+const AdminApprovals     = React.lazy(() => import("@/pages/AdminApprovals.jsx"));
+
+/* -------- Admin: Billing & Observability -------- */
+const BillingSubscription= React.lazy(() => import("@/pages/BillingSubscription.jsx"));
+const UsageLimits        = React.lazy(() => import("@/pages/UsageLimits.jsx"));
+const SystemLogs         = React.lazy(() => import("@/pages/SystemLogs.jsx"));
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -334,6 +360,32 @@ export default function App() {
                   </React.Suspense>
                 }
               />
+
+              {/* Data & Customization */}
+              <Route path="settings"       element={<React.Suspense fallback={<Fallback label="Loading Settings…" />}><AdminSettings /></React.Suspense>} />
+              <Route path="custom-fields"  element={<React.Suspense fallback={<Fallback label="Loading Custom Fields…" />}><CustomFields /></React.Suspense>} />
+              <Route path="pipelines"      element={<React.Suspense fallback={<Fallback label="Loading Pipelines & Stages…" />}><PipelinesStages /></React.Suspense>} />
+              <Route path="templates"      element={<React.Suspense fallback={<Fallback label="Loading Templates…" />}><TemplatesAdmin /></React.Suspense>} />
+              <Route path="notifications"  element={<React.Suspense fallback={<Fallback label="Loading Notifications…" />}><NotificationsAdmin /></React.Suspense>} />
+              <Route path="import"         element={<React.Suspense fallback={<Fallback label="Loading Import / Export…" />}><ImportExport /></React.Suspense>} />
+              <Route path="backups"        element={<React.Suspense fallback={<Fallback label="Loading Backups…" />}><BackupsAdmin /></React.Suspense>} />
+
+              {/* Integrations & Developer */}
+              <Route path="integrations"   element={<React.Suspense fallback={<Fallback label="Loading Integrations…" />}><IntegrationsAdmin /></React.Suspense>} />
+              <Route path="marketplace"    element={<React.Suspense fallback={<Fallback label="Loading Marketplace…" />}><MarketplaceAdmin /></React.Suspense>} />
+              <Route path="api-keys"       element={<React.Suspense fallback={<Fallback label="Loading API Keys…" />}><ApiKeysAdmin /></React.Suspense>} />
+              <Route path="webhooks"       element={<React.Suspense fallback={<Fallback label="Loading Webhooks…" />}><WebhooksAdmin /></React.Suspense>} />
+              <Route path="features"       element={<React.Suspense fallback={<Fallback label="Loading Feature Flags…" />}><FeatureFlagsAdmin /></React.Suspense>} />
+
+              {/* AI & Automation */}
+              <Route path="ai"             element={<React.Suspense fallback={<Fallback label="Loading AI Settings…" />}><AiSettings /></React.Suspense>} />
+              <Route path="automation"     element={<React.Suspense fallback={<Fallback label="Loading Automation Rules…" />}><AutomationRules /></React.Suspense>} />
+              <Route path="approvals"      element={<React.Suspense fallback={<Fallback label="Loading Approvals…" />}><AdminApprovals /></React.Suspense>} />
+
+              {/* Billing & Observability */}
+              <Route path="billing"        element={<React.Suspense fallback={<Fallback label="Loading Billing & Subscription…" />}><BillingSubscription /></React.Suspense>} />
+              <Route path="usage"          element={<React.Suspense fallback={<Fallback label="Loading Usage & Limits…" />}><UsageLimits /></React.Suspense>} />
+              <Route path="logs"           element={<React.Suspense fallback={<Fallback label="Loading System Logs…" />}><SystemLogs /></React.Suspense>} />
 
               <Route path="*" element={<Navigate to="org" replace />} />
             </Route>
