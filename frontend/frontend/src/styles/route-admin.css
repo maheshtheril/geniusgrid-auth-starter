@@ -1,0 +1,24 @@
+/* Apply only when the admin wrapper is present */
+[data-route="admin"] {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+/* Neutralize common Tailwind/utility caps inside admin */
+[data-route="admin"] .container,
+[data-route="admin"] .prose,
+[data-route="admin"] [class*="max-w-"],
+[data-route="admin"] .mx-auto {
+  max-width: none !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Let grids flex naturally */
+[data-route="admin"] .min-w-0,
+[data-route="admin"] [class*="grid"],
+[data-route="admin"] [class*="flex"] {
+  min-width: 0 !important;
+}
