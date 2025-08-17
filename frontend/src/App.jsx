@@ -44,9 +44,16 @@ const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPag
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-/* -------- Admin: Organization Profile + Branding/Theme -------- */
+/* -------- Admin pages: all wired -------- */
 const OrganizationProfile = React.lazy(() => import("@/pages/OrganizationProfile.jsx"));
-const BrandingTheme = React.lazy(() => import("@/pages/BrandingTheme.jsx"));
+const BrandingTheme       = React.lazy(() => import("@/pages/BrandingTheme.jsx"));
+const Localization        = React.lazy(() => import("@/pages/Localization.jsx"));
+const TaxCompliance       = React.lazy(() => import("@/pages/TaxCompliance.jsx"));
+const BusinessUnitsDepts  = React.lazy(() => import("@/pages/BusinessUnitsDepts.jsx"));
+const Locations           = React.lazy(() => import("@/pages/Locations.jsx"));
+const CalendarsHolidays   = React.lazy(() => import("@/pages/CalendarsHolidays.jsx"));
+const NumberingSchemes    = React.lazy(() => import("@/pages/NumberingSchemes.jsx"));
+const CompliancePolicies  = React.lazy(() => import("@/pages/CompliancePolicies.jsx"));
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -81,7 +88,7 @@ function Health() {
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200 grid place-items-center">
       <div className="text-center">
-        <div className="text-2xl font-bold">✅ Health OK</div>
+        <div className="text-2l font-bold">✅ Health OK</div>
         <div className="opacity-70 mb-4">Routing works.</div>
         <div className="space-x-2 underline">
           <Link to="/login">/login</Link>
@@ -169,7 +176,7 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN — Organization Profile + Branding/Theme; others redirect to 'org' */}
+            {/* ADMIN — all pages wired under /app/admin/* */}
             <Route
               path="admin/*"
               element={<div className="min-h-[calc(100vh-56px)] p-6 md:p-8"><Outlet /></div>}
@@ -190,6 +197,69 @@ export default function App() {
                 element={
                   <React.Suspense fallback={<Fallback label="Loading Branding / Theme…" />}>
                     <BrandingTheme />
+                  </React.Suspense>
+                }
+              />
+
+              <Route
+                path="localization"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Localization…" />}>
+                    <Localization />
+                  </React.Suspense>
+                }
+              />
+
+              <Route
+                path="taxes"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Tax & Compliance…" />}>
+                    <TaxCompliance />
+                  </React.Suspense>
+                }
+              />
+
+              <Route
+                path="units"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Business Units & Depts…" />}>
+                    <BusinessUnitsDepts />
+                  </React.Suspense>
+                }
+              />
+
+              <Route
+                path="locations"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Locations…" />}>
+                    <Locations />
+                  </React.Suspense>
+                }
+              />
+
+              <Route
+                path="calendars"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Calendars & Holidays…" />}>
+                    <CalendarsHolidays />
+                  </React.Suspense>
+                }
+              />
+
+              <Route
+                path="numbering"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Numbering Schemes…" />}>
+                    <NumberingSchemes />
+                  </React.Suspense>
+                }
+              />
+
+              <Route
+                path="compliance"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Compliance Policies…" />}>
+                    <CompliancePolicies />
                   </React.Suspense>
                 }
               />
