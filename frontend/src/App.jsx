@@ -40,9 +40,12 @@ const ApprovalsPage   = React.lazy(() => import("@/pages/crm/incentives/Approval
 const ReportsPage     = React.lazy(() => import("@/pages/crm/incentives/ReportsPage").then(m => ({ default: m.ReportsPage })));
 const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPage").then(m => ({ default: m.AuditPage })));
 
-/* -------- CRM: Extras (keep your existing exports) -------- */
+/* -------- CRM: Extras -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
+
+/* -------- Admin: Organization Profile ONLY -------- */
+const OrganizationProfile = React.lazy(() => import("@/pages/OrganizationProfile.jsx"));
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -165,11 +168,22 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ✅ Admin placeholder (no imports, no build break) */}
+            {/* ADMIN — only Organization Profile; others redirect to 'org' */}
             <Route
               path="admin/*"
-              element={<div className="p-6">Admin module is temporarily in placeholder mode.</div>}
-            />
+              element={<div className="min-h-[calc(100vh-56px)] p-6 md:p-8"><Outlet /></div>}
+            >
+              <Route index element={<Navigate to="org" replace />} />
+              <Route
+                path="org"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Organization Profile…" />}>
+                    <OrganizationProfile />
+                  </React.Suspense>
+                }
+              />
+              <Route path="*" element={<Navigate to="org" replace />} />
+            </Route>
 
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
