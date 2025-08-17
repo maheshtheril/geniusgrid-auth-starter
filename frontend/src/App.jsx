@@ -55,6 +55,16 @@ const CalendarsHolidays   = React.lazy(() => import("@/pages/CalendarsHolidays.j
 const NumberingSchemes    = React.lazy(() => import("@/pages/NumberingSchemes.jsx"));
 const CompliancePolicies  = React.lazy(() => import("@/pages/CompliancePolicies.jsx"));
 
+/* -------- Admin: RBAC & Security (new) -------- */
+const AdminUsers         = React.lazy(() => import("@/pages/AdminUsers.jsx"));
+const AdminRoles         = React.lazy(() => import("@/pages/AdminRoles.jsx"));
+const PermissionsMatrix  = React.lazy(() => import("@/pages/PermissionsMatrix.jsx"));
+const TeamsTerritories   = React.lazy(() => import("@/pages/TeamsTerritories.jsx"));
+const SecurityPolicies   = React.lazy(() => import("@/pages/SecurityPolicies.jsx"));
+const SsoMfa             = React.lazy(() => import("@/pages/SsoMfa.jsx"));
+const Domains            = React.lazy(() => import("@/pages/Domains.jsx"));
+const AuditLogs          = React.lazy(() => import("@/pages/AuditLogs.jsx"));
+
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
   constructor(p) {
@@ -183,6 +193,7 @@ export default function App() {
             >
               <Route index element={<Navigate to="org" replace />} />
 
+              {/* Organization & Compliance */}
               <Route
                 path="org"
                 element={
@@ -191,7 +202,6 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="branding"
                 element={
@@ -200,7 +210,6 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="localization"
                 element={
@@ -209,7 +218,6 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="taxes"
                 element={
@@ -218,7 +226,6 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="units"
                 element={
@@ -227,7 +234,6 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="locations"
                 element={
@@ -236,7 +242,6 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="calendars"
                 element={
@@ -245,7 +250,6 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="numbering"
                 element={
@@ -254,12 +258,79 @@ export default function App() {
                   </React.Suspense>
                 }
               />
-
               <Route
                 path="compliance"
                 element={
                   <React.Suspense fallback={<Fallback label="Loading Compliance Policies…" />}>
                     <CompliancePolicies />
+                  </React.Suspense>
+                }
+              />
+
+              {/* Access Control (RBAC) */}
+              <Route
+                path="users"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Users…" />}>
+                    <AdminUsers />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="roles"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Roles…" />}>
+                    <AdminRoles />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="permissions"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Permissions Matrix…" />}>
+                    <PermissionsMatrix />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="teams"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Teams & Territories…" />}>
+                    <TeamsTerritories />
+                  </React.Suspense>
+                }
+              />
+
+              {/* Security & Compliance */}
+              <Route
+                path="security"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Security Policies…" />}>
+                    <SecurityPolicies />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="sso"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading SSO & MFA…" />}>
+                    <SsoMfa />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="domains"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Domains…" />}>
+                    <Domains />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="audit"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Audit Logs…" />}>
+                    <AuditLogs />
                   </React.Suspense>
                 }
               />
