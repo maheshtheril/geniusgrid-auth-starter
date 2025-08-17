@@ -44,8 +44,8 @@ const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPag
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-/* -------- ADMIN: mount exported routes (no RBAC for now) -------- */
-import { adminRoutes } from "@/pages/admin/routes";
+/* -------- ADMIN: lazy route wrapper (full-width layout inside) -------- */
+const AdminRoutes = React.lazy(() => import("@/pages/admin/routes"));
 
 class ErrorBoundary extends React.Component {
   constructor(p) {
@@ -175,8 +175,15 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN (mounted via exported routes; no RBAC wrapper for now) */}
-            
+            {/* ADMIN (full-width standalone admin layout) */}
+            <Route
+              path="admin/*"
+              element={
+                <React.Suspense fallback={<Fallback label="Loading Admin…" />}>
+                  <AdminRoutes />
+                </React.Suspense>
+              }
+            />
 
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
