@@ -45,7 +45,7 @@ import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
 /* -------- ADMIN: mount exported routes (no RBAC for now) -------- */
-import { adminRoutes } from "@/modules/admin/AdminModule";
+import { adminRoutes } from "@/pages/admin/routes";
 
 class ErrorBoundary extends React.Component {
   constructor(p) {
