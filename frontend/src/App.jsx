@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useEnv } from "@/store/useEnv";
 
-
+import DealDrawer from "./DealDrawer";               // ✅ add this
 import { STAGES, createDeal } from "./mockApi";
 
 const TABS = [
@@ -70,7 +70,6 @@ export default function DealsLayout(){
       if (!typing && (e.key === "n" || e.key === "N") && !e.ctrlKey && !e.metaKey) {
         e.preventDefault(); setShowNew(true); // open drawer
       }
-      // (Help removed)
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
