@@ -1,4 +1,3 @@
-// src/layouts/ProtectedShell.jsx
 import React, { useEffect, useState } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { Menu, Plus } from "lucide-react";
@@ -8,7 +7,6 @@ export default function ProtectedShell() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
 
-  // Close drawer when route changes
   useEffect(() => setMobileOpen(false), [location.pathname]);
 
   return (
@@ -43,7 +41,9 @@ export default function ProtectedShell() {
           >
             <Menu className="h-5 w-5" />
           </button>
-          <NavLink to="/app/dashboard" className="font-semibold">GeniusGrid</NavLink>
+          <NavLink to="/app/dashboard" className="font-semibold">
+            GeniusGrid
+          </NavLink>
           <div className="flex-1" />
           <NavLink
             to="/app/crm/leads/new"
