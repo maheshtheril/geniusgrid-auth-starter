@@ -29,8 +29,6 @@ import { AdjustmentsPage } from "@/pages/crm/incentives/AdjustmentsPage";
 import { ApprovalsPage } from "@/pages/crm/incentives/ApprovalsPage";
 import { ReportsPage } from "@/pages/crm/incentives/ReportsPage";
 import { AuditPage } from "@/pages/crm/incentives/AuditPage";
-import IncentivesHelp from "@/pages/crm/incentives/IncentivesHelp";
-import IncentivesSettings from "@/pages/crm/incentives/IncentivesSettings";
 
 /* -------- CRM: Deals -------- */
 import DealsLayout from "@/pages/crm/deals/DealsLayout";
@@ -142,9 +140,8 @@ export default function App() {
                 <Route path="approvals" element={<ApprovalsPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="audit" element={<AuditPage />} />
-                {/* Added Help + Settings */}
-                <Route path="help" element={<IncentivesHelp />} />
-                <Route path="settings" element={<IncentivesSettings />} />
+                {/* Help/Settings now served as static HTML in /public/help,
+                    so no React routes here */}
               </Route>
 
               {crmExtraRoutes}
