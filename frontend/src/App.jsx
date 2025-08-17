@@ -23,7 +23,6 @@ const DiscoverLeads = React.lazy(() => import("@/pages/leads/DiscoverLeads.jsx")
 const ImportReview  = React.lazy(() => import("@/pages/leads/ImportReview.jsx"));
 
 /* -------- CRM: Deals (lazy) -------- */
-// NOTE: ensure extension so bundler resolves the actual file, not the folder object
 const DealsLayout   = React.lazy(() => import("@/pages/crm/deals/DealsLayout.jsx"));
 const DealsPipeline = React.lazy(() => import("@/pages/crm/deals/DealsPipeline.jsx"));
 const DealsList     = React.lazy(() => import("@/pages/crm/deals/DealsList.jsx"));
@@ -41,27 +40,21 @@ const ApprovalsPage   = React.lazy(() => import("@/pages/crm/incentives/Approval
 const ReportsPage     = React.lazy(() => import("@/pages/crm/incentives/ReportsPage").then(m => ({ default: m.ReportsPage })));
 const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPage").then(m => ({ default: m.AuditPage })));
 
-/* -------- CRM: Extras (may be arrays of route-configs or <Route> elements) -------- */
+/* -------- CRM: Extras (keep as you had them) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-/* -------- ADMIN: lazy route wrapper (full-width layout inside) -------- */
-const AdminRoutes = React.lazy(() => import("@/pages/admin/routes.jsx"));
-
-/* ---------- Helpers: safely render route configs ---------- */
-/**
- * Accepts an array of route configs like:
- * [{ path: "x", element: <Comp/>, children: [...] }, ...]
- * and returns an array of <Route> elements.
- */
-function renderRoutes(list) {
-  if (!Array.isArray(list)) return null;
-  return list.map((r, idx) => (
-    <Route key={r.key || r.path || idx} path={r.path} element={r.element}>
-      {Array.isArray(r.children) ? renderRoutes(r.children) : null}
-    </Route>
-  ));
-}
+/* -------- Admin (inline, no separate routes.jsx) -------- */
+const AdminLayout = () => (
+  <div className="min-h-[calc(100vh-56px)] p-4 md:p-6">
+    <div className="mb-4 text-xl font-semibold">Admin</div>
+    <Outlet />
+  </div>
+);
+const AdminUsers     = React.lazy(() => import("@/pages/admin/users/UsersPage.jsx").catch(() => ({ default: () => <div>👤 Users</div> })));
+const AdminRoles     = React.lazy(() => import("@/pages/admin/roles/RolesPage.jsx").catch(() => ({ default: () => <div>🔐 Roles & Permissions</div> })));
+const AdminSettings  = React.lazy(() => import("@/pages/admin/settings/SettingsPage.jsx").catch(() => ({ default: () => <div>⚙️ System Settings</div> })));
+const AdminAuditLogs = React.lazy(() => import("@/pages/admin/audit/AuditLogsPage.jsx").catch(() => ({ default: () => <div>📜 Audit Logs</div> })));
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -69,21 +62,17 @@ class ErrorBoundary extends React.Component {
     super(p);
     this.state = { error: null };
   }
-  static getDerivedStateFromError(error) {
-    return { error };
-  }
-  componentDidCatch(error, info) {
-    console.error("Render error:", error, info);
-  }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("Render error:", error, info); }
   render() {
     if (!this.state.error) return this.props.children;
     return (
       <div className="min-h-screen bg-[#0B0D10] text-gray-200 grid place-items-center p-6">
         <div className="max-w-2xl">
           <div className="text-2xl font-bold mb-2">❌ UI crashed</div>
-          <pre className="whitespace-pre-wrap text-sm opacity-80">
-            {String(this.state.error?.stack || this.state.error?.message || this.state.error)}
-          </pre>
+        <pre className="whitespace-pre-wrap text-sm opacity-80">
+{String(this.state.error?.stack || this.state.error?.message || this.state.error)}
+        </pre>
           <div className="mt-4 space-x-3 text-indigo-300 underline">
             <Link to="/login">/login</Link>
             <Link to="/app/crm/leads">/app/crm/leads</Link>
@@ -113,7 +102,6 @@ function Health() {
 }
 
 const CrmOutlet = () => <Outlet />;
-
 const Fallback = ({ label = "Loading…" }) => (
   <div className="p-6 text-sm text-muted-foreground">{label}</div>
 );
@@ -189,15 +177,50 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN */}
+            {/* ADMIN (inline) */}
             <Route
               path="admin/*"
               element={
                 <React.Suspense fallback={<Fallback label="Loading Admin…" />}>
-                  <AdminRoutes />
+                  <AdminLayout />
                 </React.Suspense>
               }
-            />
+            >
+              <Route index element={<Navigate to="users" replace />} />
+              <Route
+                path="users"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Users…" />}>
+                    <AdminUsers />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="roles"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Roles…" />}>
+                    <AdminRoles />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="settings"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Settings…" />}>
+                    <AdminSettings />
+                  </React.Suspense>
+                }
+              />
+              <Route
+                path="audit"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Audit…" />}>
+                    <AdminAuditLogs />
+                  </React.Suspense>
+                }
+              />
+              <Route path="*" element={<Navigate to="users" replace />} />
+            </Route>
 
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
@@ -346,9 +369,9 @@ export default function App() {
                 />
               </Route>
 
-              {/* ✅ Safely inject CRM extras whether they are arrays or ready-made <Route> elements */}
-              {Array.isArray(crmExtraRoutes) ? renderRoutes(crmExtraRoutes) : crmExtraRoutes}
-              {Array.isArray(crmCompanyRoutes) ? renderRoutes(crmCompanyRoutes) : crmCompanyRoutes}
+              {/* Extras left exactly as you have them */}
+              {crmExtraRoutes}
+              {crmCompanyRoutes}
             </Route>
 
             {/* Non-CRM under /app */}
