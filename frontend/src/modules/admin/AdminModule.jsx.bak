@@ -219,7 +219,7 @@ function UsersPage() {
     { key: "status", label: "Status", render: (r) => (<Badge variant={r.status === "Active" ? "default" : "secondary"}>{r.status}</Badge>) },
   ];
   return (
-    <div className="space-y-4 min-w-0">
+    <div className="space-y-4">
       <Toolbar primaryActionLabel="Invite User" />
       <DataTable columns={columns} rows={rows} />
     </div>

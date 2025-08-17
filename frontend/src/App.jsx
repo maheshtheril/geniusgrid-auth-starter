@@ -3,7 +3,6 @@ import React from "react";
 import "./index.css";
 import "./styles.css";
 import "./styles/theme.css";
-import "./styles/route-admin.css";
 
 import { Routes, Route, Navigate, Link, Outlet } from "react-router-dom";
 
