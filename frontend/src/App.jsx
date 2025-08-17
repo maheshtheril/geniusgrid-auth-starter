@@ -28,7 +28,7 @@ const DealsPipeline = React.lazy(() => import("@/pages/crm/deals/DealsPipeline")
 const DealsList     = React.lazy(() => import("@/pages/crm/deals/DealsList"));
 
 /* -------- CRM: Incentives (lazy) -------- */
-const IncentivesLayout      = React.lazy(() => import("@/pages/crm/incentives/IncentivesLayout"));
+const IncentivesLayout        = React.lazy(() => import("@/pages/crm/incentives/IncentivesLayout"));
 const IncentivesIndexRedirect = React.lazy(() => import("@/pages/crm/incentives/IndexRedirect"));
 const PlansPage       = React.lazy(() => import("@/pages/crm/incentives/PlansPage").then(m => ({ default: m.PlansPage })));
 const RulesPage       = React.lazy(() => import("@/pages/crm/incentives/RulesPage").then(m => ({ default: m.RulesPage })));
@@ -44,9 +44,8 @@ const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPag
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-/* -------- ADMIN: Lazy Module -------- */
-import RBACRoute from "@/routes/RBACRoute";
-const AdminModule = React.lazy(() => import("@/modules/admin/AdminModule"));
+/* -------- ADMIN: mount exported routes (no RBAC for now) -------- */
+import { adminRoutes } from "@/modules/admin/AdminModule";
 
 class ErrorBoundary extends React.Component {
   constructor(p) {
@@ -111,10 +110,7 @@ export default function App() {
       <ErrorBoundary>
         <Routes>
           {/* Public */}
-          <Route
-            path="/"
-            element={<Navigate to="/login" replace />}
-          />
+          <Route path="/" element={<Navigate to="/login" replace />} />
           <Route
             path="/login"
             element={
@@ -179,17 +175,8 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN */}
-            <Route
-              path="admin/*"
-              element={
-                <RBACRoute need={["admin.access"]}>
-                  <React.Suspense fallback={<Fallback label="Loading Admin…" />}>
-                    <AdminModule />
-                  </React.Suspense>
-                </RBACRoute>
-              }
-            />
+            {/* ADMIN (mounted via exported routes; no RBAC wrapper for now) */}
+            {adminRoutes}
 
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
