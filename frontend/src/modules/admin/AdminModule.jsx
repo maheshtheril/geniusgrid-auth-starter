@@ -85,9 +85,9 @@ function AdminLayout() {
   const title = loc.pathname.split("/").pop()?.replaceAll("-", " ") || "Admin";
 
   return (
-    <div className="min-h-[calc(100vh-48px)] grid md:grid-cols-[260px_1fr] gap-4 p-4 md:p-6">
+    <div className="min-h-[calc(100vh-48px)] grid grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)] gap-4 p-4 sm:p-5 md:p-6">
       {/* Sidebar */}
-      <Card className="h-full sticky top-4 hidden md:block">
+      <Card className="h-full sticky top-4 hidden md:block md:min-w-[260px]">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" /> Admin
@@ -113,7 +113,7 @@ function AdminLayout() {
       </Card>
 
       {/* Main */}
-      <div className="space-y-4">
+      <div className="space-y-4 min-w-0 overflow-x-auto">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -150,7 +150,7 @@ function SearchBar() {
     <div className="flex items-center gap-2">
       <div className="relative">
         <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Search admin…" className="pl-8 w-64" />
+        <Input placeholder="Search admin…" className="pl-8 w-full md:w-64" />
       </div>
       <Button variant="secondary">Search</Button>
     </div>
@@ -206,8 +206,8 @@ function DataTable({ columns, rows, renderActions }) {
           <Button variant="outline"><Download className="h-4 w-4 mr-1"/>Export</Button>
         </div>
       </CardHeader>
-      <CardContent>
-        <div className="rounded-md border">
+      <CardContent className="overflow-x-auto">
+        <div className="rounded-md border min-w-[640px]">
           <Table>
             <TableHeader>
               <TableRow>
@@ -624,7 +624,7 @@ function Toolbar({ primaryActionLabel }) {
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative">
         <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-        <Input placeholder="Filter results…" className="pl-8 w-60" />
+        <Input placeholder="Filter results…" className="pl-8 w-full md:w-60" />
       </div>
       <Button variant="secondary">Search</Button>
       <div className="flex-1" />
