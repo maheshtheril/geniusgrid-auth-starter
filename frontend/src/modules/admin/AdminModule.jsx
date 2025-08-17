@@ -85,61 +85,16 @@ function AdminLayout() {
   const title = loc.pathname.split("/").pop()?.replaceAll("-", " ") || "Admin";
 
   return (
-    <div className="min-h-[calc(100vh-48px)] grid grid-cols-1 md:grid-cols-[260px_minmax(0,1fr)] gap-4 p-4 sm:p-5 md:p-6">
+    <div
+      data-route="admin"
+      className="min-h-[calc(100vh-48px)] w-full grid md:grid-cols-[260px_1fr] gap-4 p-4 md:p-6"
+      style={{ maxWidth: 'none' }}
+    >
       {/* Sidebar */}
-      <Card className="h-full sticky top-4 hidden md:block md:min-w-[260px]">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Settings className="h-5 w-5" /> Admin
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1">
-          {adminMenu.map(({ label, icon: Icon, to, description }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-                  isActive ? "bg-muted text-primary" : "hover:bg-muted"
-                }`
-              }
-              title={description}
-            >
-              <Icon className="h-4 w-4" />
-              <span className="text-sm">{label}</span>
-            </NavLink>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* Main */}
-      <div className="space-y-4 min-w-0 overflow-x-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.25 }}
-          className="flex flex-wrap items-center gap-3"
-        >
-          <div>
-            <div className="text-2xl font-semibold capitalize">{title}</div>
-            <p className="text-sm text-muted-foreground">World‑class admin for a futuristic SaaS ERP.</p>
-          </div>
-          <div className="flex-1" />
-          <SearchBar />
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button variant="default" className="rounded-2xl"><Plus className="h-4 w-4 mr-1"/>Quick Create</Button>
-            </SheetTrigger>
-            <SheetContent side="right" className="w-[520px] sm:w-[600px]">
-              <SheetHeader>
-                <SheetTitle>Quick Create</SheetTitle>
-              </SheetHeader>
-              <QuickCreateForm />
-            </SheetContent>
-          </Sheet>
-        </motion.div>
-
-        <Outlet />
+      ...
+      {/* Main column */}
+      <div className="space-y-4 min-w-0">
+        ...
       </div>
     </div>
   );
