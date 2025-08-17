@@ -1,9 +1,9 @@
 // src/main.jsx
 import "./styles/theme-runtime.css";
 import "./styles.css";
-import "/styles/sidebar.css";
+import "./styles/sidebar.css";
 import "./styles/tokens.css";
-import "/styles/responsive-globals.css";
+import "./styles/responsive-globals.css";
 
 
 import React from "react";
