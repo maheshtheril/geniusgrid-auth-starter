@@ -44,8 +44,9 @@ const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPag
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-/* -------- Admin: Organization Profile ONLY -------- */
+/* -------- Admin: Organization Profile + Branding/Theme -------- */
 const OrganizationProfile = React.lazy(() => import("@/pages/OrganizationProfile.jsx"));
+const BrandingTheme = React.lazy(() => import("@/pages/BrandingTheme.jsx"));
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -168,12 +169,13 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN — only Organization Profile; others redirect to 'org' */}
+            {/* ADMIN — Organization Profile + Branding/Theme; others redirect to 'org' */}
             <Route
               path="admin/*"
               element={<div className="min-h-[calc(100vh-56px)] p-6 md:p-8"><Outlet /></div>}
             >
               <Route index element={<Navigate to="org" replace />} />
+
               <Route
                 path="org"
                 element={
@@ -182,6 +184,16 @@ export default function App() {
                   </React.Suspense>
                 }
               />
+
+              <Route
+                path="branding"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Branding / Theme…" />}>
+                    <BrandingTheme />
+                  </React.Suspense>
+                }
+              />
+
               <Route path="*" element={<Navigate to="org" replace />} />
             </Route>
 
