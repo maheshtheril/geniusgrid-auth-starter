@@ -1,16 +1,16 @@
-// src/components/layout/AppSidebar.jsx
 import React, { useEffect, useMemo, useState, useCallback } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { ChevronRight, Loader2, Search } from "lucide-react";
 
-// ----- at top of src/components/layout/AppSidebar.jsx -----
+/* ========= Config ========= */
 const API_BASE =
   (typeof window !== "undefined" && window.__API_BASE) ||
-  import.meta.env.VITE_API_URL || ""; // e.g. "https://geniusgrid-auth-starter.onrender.com"
+  import.meta.env.VITE_API_URL || ""; // e.g. https://geniusgrid-auth-starter.onrender.com
 const MENUS_URL = `${API_BASE.replace(/\/$/, "")}/api/tenant/menus`;
 
-// Safer fetch that detects HTML and shows helpful diagnostics
-async function fetchMenus() {
+/* ========= Helpers ========= */
+// Safe fetch that errors clearly if HTML (redirect/404) is returned
+async function getMenus() {
   const res = await fetch(MENUS_URL, {
     credentials: "include",
     headers: { Accept: "application/json" },
@@ -20,18 +20,14 @@ async function fetchMenus() {
   const text = await res.text();
 
   if (!res.ok) {
-    // Surface the real server text (first 300 chars)
     throw new Error(`HTTP ${res.status} from ${MENUS_URL}: ${text.slice(0, 300)}`);
   }
   if (!contentType.includes("application/json")) {
-    // Probably HTML from frontend/redirect/404 page
     const hint =
       text.trim().startsWith("<!doctype") || text.trim().startsWith("<html")
-        ? "HTML was returned (likely a 404/auth redirect/static index.html)."
+        ? "HTML was returned (likely 404/auth redirect/index.html)."
         : `Unexpected Content-Type: "${contentType}"`;
-    throw new Error(
-      `${hint} From: ${MENUS_URL}\nFirst bytes:\n${text.slice(0, 300)}`
-    );
+    throw new Error(`${hint}\nFrom: ${MENUS_URL}\nFirst bytes:\n${text.slice(0, 300)}`);
   }
 
   let json;
@@ -40,21 +36,10 @@ async function fetchMenus() {
   } catch (e) {
     throw new Error(`Invalid JSON from ${MENUS_URL}: ${e.message}\nFirst bytes:\n${text.slice(0, 300)}`);
   }
-
-  // expected: { items: [...] } OR [...]
   return Array.isArray(json?.items) ? json.items : json;
 }
 
-// --- tiny API helper (inline to avoid extra imports) ---
-async function fetchMenus() {
-  const res = await fetch("/api/tenant/menus", { credentials: "include" });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const json = await res.json();
-  // expected: [{id, name, path, icon, parent_id, sort_order}]
-  return Array.isArray(json?.items) ? json.items : json;
-}
-
-// --- build a tree from flat menus ---
+// Build parent→child tree
 function buildTree(items) {
   const map = new Map();
   const roots = [];
@@ -64,9 +49,8 @@ function buildTree(items) {
       (a.sort_order ?? 0) - (b.sort_order ?? 0) ||
       a.name.localeCompare(b.name)
     )
-    .forEach((it) => {
-      map.set(it.id, { ...it, children: [] });
-    });
+    .forEach((it) => map.set(it.id, { ...it, children: [] }));
+
   map.forEach((node) => {
     if (node.parent_id && map.has(node.parent_id)) {
       map.get(node.parent_id).children.push(node);
@@ -77,13 +61,13 @@ function buildTree(items) {
   return roots;
 }
 
+/* ========= Component ========= */
 export default function AppSidebar({ onRequestClose }) {
   const [state, setState] = useState({ loading: true, error: null, tree: [] });
   const [q, setQ] = useState("");
-  const [open, setOpen] = useState(() => new Set()); // expanded nodes
+  const [open, setOpen] = useState(() => new Set());
   const location = useLocation();
 
-  // auto-expand ancestors of active route
   const ensurePathOpen = useCallback((tree, pathname) => {
     const stack = [];
     function dfs(node, acc) {
@@ -93,7 +77,7 @@ export default function AppSidebar({ onRequestClose }) {
     }
     tree.forEach((r) => dfs(r, []));
     const expanded = new Set();
-    stack.forEach((pathIds) => pathIds.forEach((id) => expanded.add(id)));
+    stack.forEach((ids) => ids.forEach((id) => expanded.add(id)));
     return expanded;
   }, []);
 
@@ -101,31 +85,26 @@ export default function AppSidebar({ onRequestClose }) {
     let alive = true;
     (async () => {
       try {
-        const flat = await fetchMenus();
+        const flat = await getMenus();
         if (!alive) return;
         const tree = buildTree(flat);
         setState({ loading: false, error: null, tree });
-        // expand to active route on first load
         setOpen(ensurePathOpen(tree, location.pathname));
       } catch (e) {
         if (!alive) return;
         setState({ loading: false, error: e.message || "Failed to load menus", tree: [] });
       }
     })();
-    return () => (alive = false);
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // load once
 
   useEffect(() => {
-    // keep ancestors open when route changes
-    if (state.tree.length) {
-      setOpen(ensurePathOpen(state.tree, location.pathname));
-    }
-    // close drawer on navigate (mobile)
-    onRequestClose?.();
+    if (state.tree.length) setOpen(ensurePathOpen(state.tree, location.pathname));
+    onRequestClose?.(); // close drawer on navigate (mobile)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname]);
 
-  // filter tree by search (q)
   const filteredTree = useMemo(() => {
     if (!q.trim()) return state.tree;
     const term = q.toLowerCase();
@@ -150,9 +129,7 @@ export default function AppSidebar({ onRequestClose }) {
   return (
     <div className="h-full flex flex-col bg-card text-foreground">
       {/* Brand */}
-      <div className="h-14 flex items-center px-4 font-bold border-b">
-        GeniusGrid
-      </div>
+      <div className="h-14 flex items-center px-4 font-bold border-b">GeniusGrid</div>
 
       {/* Search */}
       <div className="p-2 border-b">
@@ -175,9 +152,7 @@ export default function AppSidebar({ onRequestClose }) {
             Loading menus…
           </div>
         ) : state.error ? (
-          <div className="text-sm text-red-600 px-2 py-2">
-            Failed: {state.error}
-          </div>
+          <div className="text-sm text-red-600 px-2 py-2">Failed: {state.error}</div>
         ) : filteredTree.length === 0 ? (
           <div className="text-sm opacity-70 px-2 py-2">No menus</div>
         ) : (
@@ -193,20 +168,17 @@ export default function AppSidebar({ onRequestClose }) {
   );
 }
 
-// ----- Recursive tree renderer -----
+/* ========= Recursive renderer ========= */
 function MenuTree({ nodes, open, onToggle, onItemClick, level = 0 }) {
   return (
     <ul className={level === 0 ? "space-y-1" : "ml-3 space-y-1"}>
       {nodes.map((n) => {
         const hasKids = n.children && n.children.length > 0;
         const expanded = open.has(n.id);
-        const rowClasses =
-          "group flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-muted";
-
+        const row = "group flex items-center gap-2 px-3 py-2 rounded-md text-sm hover:bg-muted";
         return (
           <li key={n.id}>
             <div className="flex items-start">
-              {/* Toggle caret or spacer */}
               <button
                 type="button"
                 aria-label="Toggle"
@@ -215,35 +187,24 @@ function MenuTree({ nodes, open, onToggle, onItemClick, level = 0 }) {
                 }`}
                 onClick={() => hasKids && onToggle(n.id)}
               >
-                <ChevronRight
-                  className={`h-4 w-4 transition-transform ${
-                    expanded ? "rotate-90" : ""
-                  }`}
-                />
+                <ChevronRight className={`h-4 w-4 transition-transform ${expanded ? "rotate-90" : ""}`} />
               </button>
 
-              {/* Label / Link */}
               {n.path ? (
                 <NavLink
                   to={n.path}
-                  className={({ isActive }) =>
-                    `${rowClasses} ${isActive ? "bg-muted text-primary" : ""}`
-                  }
+                  className={({ isActive }) => `${row} ${isActive ? "bg-muted text-primary" : ""}`}
                   onClick={onItemClick}
                 >
                   <span className="truncate">{n.name}</span>
                 </NavLink>
               ) : (
-                <div
-                  className={`${rowClasses} cursor-default`}
-                  onClick={() => hasKids && onToggle(n.id)}
-                >
+                <div className={`${row} cursor-default`} onClick={() => hasKids && onToggle(n.id)}>
                   <span className="truncate">{n.name}</span>
                 </div>
               )}
             </div>
 
-            {/* Children */}
             {hasKids && expanded && (
               <div className="mt-1">
                 <MenuTree
