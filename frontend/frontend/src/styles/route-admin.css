@@ -1,11 +1,12 @@
-/* Apply only when the admin wrapper is present */
+/* Affects only the admin subtree */
 [data-route="admin"] {
   width: 100% !important;
   max-width: none !important;
   margin: 0 !important;
+  box-sizing: border-box;
 }
 
-/* Neutralize common Tailwind/utility caps inside admin */
+/* Kill common width clamps inside admin */
 [data-route="admin"] .container,
 [data-route="admin"] .prose,
 [data-route="admin"] [class*="max-w-"],
@@ -16,9 +17,5 @@
   margin-right: 0 !important;
 }
 
-/* Let grids flex naturally */
-[data-route="admin"] .min-w-0,
-[data-route="admin"] [class*="grid"],
-[data-route="admin"] [class*="flex"] {
-  min-width: 0 !important;
-}
+/* Safety so flex/grid children don’t collapse */
+[data-route="admin"] * { min-width: 0 !important; }
