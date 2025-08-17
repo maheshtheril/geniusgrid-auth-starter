@@ -40,21 +40,21 @@ const ApprovalsPage   = React.lazy(() => import("@/pages/crm/incentives/Approval
 const ReportsPage     = React.lazy(() => import("@/pages/crm/incentives/ReportsPage").then(m => ({ default: m.ReportsPage })));
 const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPage").then(m => ({ default: m.AuditPage })));
 
-/* -------- CRM: Extras (keep as you had them) -------- */
+/* -------- CRM: Extras (keep your existing exports) -------- */
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-/* -------- Admin (inline, no separate routes.jsx) -------- */
+/* -------- ADMIN: simple inline pages (no imports, no build failures) -------- */
 const AdminLayout = () => (
   <div className="min-h-[calc(100vh-56px)] p-4 md:p-6">
     <div className="mb-4 text-xl font-semibold">Admin</div>
     <Outlet />
   </div>
 );
-const AdminUsers     = React.lazy(() => import("@/pages/admin/users/UsersPage.jsx").catch(() => ({ default: () => <div>👤 Users</div> })));
-const AdminRoles     = React.lazy(() => import("@/pages/admin/roles/RolesPage.jsx").catch(() => ({ default: () => <div>🔐 Roles & Permissions</div> })));
-const AdminSettings  = React.lazy(() => import("@/pages/admin/settings/SettingsPage.jsx").catch(() => ({ default: () => <div>⚙️ System Settings</div> })));
-const AdminAuditLogs = React.lazy(() => import("@/pages/admin/audit/AuditLogsPage.jsx").catch(() => ({ default: () => <div>📜 Audit Logs</div> })));
+const AdminUsers     = () => <div>👤 Users management</div>;
+const AdminRoles     = () => <div>🔐 Roles &amp; Permissions</div>;
+const AdminSettings  = () => <div>⚙️ System Settings</div>;
+const AdminAuditLogs = () => <div>📜 Audit Logs</div>;
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -70,9 +70,9 @@ class ErrorBoundary extends React.Component {
       <div className="min-h-screen bg-[#0B0D10] text-gray-200 grid place-items-center p-6">
         <div className="max-w-2xl">
           <div className="text-2xl font-bold mb-2">❌ UI crashed</div>
-        <pre className="whitespace-pre-wrap text-sm opacity-80">
-{String(this.state.error?.stack || this.state.error?.message || this.state.error)}
-        </pre>
+          <pre className="whitespace-pre-wrap text-sm opacity-80">
+            {String(this.state.error?.stack || this.state.error?.message || this.state.error)}
+          </pre>
           <div className="mt-4 space-x-3 text-indigo-300 underline">
             <Link to="/login">/login</Link>
             <Link to="/app/crm/leads">/app/crm/leads</Link>
@@ -177,49 +177,20 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN (inline) */}
+            {/* ADMIN (inline, zero external files) */}
             <Route
               path="admin/*"
               element={
-                <React.Suspense fallback={<Fallback label="Loading Admin…" />}>
-                  <AdminLayout />
-                </React.Suspense>
+                // AdminLayout is not lazy, it just renders <Outlet/>
+                <AdminLayout />
               }
             >
               <Route index element={<Navigate to="users" replace />} />
-              <Route
-                path="users"
-                element={
-                  <React.Suspense fallback={<Fallback label="Loading Users…" />}>
-                    <AdminUsers />
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="roles"
-                element={
-                  <React.Suspense fallback={<Fallback label="Loading Roles…" />}>
-                    <AdminRoles />
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="settings"
-                element={
-                  <React.Suspense fallback={<Fallback label="Loading Settings…" />}>
-                    <AdminSettings />
-                  </React.Suspense>
-                }
-              />
-              <Route
-                path="audit"
-                element={
-                  <React.Suspense fallback={<Fallback label="Loading Audit…" />}>
-                    <AdminAuditLogs />
-                  </React.Suspense>
-                }
-              />
-              <Route path="*" element={<Navigate to="users" replace />} />
+              <Route path="users"    element={<AdminUsers />} />
+              <Route path="roles"    element={<AdminRoles />} />
+              <Route path="settings" element={<AdminSettings />} />
+              <Route path="audit"    element={<AdminAuditLogs />} />
+              <Route path="*"        element={<Navigate to="users" replace />} />
             </Route>
 
             {/* CRM */}
@@ -295,81 +266,18 @@ export default function App() {
                     </React.Suspense>
                   }
                 />
-                <Route
-                  path="plans"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Plans…" />}>
-                      <PlansPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="rules"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Rules…" />}>
-                      <RulesPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="tiers"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Tiers…" />}>
-                      <TiersPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="programs"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Programs…" />}>
-                      <ProgramsPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="payouts"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Payouts…" />}>
-                      <PayoutsPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="adjustments"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Adjustments…" />}>
-                      <AdjustmentsPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="approvals"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Approvals…" />}>
-                      <ApprovalsPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="reports"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Reports…" />}>
-                      <ReportsPage />
-                    </React.Suspense>
-                  }
-                />
-                <Route
-                  path="audit"
-                  element={
-                    <React.Suspense fallback={<Fallback label="Loading Audit…" />}>
-                      <AuditPage />
-                    </React.Suspense>
-                  }
-                />
+                <Route path="plans"       element={<React.Suspense fallback={<Fallback label="Loading Plans…" />}><PlansPage /></React.Suspense>} />
+                <Route path="rules"       element={<React.Suspense fallback={<Fallback label="Loading Rules…" />}><RulesPage /></React.Suspense>} />
+                <Route path="tiers"       element={<React.Suspense fallback={<Fallback label="Loading Tiers…" />}><TiersPage /></React.Suspense>} />
+                <Route path="programs"    element={<React.Suspense fallback={<Fallback label="Loading Programs…" />}><ProgramsPage /></React.Suspense>} />
+                <Route path="payouts"     element={<React.Suspense fallback={<Fallback label="Loading Payouts…" />}><PayoutsPage /></React.Suspense>} />
+                <Route path="adjustments" element={<React.Suspense fallback={<Fallback label="Loading Adjustments…" />}><AdjustmentsPage /></React.Suspense>} />
+                <Route path="approvals"   element={<React.Suspense fallback={<Fallback label="Loading Approvals…" />}><ApprovalsPage /></React.Suspense>} />
+                <Route path="reports"     element={<React.Suspense fallback={<Fallback label="Loading Reports…" />}><ReportsPage /></React.Suspense>} />
+                <Route path="audit"       element={<React.Suspense fallback={<Fallback label="Loading Audit…" />}><AuditPage /></React.Suspense>} />
               </Route>
 
-              {/* Extras left exactly as you have them */}
+              {/* Keep your extra CRM route injections */}
               {crmExtraRoutes}
               {crmCompanyRoutes}
             </Route>
