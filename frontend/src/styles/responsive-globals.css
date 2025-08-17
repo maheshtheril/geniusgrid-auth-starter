@@ -1,73 +1,27 @@
-/* ---------- FILE: src/styles/responsive-globals.css ---------- */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* COMPONENT LAYER: shared responsive helpers */
 @layer components {
-  /* Sticky page toolbar that stays below the app header */
   .gg-sticky-toolbar {
-    @apply sticky top-14 md:top-16 z-30 bg-background/95 backdrop-blur
-           border-b -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 py-2;
-    /* Use flex in pages: justify-between or wrap as needed */
+    @apply sticky top-14 md:top-16 z-30 bg-background/95 backdrop-blur border-b
+           -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6 py-2 flex flex-wrap items-center justify-between gap-2;
   }
-
-  /* Primary action button that remains clear on small screens */
   .gg-primary-action {
     @apply inline-flex items-center gap-2 rounded-md border px-3 h-9 text-sm font-medium
-           bg-primary text-primary-foreground hover:opacity-95 active:opacity-90
-           w-full sm:w-auto;
+           bg-primary text-primary-foreground hover:opacity-95 active:opacity-90 w-full sm:w-auto;
   }
-
-  /* Table responsiveness: wrap tables with this class on the container div */
-  .gg-table-responsive {
-    @apply overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6;
-  }
-  .gg-table {
-    @apply min-w-[720px] text-sm; /* grow horizontally; readable density */
-  }
-  .gg-th {
-    @apply whitespace-nowrap font-semibold text-muted-foreground text-xs uppercase tracking-wide;
-  }
-  .gg-td-truncate {
-    @apply max-w-[240px] truncate align-middle;
-  }
-
-  /* Form grid that scales cleanly */
-  .gg-form-grid {
-    @apply grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4;
-  }
-  .gg-field {
-    @apply space-y-1;
-  }
-  .gg-label {
-    @apply text-xs font-medium text-muted-foreground;
-  }
-  .gg-input {
-    @apply w-full rounded-md border bg-background px-3 h-9;
-  }
-  .gg-textarea {
-    @apply w-full rounded-md border bg-background p-3 min-h-[120px] resize-y;
-  }
-
-  /* Mobile bottom action bar (use inside drawers/forms if needed) */
+  .gg-table-responsive { @apply overflow-x-auto -mx-3 sm:-mx-4 md:-mx-6; }
+  .gg-table { @apply min-w-[720px] text-sm; }
+  .gg-th { @apply whitespace-nowrap font-semibold text-muted-foreground text-xs uppercase tracking-wide; }
+  .gg-td-truncate { @apply max-w-[240px] truncate; }
+  .gg-form-grid { @apply grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4; }
+  .gg-field { @apply space-y-1; }
+  .gg-label { @apply text-xs font-medium text-muted-foreground; }
+  .gg-input { @apply w-full rounded-md border bg-background px-3 h-9; }
+  .gg-textarea { @apply w-full rounded-md border bg-background p-3 min-h-[120px] resize-y; }
   .gg-bottom-bar {
-    @apply fixed bottom-0 left-0 right-0 z-[65] md:static md:z-auto
-           bg-background/95 backdrop-blur border-t p-3 flex gap-2;
+    @apply fixed bottom-0 left-0 right-0 z-[65] md:static bg-background/95 backdrop-blur border-t
+           p-3 flex gap-2;
   }
-
-  /* Safe area padding helper (for notched phones) */
-  .gg-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-    padding-top: env(safe-area-inset-top);
-  }
-}
-
-/* UTILITIES: z-index harmonization for overlays & drawers */
-@layer utilities {
-  .z-app-sidebar { z-index: 40; }   /* desktop sidebar */
-  .z-app-header  { z-index: 50; }   /* fixed header */
-  .z-drawer      { z-index: 70; }   /* mobile drawer panel */
-  .z-overlay     { z-index: 70; }   /* mobile overlay */
-  .z-modal       { z-index: 80; }   /* modals above drawer */
 }
