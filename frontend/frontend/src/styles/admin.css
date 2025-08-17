@@ -1,0 +1,6 @@
+/* Make admin pages ignore any global max-width/container constraints */
+[data-admin-root] {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
