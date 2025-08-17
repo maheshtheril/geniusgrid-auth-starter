@@ -8,12 +8,12 @@ export default function ProtectedShell() {
 
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200">
-      {/* DESKTOP: fixed, ALWAYS visible */}
-      <div className="fixed inset-y-0 left-0 w-64 z-40 border-r border-gray-800 bg-gray-900 hidden md:block">
+      {/* Desktop sidebar (fixed) */}
+      <aside className="hidden md:block fixed inset-y-0 left-0 w-64 z-40 bg-gray-900 border-r border-gray-800">
         <AppSidebar />
-      </div>
+      </aside>
 
-      {/* MOBILE: slide-in drawer */}
+      {/* Mobile drawer */}
       {navOpen && (
         <>
           <button
@@ -27,13 +27,12 @@ export default function ProtectedShell() {
         </>
       )}
 
-      {/* MAIN: padded to make room for the desktop sidebar */}
+      {/* Main column reserves space for desktop sidebar */}
       <div className="md:pl-64 min-h-screen flex flex-col">
         <header className="h-14 border-b border-gray-800 flex items-center justify-between px-3 md:px-4">
           <div className="flex items-center gap-2">
-            {/* Hamburger only on mobile */}
             <button
-              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-800 hover:bg-gray-800/50"
+              className="md:hidden inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-800 hover:bg-gray-800/50"
               onClick={() => setNavOpen(true)}
               aria-label="Open menu"
             >
