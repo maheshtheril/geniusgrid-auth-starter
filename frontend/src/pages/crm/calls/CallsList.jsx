@@ -41,16 +41,23 @@ export default function CallsList(){
     <div>
       <Toolbar
         title="Calls"
-        showSearch={false}                // <-- Hide built-in search
-        onAdd={() => { setEditing(null); setOpen(true); }}
-        addLabel="New Call"
+        showSearch={false} // keep your own input on the left
+        rightSlot={
+          <button
+            type="button"
+            className="h-9 px-3 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 inline-flex items-center gap-2 shrink-0"
+            onClick={() => { setEditing(null); setOpen(true); }}
+          >
+            + New Call
+          </button>
+        }
       >
-        {/* Your own search input (left side, next to title) */}
         <input
           value={q}
           onChange={e=>setQ(e.target.value)}
           placeholder="Search contact/company…"
           className="h-9 px-3 rounded-lg border bg-background"
+          aria-label="Search calls"
         />
       </Toolbar>
 
