@@ -1,3 +1,4 @@
+import Page from "./Page";
 import React from "react";
 import { Route, Outlet } from "react-router-dom";
 

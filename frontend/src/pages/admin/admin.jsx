@@ -1,3 +1,4 @@
+import Page from "./Page";
 // Admin Module – World‑Class SaaS ERP Scaffold (React + Tailwind + shadcn/ui + lucide + framer-motion + recharts)
 // ---------------------------------------------------------------------------------
 // HOW TO WIRE (copy/paste):

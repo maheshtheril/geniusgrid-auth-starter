@@ -45,7 +45,7 @@ import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
 /* -------- ADMIN: mount exported routes (no RBAC for now) -------- */
-import { adminRoutes } from "@/pages/admin/routes";
+import  from "@/pages/admin/routes";
 
 class ErrorBoundary extends React.Component {
   constructor(p) {
@@ -176,7 +176,7 @@ export default function App() {
             <Route index element={<Navigate to="/dashboard" replace />} />
 
             {/* ADMIN (mounted via exported routes; no RBAC wrapper for now) */}
-            {adminRoutes}
+            
 
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
