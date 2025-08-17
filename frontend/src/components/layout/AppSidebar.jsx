@@ -230,7 +230,7 @@ const Chevron = ({ open }) => (
 const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inline-block" }} />;
 
 /* ============================== COMPONENT ================================ */
-export default function AppSidebar({ onRequestClose }) {
+export default function AppSidebar() {
   const { branding } = useEnv(); // use only for logo/appName; menus are hardcoded
   const loc = useLocation();
   const scrollerRef = useRef(null);
@@ -350,12 +350,10 @@ export default function AppSidebar({ onRequestClose }) {
 
   return (
     <aside
-      className={
-        // Full-width on mobile (overlay), fixed width on md+.
-        "bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col w-[90vw] max-w-xs md:w-64 md:min-w-64"
-      }
+      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
+      style={{ width: "16rem", minWidth: "16rem" }}
     >
-      {/* Header: Logo + Brand + Expand/Collapse (top row) */}
+      {/* Header: Logo + Brand + Expand/Collapse on top */}
       <div className="h-14 px-3 flex items-center justify-between gap-2 border-b border-gray-800">
         <div className="flex items-center gap-3 min-w-0">
           {branding?.logoUrl ? (
@@ -367,11 +365,8 @@ export default function AppSidebar({ onRequestClose }) {
           ) : (
             <div className="h-8 w-8 rounded-md bg-gray-800 flex items-center justify-center text-lg">🧠</div>
           )}
-          <div className="text-lg font-semibold truncate">
-            {branding?.appName || "GeniusGrid"}
-          </div>
+          <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
         </div>
-
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -391,57 +386,41 @@ export default function AppSidebar({ onRequestClose }) {
           >
             ⤡
           </button>
-
-          {/* Optional mobile close button if parent passes a handler */}
-          {typeof onRequestClose === "function" && (
-            <button
-              type="button"
-              onClick={onRequestClose}
-              className="md:hidden px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700"
-              aria-label="Close menu"
-              title="Close"
-            >
-              ✖
-            </button>
-          )}
         </div>
       </div>
 
-      {/* Scroll area with sticky search on top */}
-      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
-        {/* Sticky search */}
-        <div className="p-2 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <input
-                type="text"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search menu…"
-                className="w-full bg-gray-800/60 text-sm text-gray-100 rounded-lg px-8 py-2 outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-gray-400"
-              />
-              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-70">🔎</span>
-              {query && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white"
-                  aria-label="Clear"
-                  title="Clear"
-                >
-                  ✖
-                </button>
-              )}
-            </div>
+      {/* Search */}
+      <div className="p-2 border-b border-gray-800">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search menu…"
+              className="w-full bg-gray-800/60 text-sm text-gray-100 rounded-lg px-8 py-2 outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-gray-400"
+            />
+            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-70">🔎</span>
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white"
+                aria-label="Clear"
+                title="Clear"
+              >
+                ✖
+              </button>
+            )}
           </div>
         </div>
+      </div>
 
-        {/* Menu list */}
-        <div className="p-2">
-          {visibleTree.map((root) => (
-            <Node key={root.id} node={root} />
-          ))}
-        </div>
+      {/* Menu list (unchanged) */}
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
+        {visibleTree.map((root) => (
+          <Node key={root.id} node={root} />
+        ))}
       </div>
     </aside>
   );
