@@ -230,7 +230,7 @@ const Chevron = ({ open }) => (
 const Spacer = () => <span style={{ width: ARROW, height: ARROW, display: "inline-block" }} />;
 
 /* ============================== COMPONENT ================================ */
-export default function AppSidebar() {
+export default function AppSidebar({ onRequestClose }) {
   const { branding } = useEnv(); // use only for logo/appName; menus are hardcoded
   const loc = useLocation();
   const scrollerRef = useRef(null);
@@ -326,12 +326,15 @@ export default function AppSidebar() {
       );
     }
 
-    // Leaves: real links
+    // Leaves: real links — close drawer on mobile tap
+    const closeOnMobile = () => { if (typeof onRequestClose === "function") onRequestClose(); };
+
     return (
       <div className="group" key={node.id}>
         <NavLink
           to={node.path || "#"}
           end
+          onClick={closeOnMobile}
           className={({ isActive }) =>
             [
               "no-underline flex items-center gap-2 px-3 py-2 rounded-lg text-sm",
@@ -350,10 +353,14 @@ export default function AppSidebar() {
 
   return (
     <aside
-      className="bg-gray-900 text-gray-100 border-r border-gray-800 flex flex-col"
-      style={{ width: "16rem", minWidth: "16rem" }}
+      className="
+        bg-gray-900 text-gray-100 border-r border-gray-800
+        flex flex-col
+        w-[90vw] max-w-xs md:w-64
+        h-full md:h-screen md:sticky md:top-0
+      "
     >
-      {/* Header: Logo + Brand + Expand/Collapse on top */}
+      {/* Header: Logo + Brand + Expand/Collapse (top row) */}
       <div className="h-14 px-3 flex items-center justify-between gap-2 border-b border-gray-800">
         <div className="flex items-center gap-3 min-w-0">
           {branding?.logoUrl ? (
@@ -365,8 +372,11 @@ export default function AppSidebar() {
           ) : (
             <div className="h-8 w-8 rounded-md bg-gray-800 flex items-center justify-center text-lg">🧠</div>
           )}
-          <div className="text-lg font-semibold truncate">{branding?.appName || "GeniusGrid"}</div>
+          <div className="text-lg font-semibold truncate">
+            {branding?.appName || "GeniusGrid"}
+          </div>
         </div>
+
         <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
@@ -386,41 +396,57 @@ export default function AppSidebar() {
           >
             ⤡
           </button>
+
+          {/* Optional mobile close button if parent passes a handler */}
+          {typeof onRequestClose === "function" && (
+            <button
+              type="button"
+              onClick={onRequestClose}
+              className="md:hidden px-2 py-2 text-xs rounded-md bg-gray-800 hover:bg-gray-700"
+              aria-label="Close menu"
+              title="Close"
+            >
+              ✖
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Search */}
-      <div className="p-2 border-b border-gray-800">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search menu…"
-              className="w-full bg-gray-800/60 text-sm text-gray-100 rounded-lg px-8 py-2 outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-gray-400"
-            />
-            <span className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-70">🔎</span>
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white"
-                aria-label="Clear"
-                title="Clear"
-              >
-                ✖
-              </button>
-            )}
+      {/* Scroll area with sticky search on top */}
+      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
+        {/* Sticky search */}
+        <div className="p-2 border-b border-gray-800 sticky top-0 bg-gray-900 z-10">
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search menu…"
+                className="w-full bg-gray-800/60 text-sm text-gray-100 rounded-lg px-8 py-2 outline-none focus:ring-2 focus:ring-indigo-500/50 placeholder:text-gray-400"
+              />
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 opacity-70">🔎</span>
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white"
+                  aria-label="Clear"
+                  title="Clear"
+                >
+                  ✖
+                </button>
+              )}
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Menu list (unchanged) */}
-      <div ref={scrollerRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2">
-        {visibleTree.map((root) => (
-          <Node key={root.id} node={root} />
-        ))}
+        {/* Menu list */}
+        <div className="p-2">
+          {visibleTree.map((root) => (
+            <Node key={root.id} node={root} />
+          ))}
+        </div>
       </div>
     </aside>
   );
