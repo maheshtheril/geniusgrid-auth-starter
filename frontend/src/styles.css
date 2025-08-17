@@ -92,3 +92,16 @@
 .app-sidebar .nav-scroll::-webkit-scrollbar { width: 10px; }
 .app-sidebar .nav-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 8px; }
 .app-sidebar .nav-scroll:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,.25); }
+/* Page padding that adapts */
+.container-page { padding: 0.75rem; }
+@media (min-width: 768px) { .container-page { padding: 1.5rem; } }
+
+/* Safe table scrolling if needed */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+/* Clamp headings for readability on phones */
+h1 { font-size: clamp(1.25rem, 2.5vw, 1.75rem); }
+h2 { font-size: clamp(1.125rem, 2.2vw, 1.5rem); }
+
+/* Don’t let key buttons shrink on tight rows */
+.btn-noshrink { flex-shrink: 0; }

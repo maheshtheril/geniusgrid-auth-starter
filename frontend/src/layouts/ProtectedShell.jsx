@@ -1,95 +1,70 @@
-// src/layouts/ProtectedShell.jsx
-import React, { memo, useMemo } from "react";
-import { Outlet, useLocation } from "react-router-dom";
-
-import ProtectedLayout from "./ProtectedLayout";
+import React, { useState } from "react";
+import { Outlet, NavLink } from "react-router-dom";
 import AppSidebar from "@/components/layout/AppSidebar";
-import AppTopbar from "@/components/layout/AppTopbar";
-import { useEnv } from "@/store/useEnv";
 
-// Optional: keep while testing; remove when done
-function DebugHUD() {
-  const { ready, menus } = useEnv() || {};
-  const { pathname } = useLocation();
+export default function ProtectedShell() {
+  const [navOpen, setNavOpen] = useState(false);
+
   return (
-    <div
-      style={{
-        position: "fixed",
-        right: 8,
-        bottom: 8,
-        zIndex: 9999,
-        background: "rgba(0,0,0,.6)",
-        color: "#fff",
-        padding: "6px 8px",
-        fontSize: 11,
-        borderRadius: 6,
-        pointerEvents: "none",
-      }}
-    >
-      <div>ready: {String(ready)}</div>
-      <div>path: {pathname}</div>
-      <div>menus: {Array.isArray(menus) ? menus.length : 0}</div>
+    <div className="min-h-screen bg-[#0B0D10] text-gray-200 flex">
+      {/* Desktop sidebar */}
+      <div className="hidden md:block">
+        <AppSidebar />
+      </div>
+
+      {/* Mobile drawer */}
+      {navOpen && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            onClick={() => setNavOpen(false)}
+            aria-hidden
+          />
+          <div className="fixed inset-y-0 left-0 z-50 w-72 md:hidden bg-gray-900">
+            <AppSidebar />
+          </div>
+        </>
+      )}
+
+      {/* Main column */}
+      <div className="flex-1 min-w-0 flex flex-col">
+        <header className="h-14 border-b border-gray-800 flex items-center justify-between px-3 md:px-4">
+          <div className="flex items-center gap-2">
+            <button
+              className="md:hidden inline-flex items-center justify-center h-9 w-9 rounded-lg border border-gray-800 hover:bg-gray-800/50"
+              onClick={() => setNavOpen(true)}
+              aria-label="Open menu"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden>
+                <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </button>
+            <NavLink to="/dashboard" className="font-semibold no-underline text-gray-100">
+              GeniusGrid
+            </NavLink>
+          </div>
+
+          <nav className="hidden sm:flex items-center gap-4 text-sm">
+            <NavLink to="/app/crm/leads" className={({isActive})=>isActive?"text-white":"text-gray-300 hover:text-white"}>Leads</NavLink>
+            <NavLink to="/app/crm/companies" className={({isActive})=>isActive?"text-white":"text-gray-300 hover:text-white"}>Companies</NavLink>
+            <NavLink to="/app/crm/deals" className={({isActive})=>isActive?"text-white":"text-gray-300 hover:text-white"}>Deals</NavLink>
+          </nav>
+
+          <div className="flex items-center gap-2">
+            <NavLink
+              to="/app/admin/org"
+              className="hidden sm:inline-flex h-9 px-3 rounded-lg border border-gray-800 hover:bg-gray-800/50 text-sm no-underline"
+            >
+              Admin
+            </NavLink>
+            <div className="h-8 w-8 rounded-full bg-gray-800 grid place-items-center text-xs">U</div>
+          </div>
+        </header>
+
+        <main className="container-page min-w-0">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }
-
-function ProtectedShell() {
-  const { pathname } = useLocation();
-  const isAdminRoute = pathname.startsWith("/app/admin");
-  // memoize heavy children so routing doesn't re-render them
-  const sidebarEl = useMemo(() => <AppSidebar />, []);
-  const topbarEl  = useMemo(() => <AppTopbar />, []);
-
-  return (
-    <ProtectedLayout>
-      <div
-        className="app-shell"
-        style={{
-          display: "flex",
-          width: "100%",
-          height: "100dvh",
-          minHeight: 0,   // allows children to scroll
-          minWidth: 0,
-          overflow: "hidden",
-        }}
-      >
-        {sidebarEl}
-
-        <main
-          className="app-main"
-          style={{
-            display: "flex",
-            flex: "1 1 auto",
-            minHeight: 0,
-            minWidth: 0,
-            flexDirection: "column",
-            overflow: "hidden",
-          }}
-        >
-          {topbarEl}
-
-          {/* Full-width content area (no maxWidth cap) */}
-          <div
-            className="app-content"
-            style={{
-              flex: "1 1 auto",
-              minHeight: 0,
-              minWidth: 0,
-              overflowY: "auto",
-              overflowX: "hidden",
-              position: "relative",
-              // a little breathing room without constraining width
-              padding: "0 12px 16px",
-            }}
-          >
-            <div data-route={isAdminRoute ? "admin" : "default"} style={{width: "100%"}}><Outlet /></div>
-          </div>
-        </main>
-      </div>
-
-      <DebugHUD />
-    </ProtectedLayout>
-  );
-}
-
-export default memo(ProtectedShell);
