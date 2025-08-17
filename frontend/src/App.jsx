@@ -112,11 +112,11 @@ export default function App() {
               <Route path="discover" element={<DiscoverLeads />} />
 
               {/* Deals */}
-              <Route path="deals" element={<DealsLayout />}>
-                <Route index element={<Navigate to="pipeline" replace />} />
-                <Route path="pipeline" element={<DealsPipeline />} />
-                <Route path="list" element={<DealsList />} />
-              </Route>
+            <Route path="deals" element={<DealsLayout />}>
+  <Route index element={<Navigate to="pipeline" replace />} />
+  <Route path="pipeline" element={<DealsPipeline />} />
+  <Route path="list" element={<DealsList />} />
+</Route>
 
               {/* Incentives */}
               <Route path="incentives" element={<IncentivesLayout />}>
