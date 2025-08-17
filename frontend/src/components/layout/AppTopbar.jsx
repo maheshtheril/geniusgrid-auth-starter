@@ -39,7 +39,7 @@ export default function AppTopbar() {
         )}
 
         {/* Theme toggle – cycles light/dark/night */}
-        <BuildBadge />
+       <BuildBadge className="opacity-70 hidden sm:inline-block" />
         <ThemeToggle compact />
 
         <UserChip email={user?.email} />

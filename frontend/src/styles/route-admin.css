@@ -1,0 +1,46 @@
+/* Full-width only for admin routes */
+[data-route="admin"] {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+/* Kill common width clamps inside admin */
+[data-route="admin"] .container,
+[data-route="admin"] .prose,
+[data-route="admin"] [class*="max-w-"],
+[data-route="admin"] .mx-auto {
+  max-width: none !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Ensure flex/grid children don't collapse */
+[data-route="admin"] .min-w-0,
+[data-route="admin"] [class*="grid"],
+[data-route="admin"] [class*="flex"] {
+  min-width: 0 !important;
+}
+/* Only inside the admin subtree */
+[data-route="admin"] {
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+  box-sizing: border-box;
+}
+
+/* Neutralize common width clamps coming from shared UI */
+[data-route="admin"] .container,
+[data-route="admin"] .prose,
+[data-route="admin"] [class*="max-w-"],
+[data-route="admin"] .mx-auto {
+  max-width: none !important;
+  width: 100% !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* Safety so flex/grid children don’t pinch */
+[data-route="admin"] * { min-width: 0 !important; }
+  
