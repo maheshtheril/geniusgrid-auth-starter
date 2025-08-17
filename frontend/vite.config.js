@@ -19,10 +19,10 @@ export default defineConfig(async ({ mode }) => {
           template: "treemap",
           gzipSize: true,
           brotliSize: true,
-          open: true, // opens locally; on Render it won't open (no GUI)
+          open: true, // opens locally; on Render there's no GUI
         })
       );
-    } catch (err) {
+    } catch {
       console.warn(
         "ANALYZE=true but 'rollup-plugin-visualizer' is not installed.\n" +
           "Install it locally with: npm i -D rollup-plugin-visualizer"
@@ -56,7 +56,6 @@ export default defineConfig(async ({ mode }) => {
             if (id.includes("node_modules")) {
               if (id.includes("recharts")) return "vendor-recharts";
               if (id.includes("framer-motion")) return "vendor-motion";
-              if (id.includes("lucide-react")) return "vendor-icons";
               if (id.includes("react-router")) return "vendor-router";
               if (id.includes("axios")) return "vendor-axios";
               if (id.includes("zustand")) return "vendor-state";
