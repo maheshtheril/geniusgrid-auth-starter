@@ -43,11 +43,20 @@ export default function ContactsList() {
     <div>
       <Toolbar
         title="Contacts"
-        addLabel="New Contact"
-        onAdd={() => {
-          setEditing(null);
-          setOpen(true);
-        }}
+        showSearch={false} // hide built-in search to avoid crowding
+        // use rightSlot so we control colors/visibility regardless of theme
+        rightSlot={
+          <button
+            type="button"
+            className="h-9 px-3 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 inline-flex items-center gap-2 shrink-0"
+            onClick={() => {
+              setEditing(null);
+              setOpen(true);
+            }}
+          >
+            + New Contact
+          </button>
+        }
       >
         <input
           value={q}
