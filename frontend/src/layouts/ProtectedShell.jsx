@@ -1,28 +1,30 @@
-import React, { useState } from "react";
-import { Outlet, NavLink } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Outlet, NavLink, useLocation } from "react-router-dom";
 import AppSidebar from "../components/layout/AppSidebar";
 
 export default function ProtectedShell() {
   const [navOpen, setNavOpen] = useState(false);
+  const loc = useLocation();
+
+  // Close mobile drawer on route change
+  useEffect(() => { if (navOpen) setNavOpen(false); }, [loc.pathname, navOpen]);
 
   return (
     <div className="min-h-screen bg-[#0B0D10] text-gray-200">
-      {/* DESKTOP sidebar (fixed, always visible) */}
-    {/* Sidebar: fixed and always visible on all breakpoints for now */}
-<div className="block fixed inset-y-0 left-0 w-64 z-40 bg-gray-900 border-r border-gray-800">
-  <AppSidebar />
-</div>
-
+      {/* DESKTOP sidebar (fixed, always visible on md+) */}
+      <div className="hidden md:block fixed inset-y-0 left-0 w-64 z-50 bg-gray-900 border-r border-gray-800">
+        <AppSidebar />
+      </div>
 
       {/* MOBILE drawer */}
       {navOpen && (
         <>
           <button
-            className="fixed inset-0 z-50 bg-black/50 md:hidden"
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
             onClick={() => setNavOpen(false)}
             aria-label="Close menu"
           />
-          <div className="fixed inset-y-0 left-0 w-72 z-50 md:hidden bg-gray-900 shadow-2xl">
+          <div className="fixed inset-y-0 left-0 w-72 z-50 md:hidden bg-gray-900 shadow-2xl border-r border-gray-800">
             <AppSidebar onRequestClose={() => setNavOpen(false)} />
           </div>
         </>
