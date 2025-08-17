@@ -1,9 +1,10 @@
 // src/layouts/ProtectedShell.jsx
 import React, { memo, useMemo } from "react";
+import { Outlet, useLocation } from "react-router-dom";
+
 import ProtectedLayout from "./ProtectedLayout";
 import AppSidebar from "@/components/layout/AppSidebar";
 import AppTopbar from "@/components/layout/AppTopbar";
-import { Outlet, useLocation } from "react-router-dom";
 import { useEnv } from "@/store/useEnv";
 
 function DebugHUD() {
@@ -32,9 +33,32 @@ function DebugHUD() {
 }
 
 function ProtectedShell() {
+  const { pathname } = useLocation();
+  const isAdmin = pathname.startsWith("/app/admin");
+
   // keep these memoized
   const sidebarEl = useMemo(() => <AppSidebar />, []);
   const topbarEl  = useMemo(() => <AppTopbar />, []);
+
+  // Content wrappers:
+  // - defaultWrap keeps non-admin pages pleasantly centered (optional cap)
+  // - adminWrap removes any max-width so the console can breathe
+  const defaultWrap = {
+    width: "100%",
+    maxWidth: 1280,       // tune or remove if you want fully fluid everywhere
+    margin: "0 auto",
+    padding: "0 16px",
+    minWidth: 0,
+    boxSizing: "border-box",
+  };
+  const adminWrap = {
+    width: "100%",
+    maxWidth: "none",
+    margin: 0,
+    padding: 0,
+    minWidth: 0,
+    boxSizing: "border-box",
+  };
 
   return (
     <ProtectedLayout>
@@ -70,10 +94,15 @@ function ProtectedShell() {
               overflowY: "auto",
               overflowX: "hidden",
               position: "relative",
+              display: "flex",
+              flexDirection: "column",
             }}
           >
-            {/* DO NOT memoize Outlet */}
-            <Outlet />
+            {/* Page width controller */}
+            <div style={isAdmin ? adminWrap : defaultWrap}>
+              {/* DO NOT memoize Outlet */}
+              <Outlet />
+            </div>
           </div>
         </main>
       </div>
