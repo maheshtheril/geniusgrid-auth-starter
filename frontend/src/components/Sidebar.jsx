@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEnv } from "@/store/useEnv";
 import { useEntitlements } from "@/context/EntitlementsContext.jsx";
-import Icon from "@/components/ui/Icon";
+import { Icon } from "@/components/ui/Icon";
 
 /* ---------- Brand avatar (fallback to initial) ---------- */
 function BrandAvatar({ name = "GeniusGrid", logoUrl }) {
