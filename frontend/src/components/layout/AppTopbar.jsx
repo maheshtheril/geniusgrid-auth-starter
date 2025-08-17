@@ -2,20 +2,24 @@
 import React from "react";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useEnv } from "@/store/useEnv";
+import BuildBadge from "@/components/system/BuildBadge"; // shows live commit (from /version.txt)
 
 export default function AppTopbar() {
   const { user, companies, activeCompanyId, setActiveCompany } = useEnv();
 
   return (
-    <header className="app-topbar gg-surface">
+    <header className="app-topbar gg-surface" role="banner" aria-label="Application top bar">
       {/* Left: brand */}
       <div className="brand">GeniusGrid</div>
 
       {/* Spacer */}
       <div className="spacer flex-1" />
 
-      {/* Right: company switcher + theme + user */}
+      {/* Right: build, company switcher, theme, user */}
       <div className="flex items-center gap-2">
+        {/* build badge (hidden on very small screens) */}
+        <BuildBadge className="hidden sm:inline-block" />
+
         {Array.isArray(companies) && companies.length > 0 && (
           <label className="flex items-center gap-2">
             <span className="gg-muted text-xs hidden sm:inline">Company</span>
