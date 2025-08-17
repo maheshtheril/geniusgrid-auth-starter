@@ -44,18 +44,6 @@ const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPag
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
-/* -------- ADMIN: simple inline pages (no imports, no build failures) -------- */
-const AdminLayout = () => (
-  <div className="min-h-[calc(100vh-56px)] p-4 md:p-6">
-    <div className="mb-4 text-xl font-semibold">Admin</div>
-    <Outlet />
-  </div>
-);
-const AdminUsers     = () => <div>👤 Users management</div>;
-const AdminRoles     = () => <div>🔐 Roles &amp; Permissions</div>;
-const AdminSettings  = () => <div>⚙️ System Settings</div>;
-const AdminAuditLogs = () => <div>📜 Audit Logs</div>;
-
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
   constructor(p) {
@@ -177,21 +165,11 @@ export default function App() {
           >
             <Route index element={<Navigate to="/dashboard" replace />} />
 
-            {/* ADMIN (inline, zero external files) */}
+            {/* ✅ Admin placeholder (no imports, no build break) */}
             <Route
               path="admin/*"
-              element={
-                // AdminLayout is not lazy, it just renders <Outlet/>
-                <AdminLayout />
-              }
-            >
-              <Route index element={<Navigate to="users" replace />} />
-              <Route path="users"    element={<AdminUsers />} />
-              <Route path="roles"    element={<AdminRoles />} />
-              <Route path="settings" element={<AdminSettings />} />
-              <Route path="audit"    element={<AdminAuditLogs />} />
-              <Route path="*"        element={<Navigate to="users" replace />} />
-            </Route>
+              element={<div className="p-6">Admin module is temporarily in placeholder mode.</div>}
+            />
 
             {/* CRM */}
             <Route path="crm" element={<CrmOutlet />}>
