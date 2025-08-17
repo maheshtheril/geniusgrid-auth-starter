@@ -2,60 +2,56 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath, URL } from "node:url";
-import { visualizer } from "rollup-plugin-visualizer";
 
-// Run with ANALYZE=true npm run build to open a treemap
-const analyze = process.env.ANALYZE === "true";
-
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
   const isProd = mode === "production";
+  const analyze = process.env.ANALYZE === "true";
 
-  return {
-    plugins: [
-      react(),
-      analyze &&
+  const plugins = [react()];
+
+  // Lazy-load visualizer only when ANALYZE=true
+  if (analyze) {
+    try {
+      const { visualizer } = await import("rollup-plugin-visualizer");
+      plugins.push(
         visualizer({
           filename: "bundle-report.html",
           template: "treemap",
           gzipSize: true,
           brotliSize: true,
-          open: true,
-        }),
-    ].filter(Boolean),
+          open: true, // opens locally; on Render it won't open (no GUI)
+        })
+      );
+    } catch (err) {
+      console.warn(
+        "ANALYZE=true but 'rollup-plugin-visualizer' is not installed.\n" +
+          "Install it locally with: npm i -D rollup-plugin-visualizer"
+      );
+    }
+  }
 
+  return {
+    plugins,
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },
-
-    server: {
-      host: true,
-      port: 5173,
-      open: false,
-    },
-    preview: {
-      host: true,
-      port: 5173,
-    },
-
+    server: { host: true, port: 5173 },
+    preview: { host: true, port: 5173 },
     optimizeDeps: {
       include: ["react", "react-dom", "react-router-dom"],
     },
-
     esbuild: {
-      // Strip console/debugger in prod builds
       drop: isProd ? ["console", "debugger"] : [],
     },
-
     build: {
-      target: "es2022", // or 'esnext' if all targets support it
-      sourcemap: false, // set true for staging if needed
+      target: "es2022",
+      sourcemap: false,
       cssCodeSplit: true,
-      assetsInlineLimit: 1024, // keep images/fonts as separate files
+      assetsInlineLimit: 1024,
       chunkSizeWarningLimit: 1200,
       minify: "esbuild",
       rollupOptions: {
         output: {
-          // Split heavy libs so first load stays lean and caching works better
           manualChunks(id) {
             if (id.includes("node_modules")) {
               if (id.includes("recharts")) return "vendor-recharts";
