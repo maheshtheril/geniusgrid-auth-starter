@@ -1,60 +1,87 @@
 // src/layouts/ProtectedShell.jsx
-import React, { useEffect, useState } from "react";
-import { Outlet, NavLink, useLocation } from "react-router-dom";
-import { Menu } from "lucide-react";
-// Use RELATIVE import so alias issues can't break it
-import AppSidebar from "../components/layout/AppSidebar.jsx";
+import React, { useState, useMemo } from "react";
+import { Outlet, useLocation } from "react-router-dom";
+import AppSidebar from "@/components/layout/AppSidebar";
 
-export default function ProtectedShell() {
+/**
+ * Props (optional):
+ * - title?: string
+ * - primaryAction?: { label: string, onClick: () => void }
+ */
+export default function ProtectedShell({ title, primaryAction }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const location = useLocation();
+  const { pathname } = useLocation();
 
-  // Close drawer on route change
-  useEffect(() => setMobileOpen(false), [location.pathname]);
+  // Close mobile drawer on route change
+  React.useEffect(() => { setMobileOpen(false); }, [pathname]);
+
+  const headerTitle = useMemo(() => title || "GeniusGrid", [title]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Desktop sidebar (theme) */}
-      <aside className="fixed inset-y-0 left-0 w-64 z-40 border-r bg-card">
-        <AppSidebar onRequestClose={() => setMobileOpen(false)} />
+    <div className="min-h-screen bg-base-200 text-base-content">
+      {/* Desktop sidebar */}
+      <aside
+        className="hidden md:block fixed left-0 top-0 h-screen w-64 z-40 border-r border-base-300 bg-base-100"
+        aria-label="Sidebar"
+      >
+        <AppSidebar />
       </aside>
 
-      {/* Mobile drawer */}
-      {mobileOpen && (
-        <div className="fixed inset-0 z-[70] md:hidden">
-          <button
-            className="absolute inset-0 bg-black/50 backdrop-blur-[1px]"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close menu"
-          />
-          <div
-            className="absolute inset-y-0 left-0 w-[85%] max-w-80 bg-card border-r shadow-xl"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <AppSidebar onRequestClose={() => setMobileOpen(false)} />
-          </div>
+      {/* Mobile drawer + overlay */}
+      <div className={
+        `md:hidden ${mobileOpen ? "" : "pointer-events-none"}`
+      }>
+        {/* Overlay */}
+        <div
+          className={`fixed inset-0 z-50 transition-opacity bg-black/40 backdrop-blur-sm ${mobileOpen ? "opacity-100" : "opacity-0"}`}
+          aria-hidden="true"
+          onClick={() => setMobileOpen(false)}
+        />
+        {/* Drawer */}
+        <div
+          className={`fixed left-0 top-0 bottom-0 z-50 w-72 max-w-[85vw] bg-base-100 border-r border-base-300 transform transition-transform duration-200 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+          role="dialog" aria-modal="true"
+        >
+          <AppSidebar onRequestClose={() => setMobileOpen(false)} />
         </div>
-      )}
+      </div>
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 h-14 md:h-16 z-50 border-b bg-background/95 backdrop-blur">
-        <div className="flex h-full items-center gap-3 px-3 sm:px-4 md:px-6">
+      <header className="sticky top-0 z-30 bg-base-100/80 backdrop-blur border-b border-base-300">
+        <div className="flex items-center gap-2 px-3 sm:px-4 h-14">
+          {/* Hamburger (mobile only) */}
           <button
-            className="md:hidden h-9 w-9 flex items-center justify-center rounded-md border"
-            onClick={() => setMobileOpen(true)}
+            className="md:hidden btn btn-ghost btn-square"
             aria-label="Open menu"
+            onClick={() => setMobileOpen(true)}
           >
-            <Menu className="h-5 w-5" />
+            {/* lucide/menu replacement with simple bars to avoid extra deps */}
+            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6"/> <line x1="3" y1="12" x2="21" y2="12"/> <line x1="3" y1="18" x2="21" y2="18"/>
+            </svg>
           </button>
-          <NavLink to="/app/dashboard" className="font-semibold tracking-tight">
-            GeniusGrid
-          </NavLink>
+
+          {/* Title */}
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base sm:text-lg font-semibold truncate">{headerTitle}</h1>
+          </div>
+
+          {/* Primary action – always visible, adapts to screen */}
+          {primaryAction && (
+            <button
+              className="btn btn-primary btn-sm md:btn"
+              onClick={primaryAction.onClick}
+            >
+              {primaryAction.label}
+            </button>
+          )}
         </div>
       </header>
 
-      {/* Main content (offset for header + desktop sidebar) */}
-      <main className="pt-14 md:pt-16 md:pl-64">
-        <div className="px-3 sm:px-4 md:px-6 py-4 md:py-6">
+      {/* Main content area */}
+      <main className="md:pl-64">
+        <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
+          {/* Routed pages render here */}
           <Outlet />
         </div>
       </main>
