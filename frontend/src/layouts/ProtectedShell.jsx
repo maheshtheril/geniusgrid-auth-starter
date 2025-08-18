@@ -3,69 +3,73 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import AppSidebar from "@/components/layout/AppSidebar";
 
-// tiny hook: is viewport at least 640px?
+const LS_COLLAPSED = "gg:sidebar:collapsed:v1";
+
+// viewport ≥ 640 hook (don’t rely on Tailwind config)
 function useAtLeastSm() {
-  const [ok, setOk] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.matchMedia("(min-width: 640px)").matches;
-  });
+  const [ok, setOk] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia("(min-width: 640px)").matches : false
+  );
   useEffect(() => {
     if (typeof window === "undefined") return;
     const mql = window.matchMedia("(min-width: 640px)");
     const onChange = (e) => setOk(e.matches);
-    // modern browsers
-    if (mql.addEventListener) mql.addEventListener("change", onChange);
-    else mql.addListener(onChange); // legacy Safari
-    return () => {
-      if (mql.removeEventListener) mql.removeEventListener("change", onChange);
-      else mql.removeListener(onChange);
-    };
+    mql.addEventListener?.("change", onChange) ?? mql.addListener(onChange);
+    return () => mql.removeEventListener?.("change", onChange) ?? mql.removeListener(onChange);
   }, []);
   return ok;
 }
 
-/**
- * Props (optional):
- * - title?: string
- * - primaryAction?: { label: string, onClick: () => void }
- */
 export default function ProtectedShell({ title, primaryAction }) {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const { pathname } = useLocation();
+  const [collapsed, setCollapsed] = useState(() => {
+    try { return localStorage.getItem(LS_COLLAPSED) === "1"; } catch { return false; }
+  });
   const isAtLeastSm = useAtLeastSm();
+  const { pathname } = useLocation();
 
-  // Close mobile drawer on route change
   useEffect(() => { setMobileOpen(false); }, [pathname]);
+  useEffect(() => {
+    try { localStorage.setItem(LS_COLLAPSED, collapsed ? "1" : "0"); } catch {}
+  }, [collapsed]);
 
   const headerTitle = useMemo(() => title || "GeniusGrid", [title]);
 
+  // widths/padding based on collapse state (desktop only)
+  const asideWidth = collapsed ? "w-16" : "w-64";
+  const mainPad    = collapsed ? "pl-16" : "pl-64";
+
   return (
     <div className="min-h-screen bg-base-200 text-base-content">
-      {/* Fixed sidebar (rendered ONLY when >= 640px) */}
+      {/* Desktop sidebar (visible when ≥640px) */}
       {isAtLeastSm && (
         <aside
           aria-label="Sidebar"
-          className="block fixed left-0 top-0 h-screen w-64 z-40 border-r border-base-300 bg-base-100"
+          className={`fixed left-0 top-0 h-screen ${asideWidth} z-40 border-r border-base-300 bg-base-100 transition-[width] duration-200`}
         >
-          <AppSidebar />
+          <AppSidebar
+            collapsed={collapsed}
+            onToggleCollapse={() => setCollapsed((v) => !v)}
+          />
         </aside>
       )}
 
-      {/* Mobile drawer + overlay (ONLY when < 640px) */}
+      {/* Mobile drawer + overlay (only <640px) */}
       {!isAtLeastSm && (
         <div className={`${mobileOpen ? "" : "pointer-events-none"}`}>
-          {/* Overlay */}
           <div
             className={`fixed inset-0 z-50 transition-opacity bg-black/40 backdrop-blur-sm ${mobileOpen ? "opacity-100" : "opacity-0"}`}
             aria-hidden="true"
             onClick={() => setMobileOpen(false)}
           />
-          {/* Drawer */}
           <div
             className={`fixed left-0 top-0 bottom-0 z-50 w-72 max-w-[85vw] bg-base-100 border-r border-base-300 transform transition-transform duration-200 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
             role="dialog" aria-modal="true"
           >
-            <AppSidebar onRequestClose={() => setMobileOpen(false)} />
+            <AppSidebar
+              collapsed={false}
+              onRequestClose={() => setMobileOpen(false)}
+            />
           </div>
         </div>
       )}
@@ -73,18 +77,41 @@ export default function ProtectedShell({ title, primaryAction }) {
       {/* Header */}
       <header className="sticky top-0 z-30 bg-base-100/80 backdrop-blur border-b border-base-300">
         <div className="flex items-center gap-2 px-3 sm:px-4 h-14">
-          {/* Hamburger (only shows when < 640px) */}
-          {!isAtLeastSm && (
+          {/* Left controls: mobile hamburger OR desktop collapse toggle */}
+          {!isAtLeastSm ? (
             <button
               className="btn btn-ghost btn-square"
               aria-label="Open menu"
               onClick={() => setMobileOpen(true)}
             >
-              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              {/* hamburger */}
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="3" y1="6" x2="21" y2="6" />
                 <line x1="3" y1="12" x2="21" y2="12" />
                 <line x1="3" y1="18" x2="21" y2="18" />
               </svg>
+            </button>
+          ) : (
+            <button
+              className="btn btn-ghost btn-square"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              onClick={() => setCollapsed((v) => !v)}
+              title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {/* sidebar collapse icon (two states) */}
+              {collapsed ? (
+                // expand → right chevron into panel
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 4h4v16H3z" />
+                  <polyline points="13 6 18 12 13 18" />
+                </svg>
+              ) : (
+                // collapse → left chevron out of panel
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 4h4v16H3z" />
+                  <polyline points="18 6 13 12 18 18" />
+                </svg>
+              )}
             </button>
           )}
 
@@ -106,7 +133,7 @@ export default function ProtectedShell({ title, primaryAction }) {
       </header>
 
       {/* Main content area */}
-      <main className={isAtLeastSm ? "pl-64" : ""}>
+      <main className={isAtLeastSm ? mainPad : ""}>
         <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
           <Outlet />
         </div>
