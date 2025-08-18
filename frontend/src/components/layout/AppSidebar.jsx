@@ -2,21 +2,19 @@
 import React from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
-/* ---------------- helpers ---------------- */
+/* ---------- helpers ---------- */
 const LS_EXPANDED = "gg:sidebar:expanded:v1";
 
-// Ensure we always call /api even if VITE_API_URL is missing or incomplete
+// Always hit /api (same-origin by default; adds /api if missing)
 function api(path) {
   const raw = (import.meta.env.VITE_API_URL || "").trim();
   const base = raw ? raw.replace(/\/+$/, "") : "";
   const withApi = base ? (base.endsWith("/api") ? base : `${base}/api`) : "/api";
   return `${withApi}${path}`;
 }
-
 const cls = (...xs) => xs.filter(Boolean).join(" ");
 const normalize = (s) => (s || "").toString().toLowerCase();
 
-/** simple fuzzy: subsequence match */
 function fuzzyScore(text, query) {
   const t = normalize(text);
   const q = normalize(query);
@@ -45,137 +43,101 @@ function highlightSubseq(label, query) {
   return out;
 }
 
-/* ---------- icon resolver (no extra deps) ---------- */
+/* ---------- icons (consistent SVGs) ---------- */
 const ICON_SVGS = {
-  // minimal, crisp icons (24x24, stroke-current)
   sparkles: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3l1.8 3.9L18 8.7l-3.3 2.4.9 4.2L12 13.8 8.4 15.3l.9-4.2L6 8.7l4.2-.8L12 3z"></path>
-      <path d="M19 3.5l.7 1.6 1.7.3-1.4 1 .4 1.7-1.4-.8-1.4.8.4-1.7-1.4-1 1.7-.3.7-1.6z"></path>
-      <path d="M5 17l.9 2 2.1.4-1.6 1.1.5 2.1L5 21.6 3.1 22.6l.5-2.1L2 19.4l2.1-.4L5 17z"></path>
+      <path d="M12 3l1.8 3.9L18 8.7l-3.3 2.4.9 4.2L12 13.8 8.4 15.3l.9-4.2L6 8.7l4.2-.8L12 3z" />
+      <path d="M19 3.5l.7 1.6 1.7.3-1.4 1 .4 1.7-1.4-.8-1.4.8.4-1.7-1.4-1 1.7-.3.7-1.6z" />
+      <path d="M5 17l.9 2 2.1.4-1.6 1.1.5 2.1L5 21.6 3.1 22.6l.5-2.1L2 19.4l2.1-.4L5 17z" />
     </svg>
   ),
   shield: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 22s8-3 8-10V6l-8-3-8 3v6c0 7 8 10 8 10z"></path>
+      <path d="M12 22s8-3 8-10V6l-8-3-8 3v6c0 7 8 10 8 10z" />
     </svg>
   ),
   plug: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 22v-6"></path><path d="M9 7V2"></path><path d="M15 7V2"></path>
-      <path d="M7 7h10v3a5 5 0 1 1-10 0z"></path>
+      <path d="M12 22v-6" /><path d="M9 7V2" /><path d="M15 7V2" />
+      <path d="M7 7h10v3a5 5 0 1 1-10 0z" />
     </svg>
   ),
   users: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
-      <circle cx="9" cy="7" r="4"></circle>
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
-      <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
     </svg>
   ),
   building: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 21h18"></path><path d="M4 21V8l8-5 8 5v13"></path>
-      <path d="M9 21v-6h6v6"></path><path d="M9 10h.01"></path><path d="M13 10h.01"></path>
+      <path d="M3 21h18" /><path d="M4 21V8l8-5 8 5v13" />
+      <path d="M9 21v-6h6v6" /><path d="M9 10h.01" /><path d="M13 10h.01" />
     </svg>
   ),
   key: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="7.5" cy="15.5" r="5.5"></circle>
-      <path d="M14 12l7-7"></path><path d="M15 5h6v6"></path>
+      <circle cx="7.5" cy="15.5" r="5.5" /><path d="M14 12l7-7" /><path d="M15 5h6v6" />
     </svg>
   ),
   webhooks: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M18 16a3 3 0 1 0 3 3"></path>
-      <path d="M12 3a3 3 0 1 1-3 3"></path>
-      <path d="M3 18a3 3 0 1 0 3-3"></path>
-      <path d="M8 15l2-4 4 8 2-4"></path>
+      <path d="M18 16a3 3 0 1 0 3 3" /><path d="M12 3a3 3 0 1 1-3 3" /><path d="M3 18a3 3 0 1 0 3-3" />
+      <path d="M8 15l2-4 4 8 2-4" />
     </svg>
   ),
   chart: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18"></path>
-      <path d="M7 13l3-3 4 4 5-7"></path>
+      <path d="M3 3v18h18" /><path d="M7 13l3-3 4 4 5-7" />
     </svg>
   ),
   creditcard: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-      <path d="M2 10h20"></path>
+      <rect x="2" y="4" width="20" height="16" rx="2" /><path d="M2 10h20" />
     </svg>
   ),
   filetext: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12V8z"></path>
-      <path d="M14 2v6h6"></path><path d="M16 13H8"></path><path d="M16 17H8"></path><path d="M10 9H8"></path>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12V8z" />
+      <path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" />
     </svg>
   ),
   flag: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"></path>
-      <path d="M4 22V15"></path>
+      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22V15" />
     </svg>
   ),
   phone: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.63 2.6a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.48-1.15a2 2 0 0 1 2.11-.45c.83.3 1.7.51 2.6.63A2 2 0 0 1 22 16.92z"></path>
+      <path d="M22 16.92v3A2 2 0 0 1 19.82 22a19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.63 2.6a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.48-1.15a2 2 0 0 1 2.11-.45c.83.3 1.7.51 2.6.63A2 2 0 0 1 22 16.92z" />
     </svg>
   ),
 };
-
-// try to map a lot of possible icon strings to consistent SVGs
+const ICONS_ALIAS = {
+  sparkles: "sparkles", ai: "sparkles", "ai-settings": "sparkles",
+  shield: "shield", security: "shield", sso: "shield", lock: "shield",
+  plug: "plug", integrations: "plug",
+  users: "users", user: "users",
+  org: "building", building: "building", company: "building",
+  "api-keys": "key", key: "key",
+  webhook: "webhooks", webhooks: "webhooks",
+  usage: "chart", reports: "chart", analytics: "chart",
+  billing: "creditcard", "credit-card": "creditcard",
+  logs: "filetext", templates: "filetext",
+  "feature-flags": "flag", calls: "phone",
+};
 function resolveIcon(icon) {
   if (!icon) return null;
   const raw = ("" + icon).trim();
-
-  // emojis → map sparkles to svg for consistency
   if (raw.includes("✨")) return ICON_SVGS.sparkles;
-
-  // :sparkles: or sparkles
   const key = raw.replace(/:/g, "").toLowerCase();
-  if (ICONS_ALIAS[key]) return ICON_SVGS[ICONS_ALIAS[key]];
-
-  // if it looks like a single emoji (not ASCII), still allow it
+  const name = ICONS_ALIAS[key] || key;
+  if (ICON_SVGS[name]) return ICON_SVGS[name];
   if (/[\u{1F300}-\u{1FAFF}]/u.test(raw)) return <span aria-hidden="true">{raw}</span>;
-
-  // fallback dot
   return null;
 }
-
-const ICONS_ALIAS = {
-  // common names used in your dataset
-  sparkles: "sparkles",
-  ai: "sparkles",
-  "ai-settings": "sparkles",
-  shield: "shield",
-  security: "shield",
-  sso: "shield",
-  lock: "shield",
-  plug: "plug",
-  integrations: "plug",
-  users: "users",
-  user: "users",
-  org: "building",
-  building: "building",
-  company: "building",
-  "api-keys": "key",
-  key: "key",
-  webhook: "webhooks",
-  webhooks: "webhooks",
-  usage: "chart",
-  reports: "chart",
-  analytics: "chart",
-  billing: "creditcard",
-  "credit-card": "creditcard",
-  logs: "filetext",
-  templates: "filetext",
-  "feature-flags": "flag",
-  calls: "phone",
-};
-
-// icon slot with consistent width
 function IconSlot({ icon, compact }) {
   const resolved = resolveIcon(icon);
   return (
@@ -189,7 +151,7 @@ function IconSlot({ icon, compact }) {
   );
 }
 
-/* ---------- polished collapsible (smooth height) ---------- */
+/* ---------- smooth collapsible ---------- */
 function Collapsible({ open, children }) {
   const ref = React.useRef(null);
   const [h, setH] = React.useState(open ? "auto" : 0);
@@ -210,16 +172,13 @@ function Collapsible({ open, children }) {
   }, [open]);
 
   return (
-    <div
-      ref={ref}
-      style={{ height: h, overflow: "hidden", transition: "height 200ms ease" }}
-    >
+    <div ref={ref} style={{ height: h, overflow: "hidden", transition: "height 200ms ease" }}>
       {children}
     </div>
   );
 }
 
-/* ---------------- component ---------------- */
+/* ---------- component ---------- */
 export default function AppSidebar({ onRequestClose, collapsed = false, onToggleCollapse }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -265,63 +224,71 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     try { localStorage.setItem(LS_EXPANDED, JSON.stringify([...expanded])); } catch {}
   }, [expanded]);
 
-  // Build tree & active id
-  const { roots, byId, parentMap, visibleList, activeId } = React.useMemo(() => {
-    const outById = Object.create(null);
-    const parent = Object.create(null);
+  /* ---------- build structures with stable deps ---------- */
+  const maps = React.useMemo(() => {
+    const byId = Object.create(null);
+    const parentMap = Object.create(null);
+
     const inOrder = (a, b) => {
       const s = (a.sort_order ?? 0) - (b.sort_order ?? 0);
       return s !== 0 ? s : (a.name || "").localeCompare(b.name || "");
     };
 
     (items || []).forEach((i) => {
-      outById[i.id] = { ...i, children: [] };
-      if (i.parent_id) parent[i.id] = i.parent_id;
+      byId[i.id] = { ...i, children: [] };
+      if (i.parent_id) parentMap[i.id] = i.parent_id;
     });
     (items || []).forEach((i) => {
-      if (i.parent_id && outById[i.parent_id]) outById[i.parent_id].children.push(outById[i.id]);
+      if (i.parent_id && byId[i.parent_id]) byId[i.parent_id].children.push(byId[i.id]);
     });
-    Object.values(outById).forEach((n) => n.children.sort(inOrder));
-    const rootsArr = (items || []).filter((i) => !i.parent_id).map((i) => outById[i.id]).sort(inOrder);
+    Object.values(byId).forEach((n) => n.children.sort(inOrder));
 
-    // active by longest matching path
-    let active = null;
-    if (items) {
-      const best = items.filter((i) => i.path && pathname.startsWith(i.path))
-        .sort((a, b) => (b.path?.length || 0) - (a.path?.length || 0))[0];
-      active = best?.id || null;
-    }
+    const roots = (items || []).filter((i) => !i.parent_id).map((i) => byId[i.id]).sort(inOrder);
+    return { byId, parentMap, roots };
+  }, [items]);
 
-    // visible linear list (for focus management)
+  // active node based on route
+  const activeId = React.useMemo(() => {
+    if (!items) return null;
+    const best = items
+      .filter((i) => i.path && pathname.startsWith(i.path))
+      .sort((a, b) => (b.path?.length || 0) - (a.path?.length || 0))[0];
+    return best?.id || null;
+  }, [items, pathname]);
+
+  // linear visible list (for keyboard focus)
+  const visibleList = React.useMemo(() => {
     const vis = [];
-    function walk(node, depth) {
+    const walk = (node, depth) => {
       vis.push({ id: node.id, depth, node });
-      const isOpen = expanded.has(node.id);
-      if (isOpen) node.children.forEach((c) => walk(c, depth + 1));
-    }
-    rootsArr.forEach((r) => walk(r, 0));
+      if (expanded.has(node.id)) node.children.forEach((c) => walk(c, depth + 1));
+    };
+    maps.roots.forEach((r) => walk(r, 0));
+    return vis;
+  }, [maps.roots, expanded]);
 
-    return { roots: rootsArr, byId: outById, parentMap: parent, visibleList: vis, activeId: active };
-  }, [items, expanded, pathname]);
-
-  // auto-expand ancestors of active route
+  // expand ancestors WHEN route (activeId) changes (not on every toggle)
+  const lastAutoKey = React.useRef(null);
   React.useEffect(() => {
-    if (!items || !activeId) return;
+    if (!activeId) return;
+    const key = String(activeId);
+    if (lastAutoKey.current === key) return; // already expanded for this route
+    lastAutoKey.current = key;
+
     setExpanded((prev) => {
       const next = new Set(prev);
-      let p = parentMap[activeId];
-      while (p) { next.add(p); p = parentMap[p]; }
+      let p = maps.parentMap[activeId];
+      while (p) { next.add(p); p = maps.parentMap[p]; }
       return next;
     });
-  }, [items, activeId, parentMap]);
+  }, [activeId, maps.parentMap]);
 
-  // focus management
+  // initial focus
   React.useEffect(() => {
     if (!focusedId && (activeId || visibleList[0]?.id)) {
       setFocusedId(activeId || visibleList[0].id);
     }
   }, [focusedId, activeId, visibleList]);
-
   React.useEffect(() => {
     const el = refMap.current.get(focusedId);
     if (el) el.focus({ preventScroll: true });
@@ -332,12 +299,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     next.has(id) ? next.delete(id) : next.add(id);
     return next;
   });
-
-  const handleNavigate = (path) => {
-    if (!path) return;
-    navigate(path);
-    onRequestClose?.();
-  };
+  const handleNavigate = (path) => { if (path) { navigate(path); onRequestClose?.(); } };
 
   // search
   const flat = React.useMemo(() => (items || []).map((i) => ({
@@ -357,11 +319,11 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   const crumb = (id) => {
     const chain = [];
     let cur = id;
-    while (cur) { const n = byId[cur]; if (!n) break; chain.push(n); cur = parentMap[cur]; }
+    while (cur) { const n = maps.byId[cur]; if (!n) break; chain.push(n); cur = maps.parentMap[cur]; }
     return chain.reverse();
   };
 
-  /* -------------- render -------------- */
+  /* ---------- render ---------- */
   if (error) {
     return (
       <div className="p-3 text-sm">
@@ -376,7 +338,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
 
   return (
     <div className="flex h-full flex-col">
-      {/* top: brand + controls */}
+      {/* top bar */}
       <div className="p-2 border-b border-base-300 sticky top-0 bg-base-100 z-10">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -384,7 +346,6 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
             {showLabels && <span className="font-semibold truncate">GeniusGrid</span>}
           </div>
           <div className="flex-1" />
-          {/* collapse toggle (desktop) */}
           {onToggleCollapse && (
             <button
               className="btn btn-ghost btn-xs"
@@ -412,10 +373,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={showLabels ? "Search…" : "Search"}
-            className={cls(
-              "input input-sm input-bordered w-full pr-8",
-              showLabels ? "" : "text-xs"
-            )}
+            className={cls("input input-sm input-bordered w-full pr-8", showLabels ? "" : "text-xs")}
             aria-label="Search menu"
           />
           <span className="absolute right-2 top-1/2 -translate-y-1/2 opacity-60">
@@ -425,7 +383,6 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
           </span>
         </div>
 
-        {/* expand/collapse all for tree (hidden in mini to keep tidy) */}
         {showLabels && (
           <div className="mt-2 flex gap-1">
             <button
@@ -439,11 +396,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
                 setExpanded(next);
               }}
             >＋</button>
-            <button
-              className="btn btn-ghost btn-xs"
-              title="Collapse all"
-              onClick={() => setExpanded(new Set())}
-            >–</button>
+            <button className="btn btn-ghost btn-xs" title="Collapse all" onClick={() => setExpanded(new Set())}>–</button>
           </div>
         )}
       </div>
@@ -482,15 +435,13 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
       {!results && (
         <nav className="flex-1 overflow-y-auto" role="tree" aria-label="Application navigation">
           <ul className="menu p-2">
-            {roots.map((n) => (
+            {maps.roots.map((n) => (
               <TreeNode
                 key={n.id}
                 node={n}
                 depth={0}
                 expanded={expanded}
                 toggle={toggle}
-                byId={byId}
-                parentMap={parentMap}
                 refMap={refMap}
                 focusedId={focusedId}
                 setFocusedId={setFocusedId}
@@ -506,11 +457,10 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   );
 }
 
-/* ---------------- tree node ---------------- */
+/* ---------- tree node ---------- */
 function TreeNode({
   node, depth,
   expanded, toggle,
-  byId, parentMap,
   refMap,
   focusedId, setFocusedId,
   activeId,
@@ -522,15 +472,14 @@ function TreeNode({
   const isActive = node.id === activeId;
 
   const selfRef = React.useCallback((el) => { if (el) refMap.current.set(node.id, el); }, [node.id, refMap]);
-
-  const titleText = node.name;
   const showLabels = !collapsed;
+  const titleText = node.name;
 
-  // keyboard polish: arrows + enter/space to toggle/navigate
   const onKeyDown = (e) => {
     if (e.key === "ArrowRight" && hasKids && !isOpen) { e.preventDefault(); toggle(node.id); }
     else if (e.key === "ArrowLeft" && hasKids && isOpen) { e.preventDefault(); toggle(node.id); }
     else if ((e.key === "Enter" || e.key === " ") && node.path) { e.preventDefault(); onNavigate(node.path); }
+    else if ((e.key === "Enter" || e.key === " ") && !node.path && hasKids) { e.preventDefault(); toggle(node.id); }
   };
 
   const common = {
@@ -544,16 +493,22 @@ function TreeNode({
     className: cls(
       "relative flex items-center gap-2 px-2 py-1 rounded outline-none transition-all duration-200",
       isActive ? "bg-primary/10 text-primary" : "hover:bg-base-200",
-      // slim left active bar
       isActive && "before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-primary before:rounded"
     ),
     ...(showLabels ? { style: { paddingLeft: `${depth * 12}px` } } : {}),
   };
 
+  const LabelInner = (
+    <>
+      <IconSlot icon={node.icon} compact={collapsed} />
+      {showLabels && <span className={cls("truncate", !node.path && "font-semibold")}>{node.name}</span>}
+    </>
+  );
+
   return (
     <li>
       <div className="flex items-center">
-        {/* disclosure (hide in mini) */}
+        {/* disclosure button (hidden in mini) */}
         {showLabels ? (
           <button
             className={cls(
@@ -561,7 +516,7 @@ function TreeNode({
               hasKids ? "opacity-100" : "opacity-0 pointer-events-none"
             )}
             aria-label={isOpen ? "Collapse" : "Expand"}
-            onClick={() => toggle(node.id)}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggle(node.id); }}
           >
             <span
               className="inline-block transition-transform"
@@ -570,25 +525,24 @@ function TreeNode({
           </button>
         ) : null}
 
-        {/* item */}
+        {/* item (click parent label to toggle when no path) */}
         {node.path ? (
-          <div className={cls(!showLabels && "tooltip tooltip-right")} data-tip={!showLabels ? titleText : undefined}>
-            <NavLink to={node.path} {...common} onClick={() => onNavigate(node.path)}>
-              <IconSlot icon={node.icon} compact={collapsed} />
-              {showLabels && <span className="truncate">{node.name}</span>}
-            </NavLink>
-          </div>
+          <NavLink to={node.path} {...common} onClick={() => onNavigate(node.path)} title={!showLabels ? titleText : undefined} data-tip={!showLabels ? titleText : undefined}>
+            {LabelInner}
+          </NavLink>
         ) : (
-          <div className={cls(!showLabels && "tooltip tooltip-right")} data-tip={!showLabels ? titleText : undefined}>
-            <div {...common}>
-              <IconSlot icon={node.icon} compact={collapsed} />
-              {showLabels && <span className="truncate font-semibold">{node.name}</span>}
-            </div>
+          <div
+            {...common}
+            onClick={() => { if (hasKids) toggle(node.id); }}
+            title={!showLabels ? titleText : undefined}
+            data-tip={!showLabels ? titleText : undefined}
+          >
+            {LabelInner}
           </div>
         )}
       </div>
 
-      {/* children (smooth) */}
+      {/* children (animated) */}
       {hasKids && (
         <Collapsible open={isOpen}>
           <ul>
@@ -599,8 +553,6 @@ function TreeNode({
                 depth={depth + 1}
                 expanded={expanded}
                 toggle={toggle}
-                byId={byId}
-                parentMap={parentMap}
                 refMap={refMap}
                 focusedId={focusedId}
                 setFocusedId={setFocusedId}
