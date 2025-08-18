@@ -5,7 +5,7 @@ import { ChevronRight, Loader2, Search } from "lucide-react";
 /* ========= Config ========= */
 const API_BASE =
   (typeof window !== "undefined" && window.__API_BASE) ||
-  import.meta.env.VITE_API_URL || ""; // e.g. https://geniusgrid-auth-starter.onrender.com
+  import.meta.env.VITE_API_URL || "";
 const MENUS_URL = `${API_BASE.replace(/\/$/, "")}/api/tenant/menus`;
 
 /* ========= Helpers ========= */
