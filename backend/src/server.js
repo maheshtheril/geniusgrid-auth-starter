@@ -11,6 +11,7 @@ import pino from "pino";
 import pinoHttp from "pino-http";
 import { randomUUID } from "crypto";
 import rateLimit from "express-rate-limit";
+import adminOrgRoutes from "./routes/admin.org.routes.js";
 
 import { pool } from "./db/pool.js";
 import { requireAuth } from "./middleware/requireAuth.js";
@@ -198,7 +199,7 @@ app.use("/api/leads", requireAuth, leadsMergeRoutes);
 
 /* Imports (scoped) */
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
-
+app.use("/api/admin", adminOrgRoutes);
 /* Other modules (scoped) */
 app.use("/api/leads-module", requireAuth, leadsModule);
 app.use("/api", requireAuth, tenantMenusRoutes);
