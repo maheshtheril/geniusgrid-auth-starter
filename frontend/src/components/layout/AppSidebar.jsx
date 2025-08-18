@@ -4,7 +4,28 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 /* ---------------- helpers ---------------- */
 const LS_EXPANDED = "gg:sidebar:expanded:v1";
-const API_BASE = import.meta.env.VITE_API_URL || "/api";
+
+// Ensure we always call /api even if VITE_API_URL is missing or incomplete
+function api(path) {
+  const raw = (import.meta.env.VITE_API_URL || "").trim();   // optional
+  const base = raw ? raw.replace(/\/+$/, "") : "";            // strip trailing /
+  const withApi = base
+    ? (base.endsWith("/api") ? base : `${base}/api`)
+    : "/api";                                                // default to same-origin /api
+  return `${withApi}${path}`;
+}
+
+// Ensure API base always ends with /api
+function resolveApiBase() {
+  const raw = (import.meta.env.VITE_API_URL || "/api").trim();
+  // strip trailing slashes
+  const noTrail = raw.replace(/\/+$/, "");
+  if (noTrail.endsWith("/api")) return noTrail;       // already .../api
+  if (noTrail === "" || noTrail === "/") return "/api";
+  return `${noTrail}/api`;
+}
+const API_BASE = resolveApiBase();
+
 const cls = (...xs) => xs.filter(Boolean).join(" ");
 const normalize = (s) => (s || "").toString().toLowerCase();
 
@@ -42,7 +63,6 @@ function IconSlot({ icon, compact }) {
   return (
     <span className={cls("shrink-0 inline-flex items-center justify-center", compact ? "w-6" : "w-5")}>
       {icon ? <span aria-hidden="true">{icon}</span> : (
-        // generic node dot
         <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" className="opacity-70">
           <circle cx="12" cy="12" r="3" />
         </svg>
@@ -197,12 +217,8 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   if (error) {
     return (
       <div className="p-3 text-sm">
-        <div className="alert alert-error">
-          <span>Sidebar failed: {String(error.message)}</span>
-        </div>
-        <button className="btn btn-sm mt-3" onClick={() => window.location.reload()}>
-          Retry
-        </button>
+        <div className="alert alert-error"><span>Sidebar failed: {String(error.message)}</span></div>
+        <button className="btn btn-sm mt-3" onClick={() => window.location.reload()}>Retry</button>
       </div>
     );
   }
@@ -220,7 +236,6 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
             {showLabels && <span className="font-semibold truncate">GeniusGrid</span>}
           </div>
           <div className="flex-1" />
-          {/* collapse toggle (desktop) */}
           {onToggleCollapse && (
             <button
               className="btn btn-ghost btn-xs"
@@ -261,7 +276,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
           </span>
         </div>
 
-        {/* expand/collapse all for tree (hidden in mini to keep tidy) */}
+        {/* expand/collapse all for tree (hidden in mini) */}
         {showLabels && (
           <div className="mt-2 flex gap-1">
             <button
@@ -379,7 +394,6 @@ function TreeNode({
   return (
     <li>
       <div className="flex items-center">
-        {/* disclosure (hide in mini to save space) */}
         {showLabels ? (
           <button
             className={cls("btn btn-ghost btn-xs mr-1", hasKids ? "" : "invisible")}
@@ -390,7 +404,6 @@ function TreeNode({
           </button>
         ) : null}
 
-        {/* item */}
         {node.path ? (
           <div className={cls(!showLabels && "tooltip tooltip-right")} data-tip={!showLabels ? titleText : undefined}>
             <NavLink to={node.path} {...common} onClick={() => onNavigate(node.path)}>
@@ -408,7 +421,6 @@ function TreeNode({
         )}
       </div>
 
-      {/* children */}
       {hasKids && isOpen ? (
         <ul>
           {node.children.map((c) => (
