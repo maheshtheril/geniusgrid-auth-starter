@@ -2,21 +2,39 @@
 import React from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
-  Sun, Moon, Menu as MenuIcon, Search, Bell, HelpCircle,
+  Sun, Moon, Laptop2, Paintbrush, Menu as MenuIcon, Search, Bell, HelpCircle,
   ChevronsLeft, ChevronsRight, Plus
 } from "lucide-react";
 import { useEnv } from "@/store/useEnv";
 
-const THEME_KEY = "gg:theme";
-const THEMES = ["light", "dark", "night"]; // add/remove to match your daisyUI themes
+/** ---- THEME MANAGEMENT (daisyUI + Tailwind dark class compatible) ---- */
+const THEME_KEY = "gg:theme";                   // stores: "light" | "dark" | "night" | "system"
+const THEMES = ["light", "dark", "night"];      // add more daisyUI themes if you use them (e.g., "emerald", "cupcake")
+
+const prefersDarkQuery = "(prefers-color-scheme: dark)";
+const sysDark = () => window.matchMedia?.(prefersDarkQuery)?.matches;
+
+function applyTheme(selected) {
+  // resolve "system" to dark/light
+  const resolved = selected === "system" ? (sysDark() ? "dark" : "light") : selected;
+
+  // daisyUI: data-theme on <html>
+  document.documentElement.setAttribute("data-theme", resolved);
+
+  // Tailwind (if darkMode:'class'): keep class in sync
+  const isDark = resolved === "dark" || resolved === "night";
+  document.documentElement.classList.toggle("dark", isDark);
+
+  // Improve native form/scrollbar contrast in browsers that support it
+  document.documentElement.style.colorScheme = isDark ? "dark" : "light";
+}
 
 function getInitialTheme() {
   try {
     const saved = localStorage.getItem(THEME_KEY);
-    if (saved && THEMES.includes(saved)) return saved;
+    if (saved === "system" || THEMES.includes(saved)) return saved;
   } catch {}
-  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
-  return prefersDark ? "dark" : "light";
+  return "system"; // best default: follow OS
 }
 
 export default function Topbar({
@@ -29,14 +47,23 @@ export default function Topbar({
   const { user } = useEnv() || {};
   const { pathname } = useLocation();
 
-  const [theme, setTheme] = React.useState(getInitialTheme());
+  const [themeSel, setThemeSel] = React.useState(getInitialTheme());
   const [cmdOpen, setCmdOpen] = React.useState(false);
 
-  // Apply + persist theme for daisyUI
+  // Apply + persist theme
   React.useEffect(() => {
-    document.documentElement.setAttribute("data-theme", theme);
-    try { localStorage.setItem(THEME_KEY, theme); } catch {}
-  }, [theme]);
+    applyTheme(themeSel);
+    try { localStorage.setItem(THEME_KEY, themeSel); } catch {}
+  }, [themeSel]);
+
+  // Listen to OS changes when in "system" mode
+  React.useEffect(() => {
+    if (themeSel !== "system") return;
+    const mq = window.matchMedia?.(prefersDarkQuery);
+    const onChange = () => applyTheme("system");
+    mq?.addEventListener?.("change", onChange);
+    return () => mq?.removeEventListener?.("change", onChange);
+  }, [themeSel]);
 
   // ⌘K / Ctrl+K opens command palette
   React.useEffect(() => {
@@ -66,7 +93,7 @@ export default function Topbar({
 
   return (
     <>
-      {/* Note: header aligns with sidebar using md:pl-[var(--sbw)] */}
+      {/* Aligns to the sidebar using md:pl-[var(--sbw)] defined in the layout */}
       <header
         className="h-14 sticky top-0 z-40 bg-base-100/80 backdrop-blur border-b border-base-300 pl-0 md:pl-[var(--sbw)]"
         role="banner"
@@ -103,9 +130,7 @@ export default function Topbar({
             />
             <span className="hidden sm:inline font-semibold truncate">{title}</span>
             {import.meta.env.MODE !== "production" && (
-              <span className="hidden md:inline badge badge-outline ml-1">
-                {import.meta.env.MODE}
-              </span>
+              <span className="hidden md:inline badge badge-outline ml-1">{import.meta.env.MODE}</span>
             )}
           </Link>
 
@@ -127,7 +152,6 @@ export default function Topbar({
             ))}
           </nav>
 
-          {/* Grow */}
           <div className="flex-1" />
 
           {/* Search / Command */}
@@ -162,24 +186,38 @@ export default function Topbar({
             </button>
           )}
 
-          {/* Theme toggle */}
-          <button
-            className="btn btn-ghost btn-square"
-            aria-label="Toggle theme"
-            onClick={() =>
-              setTheme((t) => {
-                const idx = THEMES.indexOf(t);
-                return THEMES[(idx + 1) % THEMES.length] || "light";
-              })
-            }
-            title="Toggle theme"
-          >
-            {theme === "dark" || theme === "night" ? (
-              <Sun className="w-5 h-5" />
-            ) : (
-              <Moon className="w-5 h-5" />
-            )}
-          </button>
+          {/* Theme dropdown (Light / Dark / Night / System) */}
+          <details className="dropdown dropdown-end">
+            <summary className="btn btn-ghost btn-square" aria-label="Theme">
+              <Paintbrush className="w-5 h-5" />
+            </summary>
+            <ul className="menu dropdown-content bg-base-100 rounded-box z-[60] mt-2 w-44 p-2 shadow">
+              <li className={themeSel === "light" ? "active" : ""}>
+                <button onClick={() => setThemeSel("light")}>
+                  <Sun className="w-4 h-4" />
+                  <span>Light</span>
+                </button>
+              </li>
+              <li className={themeSel === "dark" ? "active" : ""}>
+                <button onClick={() => setThemeSel("dark")}>
+                  <Moon className="w-4 h-4" />
+                  <span>Dark</span>
+                </button>
+              </li>
+              <li className={themeSel === "night" ? "active" : ""}>
+                <button onClick={() => setThemeSel("night")}>
+                  <Moon className="w-4 h-4" />
+                  <span>Night</span>
+                </button>
+              </li>
+              <li className={themeSel === "system" ? "active" : ""}>
+                <button onClick={() => setThemeSel("system")}>
+                  <Laptop2 className="w-4 h-4" />
+                  <span>System</span>
+                </button>
+              </li>
+            </ul>
+          </details>
 
           {/* Notifications */}
           <details className="dropdown dropdown-end">
