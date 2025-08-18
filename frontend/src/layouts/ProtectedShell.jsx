@@ -81,7 +81,11 @@ export default function ProtectedShell({ title, primaryAction }) {
   }
 
   return (
-    <div className="min-h-screen bg-base-200 text-base-content">
+    <div
+  className="min-h-screen bg-base-200 text-base-content"
+  style={{ "--sbw": collapsed ? "4rem" : "16rem" }} // 4rem = w-16, 16rem = w-64
+>
+
       {/* Skip link for a11y */}
       <a
         href="#main"
@@ -120,7 +124,11 @@ export default function ProtectedShell({ title, primaryAction }) {
       </div>
 
       {/* Topbar */}
-      <header role="banner" className="sticky top-0 z-40 bg-base-100/80 backdrop-blur border-b border-base-300">
+     <header
+  role="banner"
+  className="sticky top-0 z-40 bg-base-100/80 backdrop-blur border-b border-base-300 md:pl-[var(--sbw)]"
+>
+
         <div className="h-14 px-2 sm:px-3 flex items-center gap-2">
           {/* Hamburger (mobile) */}
           <button
@@ -276,11 +284,7 @@ export default function ProtectedShell({ title, primaryAction }) {
       </header>
 
       {/* Main content area */}
-      <main
-  id="main"
-  className={`transition-[padding] duration-200 ${collapsed ? "pl-16" : "pl-64"}`}
->
-
+    <main id="main" className="transition-[padding] duration-200 md:pl-[var(--sbw)]">
         <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
           <Outlet />
         </div>
