@@ -4,6 +4,7 @@ import { pool } from "../db/pool.js";
 
 const router = express.Router();
 
+/** GET /api/tenant/menus -> { items: [{id,name,path,icon,parent_id,sort_order}, ...] } */
 router.get("/tenant/menus", async (req, res) => {
   try {
     const tenantId =
@@ -11,10 +12,9 @@ router.get("/tenant/menus", async (req, res) => {
       req.session?.tenant_id ??
       req.session?.user?.tenantId ??
       null;
-
     if (!tenantId) return res.status(401).json({ error: "Not authenticated" });
 
-    // User permissions (mirrors your auth.js logic)
+    // permissions for this user
     const { rows: permRows } = await pool.query(
       `
       SELECT DISTINCT p.code
@@ -28,7 +28,7 @@ router.get("/tenant/menus", async (req, res) => {
     );
     const permissions = permRows.map((r) => r.code);
 
-    // NOTE: if your schema uses parent_code instead of parent_id, swap it below
+    // NOTE: if your schema uses parent_code, replace mi.parent_id with mi.parent_code
     const { rows } = await pool.query(
       `
       SELECT
@@ -36,7 +36,7 @@ router.get("/tenant/menus", async (req, res) => {
         COALESCE(mi.label, mi.code) AS name,
         mi.path                     AS path,
         mi.icon                     AS icon,
-        mi.parent_id::text          AS parent_id,   -- change to parent_code if your table uses that
+        mi.parent_id::text          AS parent_id,
         mi.sort_order               AS sort_order
       FROM public.menu_items mi
       LEFT JOIN public.tenant_modules tm
@@ -52,7 +52,7 @@ router.get("/tenant/menus", async (req, res) => {
           OR mi.permission_code = ANY ($2::text[])
         )
       ORDER BY
-        COALESCE(mi.parent_id::text, ''),           -- or parent_code
+        COALESCE(mi.parent_id::text, ''),
         COALESCE(mi.sort_order, 0),
         COALESCE(mi.label, mi.code)
       `,
