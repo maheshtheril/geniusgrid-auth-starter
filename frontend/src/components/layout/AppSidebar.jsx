@@ -4,6 +4,8 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 /* ---------- helpers ---------- */
 const LS_EXPANDED = "gg:sidebar:expanded:v1";
+const INDENT_PX = 10; // tighter indent
+const ITEM_PAD_Y = "py-[6px]"; // tighter vertical padding
 
 // Always hit /api (same-origin by default; adds /api if missing)
 function api(path) {
@@ -43,8 +45,14 @@ function highlightSubseq(label, query) {
   return out;
 }
 
-/* ---------- icons (consistent SVGs) ---------- */
+/* ---------- icons (SVG set + smart fallbacks) ---------- */
 const ICON_SVGS = {
+  settings: ( // gear (for Admin)
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 008.6 3.4 1.65 1.65 0 0010.11 2H10a2 2 0 014 0v.09a1.65 1.65 0 001.51 1 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
+    </svg>
+  ),
   sparkles: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <path d="M12 3l1.8 3.9L18 8.7l-3.3 2.4.9 4.2L12 13.8 8.4 15.3l.9-4.2L6 8.7l4.2-.8L12 3z" />
@@ -116,18 +124,41 @@ const ICON_SVGS = {
   ),
 };
 const ICONS_ALIAS = {
+  // strings coming from DB (icon) → svg name
   sparkles: "sparkles", ai: "sparkles", "ai-settings": "sparkles",
   shield: "shield", security: "shield", sso: "shield", lock: "shield",
   plug: "plug", integrations: "plug",
-  users: "users", user: "users",
+  users: "users", user: "users", contacts: "users", crm: "users",
   org: "building", building: "building", company: "building",
   "api-keys": "key", key: "key",
   webhook: "webhooks", webhooks: "webhooks",
   usage: "chart", reports: "chart", analytics: "chart",
   billing: "creditcard", "credit-card": "creditcard",
   logs: "filetext", templates: "filetext",
-  "feature-flags": "flag", calls: "phone",
+  "feature-flags": "flag", approvals: "flag", calls: "phone",
+  admin: "settings", // <-- ensure Admin gets a gear even if icon missing
 };
+
+// fallback by label (when icon field is null/empty)
+function defaultIconByLabel(label) {
+  const l = normalize(label);
+  if (l === "admin") return ICON_SVGS.settings;
+  if (l === "crm") return ICON_SVGS.users;
+  if (l.includes("billing")) return ICON_SVGS.creditcard;
+  if (l.includes("security") || l.includes("compliance")) return ICON_SVGS.shield;
+  if (l.includes("integration") || l.includes("developer")) return ICON_SVGS.plug;
+  if (l.includes("user") || l.includes("contact") || l.includes("team")) return ICON_SVGS.users;
+  if (l.includes("org") || l.includes("organization")) return ICON_SVGS.building;
+  if (l.includes("api")) return ICON_SVGS.key;
+  if (l.includes("webhook")) return ICON_SVGS.webhooks;
+  if (l.includes("report") || l.includes("usage")) return ICON_SVGS.chart;
+  if (l.includes("template") || l.includes("log")) return ICON_SVGS.filetext;
+  if (l.includes("flag") || l.includes("approval")) return ICON_SVGS.flag;
+  if (l.includes("ai") || l.includes("automation")) return ICON_SVGS.sparkles;
+  if (l.includes("call")) return ICON_SVGS.phone;
+  return null;
+}
+
 function resolveIcon(icon) {
   if (!icon) return null;
   const raw = ("" + icon).trim();
@@ -138,8 +169,9 @@ function resolveIcon(icon) {
   if (/[\u{1F300}-\u{1FAFF}]/u.test(raw)) return <span aria-hidden="true">{raw}</span>;
   return null;
 }
-function IconSlot({ icon, compact }) {
-  const resolved = resolveIcon(icon);
+
+function IconSlot({ icon, label, compact }) {
+  const resolved = resolveIcon(icon) || defaultIconByLabel(label);
   return (
     <span className={cls("shrink-0 inline-flex items-center justify-center", compact ? "w-6" : "w-5")}>
       {resolved || (
@@ -162,7 +194,7 @@ function Collapsible({ open, children }) {
     if (open) {
       const sh = el.scrollHeight;
       setH(sh);
-      const t = setTimeout(() => setH("auto"), 200);
+      const t = setTimeout(() => setH("auto"), 180);
       return () => clearTimeout(t);
     } else {
       const sh = el.scrollHeight;
@@ -172,7 +204,7 @@ function Collapsible({ open, children }) {
   }, [open]);
 
   return (
-    <div ref={ref} style={{ height: h, overflow: "hidden", transition: "height 200ms ease" }}>
+    <div ref={ref} style={{ height: h, overflow: "hidden", transition: "height 180ms ease" }}>
       {children}
     </div>
   );
@@ -224,7 +256,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     try { localStorage.setItem(LS_EXPANDED, JSON.stringify([...expanded])); } catch {}
   }, [expanded]);
 
-  /* ---------- build structures with stable deps ---------- */
+  /* ---------- build structures ---------- */
   const maps = React.useMemo(() => {
     const byId = Object.create(null);
     const parentMap = Object.create(null);
@@ -247,7 +279,6 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     return { byId, parentMap, roots };
   }, [items]);
 
-  // active node based on route
   const activeId = React.useMemo(() => {
     if (!items) return null;
     const best = items
@@ -256,7 +287,6 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     return best?.id || null;
   }, [items, pathname]);
 
-  // linear visible list (for keyboard focus)
   const visibleList = React.useMemo(() => {
     const vis = [];
     const walk = (node, depth) => {
@@ -267,12 +297,11 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     return vis;
   }, [maps.roots, expanded]);
 
-  // expand ancestors WHEN route (activeId) changes (not on every toggle)
   const lastAutoKey = React.useRef(null);
   React.useEffect(() => {
     if (!activeId) return;
     const key = String(activeId);
-    if (lastAutoKey.current === key) return; // already expanded for this route
+    if (lastAutoKey.current === key) return;
     lastAutoKey.current = key;
 
     setExpanded((prev) => {
@@ -283,7 +312,6 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     });
   }, [activeId, maps.parentMap]);
 
-  // initial focus
   React.useEffect(() => {
     if (!focusedId && (activeId || visibleList[0]?.id)) {
       setFocusedId(activeId || visibleList[0].id);
@@ -302,6 +330,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   const handleNavigate = (path) => { if (path) { navigate(path); onRequestClose?.(); } };
 
   // search
+  const [query, setQ] = React.useState("");
   const flat = React.useMemo(() => (items || []).map((i) => ({
     id: i.id, name: i.name, path: i.path, icon: i.icon, parent_id: i.parent_id,
   })), [items]);
@@ -337,12 +366,17 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   const showLabels = !collapsed;
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col text-sm">
       {/* top bar */}
       <div className="p-2 border-b border-base-300 sticky top-0 bg-base-100 z-10">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 min-w-0">
-            <span className="inline-flex items-center justify-center w-7 h-7 rounded bg-base-200 select-none">🧭</span>
+            <img
+              src="/images/company-logo.png"
+              alt="Company logo"
+              className="w-7 h-7 rounded"
+              draggable="false"
+            />
             {showLabels && <span className="font-semibold truncate">GeniusGrid</span>}
           </div>
           <div className="flex-1" />
@@ -371,7 +405,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
           <input
             type="text"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => setQ(e.target.value)}
             placeholder={showLabels ? "Search…" : "Search"}
             className={cls("input input-sm input-bordered w-full pr-8", showLabels ? "" : "text-xs")}
             aria-label="Search menu"
@@ -403,8 +437,8 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
 
       {/* search results */}
       {results && (
-        <div className="overflow-y-auto p-2">
-          <ul className="menu">
+        <div className="overflow-y-auto p-1">
+          <ul className="menu menu-compact p-1">
             {results.map((r) => {
               const chain = crumb(r.id);
               const label = (showLabels
@@ -414,13 +448,13 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
               return (
                 <li key={r.id} className={cls(!showLabels && "tooltip tooltip-right")} data-tip={title}>
                   {r.path ? (
-                    <NavLink to={r.path} onClick={() => onRequestClose?.()} className="flex items-center gap-2">
-                      <IconSlot icon={r.icon} compact={collapsed} />
+                    <NavLink to={r.path} onClick={() => onRequestClose?.()} className={cls("flex items-center gap-2 px-2", ITEM_PAD_Y)}>
+                      <IconSlot icon={r.icon} label={r.name} compact={collapsed} />
                       {label}
                     </NavLink>
                   ) : (
-                    <span className="flex items-center gap-2 opacity-80">
-                      <IconSlot icon={r.icon} compact={collapsed} />
+                    <span className={cls("flex items-center gap-2 px-2 opacity-80", ITEM_PAD_Y)}>
+                      <IconSlot icon={r.icon} label={r.name} compact={collapsed} />
                       {label}
                     </span>
                   )}
@@ -434,7 +468,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
       {/* tree */}
       {!results && (
         <nav className="flex-1 overflow-y-auto" role="tree" aria-label="Application navigation">
-          <ul className="menu p-2">
+          <ul className="menu menu-compact p-1">
             {maps.roots.map((n) => (
               <TreeNode
                 key={n.id}
@@ -491,16 +525,17 @@ function TreeNode({
     onFocus: () => setFocusedId(node.id),
     onKeyDown,
     className: cls(
-      "relative flex items-center gap-2 px-2 py-1 rounded outline-none transition-all duration-200",
+      "relative flex items-center gap-2 px-2 rounded outline-none transition-all duration-200",
+      ITEM_PAD_Y,
       isActive ? "bg-primary/10 text-primary" : "hover:bg-base-200",
       isActive && "before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-primary before:rounded"
     ),
-    ...(showLabels ? { style: { paddingLeft: `${depth * 12}px` } } : {}),
+    ...(showLabels ? { style: { paddingLeft: `${depth * INDENT_PX}px` } } : {}),
   };
 
   const LabelInner = (
     <>
-      <IconSlot icon={node.icon} compact={collapsed} />
+      <IconSlot icon={node.icon} label={node.name} compact={collapsed} />
       {showLabels && <span className={cls("truncate", !node.path && "font-semibold")}>{node.name}</span>}
     </>
   );
@@ -508,11 +543,11 @@ function TreeNode({
   return (
     <li>
       <div className="flex items-center">
-        {/* disclosure button (hidden in mini) */}
+        {/* chevron (hidden in mini) */}
         {showLabels ? (
           <button
             className={cls(
-              "btn btn-ghost btn-xs mr-1 transition-transform duration-200",
+              "mr-1 px-1 py-1 rounded hover:bg-base-200 transition-transform duration-200",
               hasKids ? "opacity-100" : "opacity-0 pointer-events-none"
             )}
             aria-label={isOpen ? "Collapse" : "Expand"}
@@ -525,9 +560,9 @@ function TreeNode({
           </button>
         ) : null}
 
-        {/* item (click parent label to toggle when no path) */}
+        {/* item (parent label toggles when no path) */}
         {node.path ? (
-          <NavLink to={node.path} {...common} onClick={() => onNavigate(node.path)} title={!showLabels ? titleText : undefined} data-tip={!showLabels ? titleText : undefined}>
+          <NavLink to={node.path} {...common} onClick={() => onNavigate(node.path)} title={!showLabels ? titleText : undefined}>
             {LabelInner}
           </NavLink>
         ) : (
@@ -535,7 +570,6 @@ function TreeNode({
             {...common}
             onClick={() => { if (hasKids) toggle(node.id); }}
             title={!showLabels ? titleText : undefined}
-            data-tip={!showLabels ? titleText : undefined}
           >
             {LabelInner}
           </div>
