@@ -8,6 +8,18 @@ import AppSidebar from "@/components/layout/AppSidebar";
  * - title?: string
  * - primaryAction?: { label: string, onClick: () => void, icon?: ReactNode }
  */
+const THEME_KEY = "gg:theme";
+const THEMES = ["light", "dark"]; // <- if you use a custom theme name (e.g. "night"), add it here
+
+function getInitialTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY);
+    if (saved && THEMES.includes(saved)) return saved;
+  } catch {}
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches;
+  return prefersDark ? "dark" : "light";
+}
+
 export default function ProtectedShell({ title, primaryAction }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -15,10 +27,21 @@ export default function ProtectedShell({ title, primaryAction }) {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false); // desktop mini sidebar
   const [cmdOpen, setCmdOpen] = React.useState(false); // command palette
+  const [theme, setTheme] = React.useState(getInitialTheme());
+
+  // Apply theme to <html data-theme="..."> and persist
+  React.useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try { localStorage.setItem(THEME_KEY, theme); } catch {}
+  }, [theme]);
+
+  const toggleTheme = React.useCallback(() => {
+    setTheme((t) => (t === "dark" ? "light" : "dark"));
+  }, []);
 
   React.useEffect(() => { setMobileOpen(false); }, [pathname]);
 
-  // keyboard: ⌘K / Ctrl+K for command palette
+  // ⌘K / Ctrl+K toggles command palette
   React.useEffect(() => {
     const onKey = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -30,38 +53,16 @@ export default function ProtectedShell({ title, primaryAction }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // theme toggle (simple: toggles data-theme between dark/light)
-  const toggleTheme = React.useCallback(() => {
-    const root = document.documentElement;
-    const current = root.getAttribute("data-theme") || "dark";
-    root.setAttribute("data-theme", current === "dark" ? "light" : "dark");
-  }, []);
-
   const headerTitle = title || "GeniusGrid";
 
-  // Breadcrumbs from URL (no API calls)
+  // simple crumbs from URL (no API)
   const crumbs = React.useMemo(() => {
-    // /app/admin/org -> ["Admin", "Org"]
     const segs = pathname.split("?")[0].split("#")[0].split("/").filter(Boolean);
     const start = segs[0] === "app" ? 1 : 0;
-    const pretty = (s) => {
-      const map = {
-        admin: "Admin",
-        crm: "CRM",
-        leads: "Leads",
-        companies: "Companies",
-        contacts: "Contacts",
-        deals: "Deals",
-        reports: "Reports",
-        org: "Organization",
-        branding: "Branding",
-        localization: "Localization",
-        calendars: "Calendars",
-        api: "API",
-      };
-      if (map[s]) return map[s];
-      return s.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
-    };
+    const pretty = (s) =>
+      s
+        .replace(/[-_]/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
     const parts = segs.slice(start);
     let acc = segs.slice(0, start).join("/");
     const built = [];
@@ -73,16 +74,18 @@ export default function ProtectedShell({ title, primaryAction }) {
   }, [pathname]);
 
   async function onLogout() {
-    try {
-      await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-    } catch {}
+    try { await fetch("/api/auth/logout", { method: "POST", credentials: "include" }); } catch {}
     navigate("/", { replace: true });
     window.location.reload();
   }
 
+  // Header padding must match sidebar width on desktop
+  const headerPad = collapsed ? "md:pl-16" : "md:pl-64";
+  const mainPad   = collapsed ? "md:pl-16" : "md:pl-64";
+
   return (
     <div className="min-h-screen bg-base-200 text-base-content">
-      {/* Skip link for a11y */}
+      {/* Skip link */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 bg-base-100 border border-base-300 rounded px-3 py-1 z-[100]"
@@ -91,11 +94,10 @@ export default function ProtectedShell({ title, primaryAction }) {
       </a>
 
       {/* Desktop sidebar (collapsible) */}
-     <aside
-  className={`fixed left-0 top-0 h-screen ${collapsed ? "w-16" : "w-64"} z-40 border-r border-base-300 bg-base-100`}
-  aria-label="Sidebar"
->
-
+      <aside
+        className={`hidden md:block fixed left-0 top-0 h-screen ${collapsed ? "w-16" : "w-64"} z-40 border-r border-base-300 bg-base-100`}
+        aria-label="Sidebar"
+      >
         <AppSidebar
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -104,13 +106,11 @@ export default function ProtectedShell({ title, primaryAction }) {
 
       {/* Mobile drawer + overlay */}
       <div className={`md:hidden ${mobileOpen ? "" : "pointer-events-none"}`}>
-        {/* Overlay above header/content */}
         <div
           className={`fixed inset-0 z-50 transition-opacity bg-black/40 backdrop-blur-sm ${mobileOpen ? "opacity-100" : "opacity-0"}`}
           aria-hidden="true"
           onClick={() => setMobileOpen(false)}
         />
-        {/* Drawer */}
         <div
           className={`fixed left-0 top-0 bottom-0 z-50 w-72 max-w-[85vw] bg-base-100 border-r border-base-300 transform transition-transform duration-200 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
           role="dialog" aria-modal="true"
@@ -119,8 +119,11 @@ export default function ProtectedShell({ title, primaryAction }) {
         </div>
       </div>
 
-      {/* Topbar */}
-      <header role="banner" className="sticky top-0 z-40 bg-base-100/80 backdrop-blur border-b border-base-300">
+      {/* Topbar — note the headerPad so it starts at the right edge of the sidebar */}
+      <header
+        role="banner"
+        className={`sticky top-0 z-40 bg-base-100/80 backdrop-blur border-b border-base-300 ${headerPad}`}
+      >
         <div className="h-14 px-2 sm:px-3 flex items-center gap-2">
           {/* Hamburger (mobile) */}
           <button
@@ -157,10 +160,6 @@ export default function ProtectedShell({ title, primaryAction }) {
           <Link to="/app" className="flex items-center gap-2 min-w-0">
             <img src="/images/company-logo.png" alt="Logo" className="w-7 h-7 rounded" draggable="false" />
             <span className="hidden sm:inline font-semibold truncate">{headerTitle}</span>
-            {/* Env badge (optional) */}
-            {import.meta.env.MODE !== "production" && (
-              <span className="hidden md:inline badge badge-outline ml-1">{import.meta.env.MODE}</span>
-            )}
           </Link>
 
           {/* Breadcrumbs (md+) */}
@@ -180,39 +179,12 @@ export default function ProtectedShell({ title, primaryAction }) {
 
           <div className="flex-1" />
 
-          {/* Global Search / Command */}
-          <div className="hidden md:flex items-center">
-            <button
-              className="btn btn-sm btn-ghost gap-2"
-              onClick={() => setCmdOpen(true)}
-              aria-label="Open global search"
-              title="Search (Ctrl/⌘+K)"
-            >
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <span className="hidden lg:inline">Search</span>
-              <kbd className="kbd kbd-xs hidden lg:inline">⌘K</kbd>
-            </button>
-          </div>
-          {/* Mobile Search icon */}
-          <button
-            className="md:hidden btn btn-ghost btn-square"
-            aria-label="Search"
-            onClick={() => setCmdOpen(true)}
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
-          </button>
-
-          {/* Primary action — always visible, compact on small screens */}
+          {/* Primary action (compact on small) */}
           {primaryAction && (
             <button
               className="btn btn-primary btn-sm md:btn gap-2"
               onClick={primaryAction.onClick}
             >
-              {/* Plus icon */}
               <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
@@ -221,42 +193,26 @@ export default function ProtectedShell({ title, primaryAction }) {
             </button>
           )}
 
-          {/* Theme toggle */}
-          <button className="btn btn-ghost btn-square" aria-label="Toggle theme" onClick={toggleTheme}>
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-            </svg>
+          {/* Theme toggle (now works with daisyUI) */}
+          <button
+            className="btn btn-ghost btn-square"
+            aria-label="Toggle theme"
+            onClick={toggleTheme}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+          >
+            {theme === "dark" ? (
+              // Sun
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M12 2v2m0 16v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2m16 0h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            ) : (
+              // Moon
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+              </svg>
+            )}
           </button>
-
-          {/* Notifications */}
-          <details className="dropdown dropdown-end">
-            <summary className="btn btn-ghost btn-square" aria-label="Notifications">
-              <div className="indicator">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
-                {/* badge placeholder */}
-                {/* <span className="badge badge-xs badge-primary indicator-item" /> */}
-              </div>
-            </summary>
-            <ul className="menu dropdown-content bg-base-100 rounded-box z-[60] mt-2 w-64 p-2 shadow">
-              <li className="menu-title"><span>Notifications</span></li>
-              <li><span className="opacity-70">No new notifications</span></li>
-            </ul>
-          </details>
-
-          {/* Help */}
-          <details className="dropdown dropdown-end">
-            <summary className="btn btn-ghost btn-square" aria-label="Help">
-              <span className="text-lg leading-none">?</span>
-            </summary>
-            <ul className="menu dropdown-content bg-base-100 rounded-box z-[60] mt-2 w-56 p-2 shadow">
-              <li><a href="https://docs.example.com" target="_blank" rel="noreferrer">Documentation</a></li>
-              <li><a href="mailto:support@example.com">Contact support</a></li>
-              <li><button onClick={() => setCmdOpen(true)}>Search commands</button></li>
-            </ul>
-          </details>
 
           {/* User menu */}
           <details className="dropdown dropdown-end">
@@ -275,18 +231,14 @@ export default function ProtectedShell({ title, primaryAction }) {
         </div>
       </header>
 
-      {/* Main content area */}
-      <main
-  id="main"
-  className={`transition-[padding] duration-200 ${collapsed ? "pl-16" : "pl-64"}`}
->
-
+      {/* Main content */}
+      <main id="main" className={`transition-[padding] duration-200 ${mainPad}`}>
         <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
           <Outlet />
         </div>
       </main>
 
-      {/* Command Palette (very lightweight) */}
+      {/* Command Palette (lightweight) */}
       {cmdOpen && (
         <div
           className="fixed inset-0 z-[70] bg-black/50 backdrop-blur-sm flex items-start justify-center pt-24 px-3"
@@ -302,16 +254,11 @@ export default function ProtectedShell({ title, primaryAction }) {
                 type="text"
                 className="input input-ghost flex-1 h-10"
                 placeholder="Search menus, pages, actions…"
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setCmdOpen(false);
-                  // hook up to your own global search later
-                }}
+                onKeyDown={(e) => { if (e.key === "Escape") setCmdOpen(false); }}
               />
               <kbd className="kbd kbd-xs hidden md:inline">Esc</kbd>
             </div>
-            <div className="p-3 text-sm opacity-70">
-              Type to search… (hook into your menu/search API when ready)
-            </div>
+            <div className="p-3 text-sm opacity-70">Type to search…</div>
           </div>
         </div>
       )}
