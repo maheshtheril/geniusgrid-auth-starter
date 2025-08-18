@@ -47,7 +47,7 @@ function highlightSubseq(label, query) {
 
 /* ---------- icons (SVG set + smart fallbacks) ---------- */
 const ICON_SVGS = {
-  settings: ( // gear (for Admin)
+  settings: (
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <circle cx="12" cy="12" r="3" />
       <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 008.6 3.4 1.65 1.65 0 0010.11 2H10a2 2 0 014 0v.09a1.65 1.65 0 001.51 1 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
@@ -124,7 +124,6 @@ const ICON_SVGS = {
   ),
 };
 const ICONS_ALIAS = {
-  // strings coming from DB (icon) → svg name
   sparkles: "sparkles", ai: "sparkles", "ai-settings": "sparkles",
   shield: "shield", security: "shield", sso: "shield", lock: "shield",
   plug: "plug", integrations: "plug",
@@ -136,7 +135,7 @@ const ICONS_ALIAS = {
   billing: "creditcard", "credit-card": "creditcard",
   logs: "filetext", templates: "filetext",
   "feature-flags": "flag", approvals: "flag", calls: "phone",
-  admin: "settings", // <-- ensure Admin gets a gear even if icon missing
+  admin: "settings",
 };
 
 // fallback by label (when icon field is null/empty)
@@ -158,7 +157,6 @@ function defaultIconByLabel(label) {
   if (l.includes("call")) return ICON_SVGS.phone;
   return null;
 }
-
 function resolveIcon(icon) {
   if (!icon) return null;
   const raw = ("" + icon).trim();
@@ -169,7 +167,6 @@ function resolveIcon(icon) {
   if (/[\u{1F300}-\u{1FAFF}]/u.test(raw)) return <span aria-hidden="true">{raw}</span>;
   return null;
 }
-
 function IconSlot({ icon, label, compact }) {
   const resolved = resolveIcon(icon) || defaultIconByLabel(label);
   return (
@@ -217,7 +214,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
 
   const [items, setItems] = React.useState(null);
   const [error, setError] = React.useState(null);
-  const [query, setQuery] = React.useState("");
+  const [query, setQuery] = React.useState(""); // <-- single source of truth
   const [expanded, setExpanded] = React.useState(() => {
     try {
       const raw = localStorage.getItem(LS_EXPANDED);
@@ -329,8 +326,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   });
   const handleNavigate = (path) => { if (path) { navigate(path); onRequestClose?.(); } };
 
-  // search
-  const [query, setQ] = React.useState("");
+  // search (single query state)
   const flat = React.useMemo(() => (items || []).map((i) => ({
     id: i.id, name: i.name, path: i.path, icon: i.icon, parent_id: i.parent_id,
   })), [items]);
@@ -405,7 +401,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
           <input
             type="text"
             value={query}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(e) => setQuery(e.target.value)}
             placeholder={showLabels ? "Search…" : "Search"}
             className={cls("input input-sm input-bordered w-full pr-8", showLabels ? "" : "text-xs")}
             aria-label="Search menu"
