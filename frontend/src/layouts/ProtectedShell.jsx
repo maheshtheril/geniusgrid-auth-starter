@@ -91,10 +91,11 @@ export default function ProtectedShell({ title, primaryAction }) {
       </a>
 
       {/* Desktop sidebar (collapsible) */}
-      <aside
-        className={`hidden md:block fixed left-0 top-0 h-screen ${collapsed ? "w-16" : "w-64"} z-40 border-r border-base-300 bg-base-100`}
-        aria-label="Sidebar"
-      >
+     <aside
+  className={`fixed left-0 top-0 h-screen ${collapsed ? "w-16" : "w-64"} z-40 border-r border-base-300 bg-base-100`}
+  aria-label="Sidebar"
+>
+
         <AppSidebar
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
@@ -275,7 +276,11 @@ export default function ProtectedShell({ title, primaryAction }) {
       </header>
 
       {/* Main content area */}
-      <main id="main" className={`transition-[padding] duration-200 ${collapsed ? "md:pl-16" : "md:pl-64"}`}>
+      <main
+  id="main"
+  className={`transition-[padding] duration-200 ${collapsed ? "pl-16" : "pl-64"}`}
+>
+
         <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
           <Outlet />
         </div>
