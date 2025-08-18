@@ -19,18 +19,16 @@ export default function ProtectedShell({ title, primaryAction }) {
 
   return (
     <div className="min-h-screen bg-base-200 text-base-content">
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar (visible from sm and up) */}
       <aside
-        className="hidden md:block fixed left-0 top-0 h-screen w-64 z-40 border-r border-base-300 bg-base-100"
+        className="hidden sm:block fixed left-0 top-0 h-screen w-64 z-40 border-r border-base-300 bg-base-100"
         aria-label="Sidebar"
       >
         <AppSidebar />
       </aside>
 
-      {/* Mobile drawer + overlay */}
-      <div className={
-        `md:hidden ${mobileOpen ? "" : "pointer-events-none"}`
-      }>
+      {/* Mobile drawer + overlay (only below sm) */}
+      <div className={`sm:hidden ${mobileOpen ? "" : "pointer-events-none"}`}>
         {/* Overlay */}
         <div
           className={`fixed inset-0 z-50 transition-opacity bg-black/40 backdrop-blur-sm ${mobileOpen ? "opacity-100" : "opacity-0"}`}
@@ -51,13 +49,15 @@ export default function ProtectedShell({ title, primaryAction }) {
         <div className="flex items-center gap-2 px-3 sm:px-4 h-14">
           {/* Hamburger (mobile only) */}
           <button
-            className="md:hidden btn btn-ghost btn-square"
+            className="sm:hidden btn btn-ghost btn-square"
             aria-label="Open menu"
             onClick={() => setMobileOpen(true)}
           >
-            {/* lucide/menu replacement with simple bars to avoid extra deps */}
+            {/* icon: 3 bars */}
             <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="3" y1="6" x2="21" y2="6"/> <line x1="3" y1="12" x2="21" y2="12"/> <line x1="3" y1="18" x2="21" y2="18"/>
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
 
@@ -69,7 +69,7 @@ export default function ProtectedShell({ title, primaryAction }) {
           {/* Primary action – always visible, adapts to screen */}
           {primaryAction && (
             <button
-              className="btn btn-primary btn-sm md:btn"
+              className="btn btn-primary btn-sm sm:btn"
               onClick={primaryAction.onClick}
             >
               {primaryAction.label}
@@ -79,9 +79,8 @@ export default function ProtectedShell({ title, primaryAction }) {
       </header>
 
       {/* Main content area */}
-      <main className="md:pl-64">
+      <main className="sm:pl-64">
         <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
-          {/* Routed pages render here */}
           <Outlet />
         </div>
       </main>
