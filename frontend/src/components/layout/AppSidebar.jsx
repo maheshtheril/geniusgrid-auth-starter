@@ -4,6 +4,7 @@ import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
 /* ---------------- helpers ---------------- */
 const LS_EXPANDED = "gg:sidebar:expanded:v1";
+const API_BASE = import.meta.env.VITE_API_URL || "/api";
 const cls = (...xs) => xs.filter(Boolean).join(" ");
 const normalize = (s) => (s || "").toString().toLowerCase();
 
@@ -71,12 +72,19 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   React.useEffect(() => {
     let alive = true;
     (async () => {
+      const url = `${API_BASE}/tenant/menus`;
       try {
-        const res = await fetch("/api/tenant/menus", { credentials: "include" });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const res = await fetch(url, { credentials: "include" });
+        const ct = res.headers.get("content-type") || "";
+        if (!res.ok) throw new Error(`HTTP ${res.status} @ ${url}`);
+        if (!ct.includes("application/json")) {
+          const txt = await res.text().catch(() => "");
+          throw new Error(`Non-JSON response (${ct}) @ ${url}: ${txt.slice(0, 120)}`);
+        }
         const data = await res.json();
+        const arr = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
         if (!alive) return;
-        setItems(Array.isArray(data.items) ? data.items : []);
+        setItems(arr);
       } catch (e) {
         if (!alive) return;
         setError(e);
@@ -189,8 +197,12 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   if (error) {
     return (
       <div className="p-3 text-sm">
-        <div className="alert alert-error"><span>Sidebar failed: {String(error.message)}</span></div>
-        <button className="btn btn-sm mt-3" onClick={() => window.location.reload()}>Retry</button>
+        <div className="alert alert-error">
+          <span>Sidebar failed: {String(error.message)}</span>
+        </div>
+        <button className="btn btn-sm mt-3" onClick={() => window.location.reload()}>
+          Retry
+        </button>
       </div>
     );
   }
