@@ -1,4 +1,3 @@
-// src/layouts/ProtectedShell.jsx
 import React from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import AppSidebar from "@/components/layout/AppSidebar";
@@ -15,12 +14,12 @@ export default function ProtectedShell({ title = "GeniusGrid", primaryAction }) 
   React.useEffect(() => { setMobileOpen(false); }, [pathname]);
 
   return (
-    // CSS var (--sbw) keeps Topbar/Main perfectly aligned to the sidebar on md+
+    // Keep header & main aligned with sidebar using --sbw
     <div
       className="min-h-screen bg-base-200 text-base-content"
       style={{ "--sbw": collapsed ? "4rem" : "16rem" }} // 4rem = w-16, 16rem = w-64
     >
-      {/* Skip link for a11y */}
+      {/* Skip link */}
       <a
         href="#main"
         className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 bg-base-100 border border-base-300 rounded px-3 py-1 z-[100]"
@@ -28,15 +27,16 @@ export default function ProtectedShell({ title = "GeniusGrid", primaryAction }) 
         Skip to content
       </a>
 
-      {/* Desktop sidebar (fixed) */}
+      {/* Always render the desktop sidebar so it cannot 'disappear' */}
       <aside
         aria-label="Sidebar"
-        className={`hidden md:block fixed left-0 top-0 h-screen ${collapsed ? "w-16" : "w-64"} z-40 border-r border-base-300 bg-base-100`}
+        data-sb="true"
+        className={`fixed left-0 top-0 h-screen ${collapsed ? "w-16" : "w-64"} z-40 border-r border-base-300 bg-base-100 overflow-y-auto`}
       >
         <AppSidebar collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)} />
       </aside>
 
-      {/* Mobile drawer + overlay */}
+      {/* Mobile drawer + overlay (optional; keep for phones) */}
       <div className={`md:hidden ${mobileOpen ? "" : "pointer-events-none"}`}>
         <div
           className={`fixed inset-0 z-50 transition-opacity bg-black/40 backdrop-blur-sm ${mobileOpen ? "opacity-100" : "opacity-0"}`}
@@ -51,16 +51,16 @@ export default function ProtectedShell({ title = "GeniusGrid", primaryAction }) 
         </div>
       </div>
 
-      {/* Topbar (aligned to sidebar via md:pl-[var(--sbw)] inside the component) */}
+      {/* Topbar (aligned to sidebar via md:pl-[var(--sbw)] inside Topbar) */}
       <Topbar
-        onBurger={() => setMobileOpen(true)}        // opens the mobile drawer
-        collapsed={collapsed}                       // shows the right chevrons icon
+        onBurger={() => setMobileOpen(true)}
+        collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(v => !v)}
         title={title}
-        primaryAction={primaryAction}               // { label, onClick, icon? }
+        primaryAction={primaryAction}
       />
 
-      {/* Main content (aligned to sidebar on md+) */}
+      {/* Main content aligned with sidebar */}
       <main id="main" className="transition-[padding] duration-200 md:pl-[var(--sbw)]">
         <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
           <Outlet />
