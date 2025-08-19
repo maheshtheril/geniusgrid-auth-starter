@@ -1,18 +1,15 @@
 // src/components/leads/AddLeadDrawer.jsx — world-class UI (full, updated)
 // Phone input is max width; country dropdown & dial code are compact.
-// Clean sections, single "Add custom field" in Advance, no Group/Section picker.
-// CFModal saves directly to /api/leads/custom-fields.
+// Clean sections. Title "Advance". No "Add custom field" button.
+// Custom fields are loaded from /api/custom-fields?record_type=lead.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Plus, Info } from "lucide-react";
+import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Info } from "lucide-react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
-import { http } from "@/lib/http"; // ⬅️ for CFModal save
+import { http } from "@/lib/http";
 import "flag-icons/css/flag-icons.min.css";
-
-const safeRandomId = () =>
-  (globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2));
 
 const flagFromIso2 = (iso2 = "") =>
   iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
@@ -22,6 +19,7 @@ function normalizeToArray(maybe) {
   if (Array.isArray(maybe?.data)) return maybe.data;
   if (Array.isArray(maybe?.rows)) return maybe.rows;
   if (Array.isArray(maybe?.results)) return maybe.results;
+  if (maybe && typeof maybe === "object" && "items" in maybe && Array.isArray(maybe.items)) return maybe.items;
   return [];
 }
 
@@ -226,7 +224,7 @@ export default function AddLeadDrawer({
   prefill,
   stages = ["new", "prospect", "proposal", "negotiation", "closed"],
   sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
-  customFields = [],
+  customFields = [],   // no longer used (kept for compatibility)
   variant = "full",
 }) {
   const api = useLeadsApi();
@@ -256,9 +254,8 @@ export default function AddLeadDrawer({
   const [error, setError] = useState("");
   const [dupMobile, setDupMobile] = useState(null);
 
-  // local custom fields
+  // local custom fields (loaded from API)
   const [cfList, setCfList] = useState([]);
-  const [showCFModal, setShowCFModal] = useState(false);
 
   // refs
   const firstInputRef = useRef(null);
@@ -269,14 +266,38 @@ export default function AddLeadDrawer({
     [countryOpts]
   );
 
-  // reset on mount
+  // reset + load custom fields on mount
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
-    setCfList((Array.isArray(customFields) ? customFields : []).map((f) => ({
-      ...f,
-      group: f?.group === "advance" ? "advance" : "general",
-    })));
+    // Load from backend: /api/custom-fields?record_type=lead
+    (async () => {
+      try {
+        const resp = await http.get("custom-fields", { params: { record_type: "lead" } });
+        const items = normalizeToArray(resp?.data);
+        // Map DB fields → UI fields
+        const mapped = items
+          .filter((f) => f?.is_active !== false) // only active ones
+          .map((f) => ({
+            id: f.id,
+            key: f.code,
+            label: f.label,
+            type: f.field_type, // text, textarea, select, number, date, checkbox, file
+            required: !!f.is_required,
+            options: Array.isArray(f.options_json)
+              ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
+              : [],
+            accept: f.validation_json?.accept || undefined,
+            group: "advance", // all custom fields show under Advance
+            order_index: f.order_index ?? 0,
+          }))
+          .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || String(a.label).localeCompare(String(b.label)));
+        setCfList(mapped);
+      } catch (e) {
+        console.error("Failed to load custom fields", e);
+        setCfList([]); // fail safe
+      }
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // mount only
 
@@ -342,11 +363,10 @@ export default function AddLeadDrawer({
     };
   }, [form.mobile, form.mobile_code, api]);
 
-  // grouped custom fields
+  // group all CFs under advance
   const { generalCF, advanceCF } = useMemo(() => {
-    const g = [], a = [];
-    for (const f of cfList) (f.group === "advance" ? a : g).push(f);
-    return { generalCF: g, advanceCF: a };
+    const a = [...cfList];
+    return { generalCF: [], advanceCF: a };
   }, [cfList]);
 
   // validation
@@ -665,18 +685,7 @@ export default function AddLeadDrawer({
               )}
             </Section>
 
-            <Section
-              title="Custom fields — Advance"
-              right={
-                <button
-                  type="button"
-                  className="gg-btn gg-btn-sm"
-                  onClick={() => setShowCFModal(true)}
-                >
-                  <Plus className="w-4 h-4 mr-1" /> Add custom field
-                </button>
-              }
-            >
+            <Section title="Advance">
               {advanceCF.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{advanceCF.map(renderCF)}</div>
               ) : (
@@ -715,19 +724,6 @@ export default function AddLeadDrawer({
         </div>
       </aside>
 
-      {/* Inline Custom Field Modal (now self-saving) */}
-      {showCFModal && (
-        <CFModal
-          onClose={() => setShowCFModal(false)}
-          onSaved={(persistedField) => {
-            // ensure it's Advance in the UI
-            const f = { ...persistedField, group: "advance" };
-            setCfList((list) => [...list, f]);
-            setShowCFModal(false);
-          }}
-        />
-      )}
-
       <style>{`
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes slideIn { 0% { transform: translateX(28px); opacity: .0; } 60% { transform: translateX(-3px); opacity: 1; } 100% { transform: translateX(0); } }
@@ -741,125 +737,6 @@ export default function AddLeadDrawer({
   );
 
   return createPortal(el, document.body);
-}
-
-/* ============================== CFModal ============================== */
-/* Self-contained modal: no Group field; saves to backend; returns saved field */
-function CFModal({ onClose, onSaved }) {
-  const [f, setF] = useState({
-    label: "",
-    key: "",
-    type: "text",
-    required: false,
-    optionsText: "",
-  });
-  const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
-
-  const save = async () => {
-    setErr("");
-    const label = f.label.trim();
-    if (!label) { setErr("Label is required."); return; }
-
-    const key = (f.key || label).trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64);
-    const payload = {
-      label,
-      key,
-      type: f.type,
-      required: !!f.required,
-      options: f.type === "select"
-        ? f.optionsText.split(",").map((s) => s.trim()).filter(Boolean)
-        : [],
-      // no section/group sent
-    };
-
-    try {
-      setSaving(true);
-      const resp = await http.post("leads/custom-fields", payload); // no leading /api
-      const saved = resp?.data || {};
-      const fieldForUi = {
-        id: saved.id || safeRandomId(),
-        key: saved.code || key,
-        label: saved.label || label,
-        type: saved.field_type || payload.type,
-        required: saved.is_required ?? payload.required,
-        options: saved.options_json ?? payload.options,
-        group: "advance",
-      };
-      onSaved?.(fieldForUi);
-      onClose?.();
-    } catch (e) {
-      console.error("CFModal save", e);
-      setErr(e?.response?.data?.message || e?.message || "Failed to save custom field.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return createPortal(
-    <div className="fixed inset-0 z-[10000]">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 gg-panel p-4 rounded-2xl w-[520px] max-w-[92vw]">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-lg font-semibold">Add custom field</h3>
-          <button className="gg-btn gg-btn-ghost" onClick={onClose}>✕</button>
-        </div>
-
-        <div className="grid grid-cols-1 gap-3">
-          <div>
-            <label className="gg-label">Label *</label>
-            <input className="gg-input h-10" value={f.label} onChange={(e) => setF((s) => ({ ...s, label: e.target.value }))} />
-          </div>
-
-          {/* Key only — Group removed */}
-          <div>
-            <label className="gg-label">Key</label>
-            <input className="gg-input h-10" value={f.key} onChange={(e) => setF((s) => ({ ...s, key: e.target.value }))} placeholder="auto from label if empty" />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="gg-label">Type</label>
-              <select className="gg-input h-10" value={f.type} onChange={(e) => setF((s) => ({ ...s, type: e.target.value }))}>
-                <option value="text">Text</option>
-                <option value="email">Email</option>
-                <option value="phone">Phone</option>
-                <option value="textarea">Textarea</option>
-                <option value="select">Select</option>
-                <option value="number">Number</option>
-                <option value="date">Date</option>
-                <option value="checkbox">Checkbox</option>
-                <option value="file">File</option>
-              </select>
-            </div>
-            <div className="flex items-end">
-              <label className="inline-flex items-center gap-2">
-                <input type="checkbox" className="gg-checkbox" checked={f.required} onChange={(e) => setF((s) => ({ ...s, required: e.target.checked }))} />
-                Required
-              </label>
-            </div>
-          </div>
-
-          {f.type === "select" && (
-            <div>
-              <label className="gg-label">Options (comma separated)</label>
-              <input className="gg-input h-10" placeholder="e.g., Hot, Warm, Cold" value={f.optionsText} onChange={(e) => setF((s) => ({ ...s, optionsText: e.target.value }))} />
-            </div>
-          )}
-
-          {err && <div className="text-sm text-rose-400">{err}</div>}
-        </div>
-
-        <div className="flex justify-end mt-4 gap-2">
-          <button className="gg-btn gg-btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="gg-btn gg-btn-primary" onClick={save} disabled={saving}>
-            {saving ? "Saving…" : "Save"}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
 }
 
 function cap(s) {
