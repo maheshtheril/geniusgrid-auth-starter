@@ -77,6 +77,7 @@ function toJsonOrNull(x, fallback) {
  * ------------------------------------------------------------------ */
 
 // GET /api/custom-fields?record_type=lead
+// GET /api/custom-fields?record_type=lead
 router.get("/", async (req, res) => {
   try {
     const recordType = String(req.query.record_type || "").trim().toLowerCase();
@@ -87,18 +88,43 @@ router.get("/", async (req, res) => {
     if (!tenantId || !userId) return res.status(401).json({ error: "Not signed in" });
 
     await withClient(async (client) => {
-      await pgSetContext(client, tenantId, userId);
+      // Set tenant GUC for RLS (local to this txn/connection)
+      await client.query(
+        `select set_config('app.tenant_id',$1,true), set_config('app.user_id',$2,true)`,
+        [String(tenantId), String(userId)]
+      );
 
-      const { formVersionId } = await ensureFormAndActiveVersion(client, tenantId, recordType);
+      // Find ACTIVE form_version_id for this tenant + recordType
+      const { rows: v } = await client.query(
+        `
+        select v.id as form_version_id
+        from public.custom_forms f
+        join public.custom_form_versions v
+          on v.form_id = f.id
+         and v.tenant_id = f.tenant_id
+        where f.tenant_id = $1
+          and f.code = $2
+          and v.status = 'active'
+          and v.effective_to is null
+        order by v.version desc
+        limit 1
+        `,
+        [tenantId, recordType]
+      );
+      const formVersionId = v[0]?.form_version_id;
+      if (!formVersionId) return res.json({ items: [] }); // nothing configured yet
 
+      // Return fields for that version
       const { rows } = await client.query(
-        `select id, code, label, field_type, placeholder, help_text,
-                coalesce(options_json, '[]'::jsonb)    as options_json,
-                coalesce(validation_json, '{}'::jsonb) as validation_json,
-                order_index, is_required, is_active
-           from public.custom_fields
-          where tenant_id=$1 and form_version_id=$2
-          order by order_index nulls last, label`,
+        `
+        select id, code, label, field_type, placeholder, help_text,
+               coalesce(options_json,'[]'::jsonb)    as options_json,
+               coalesce(validation_json,'{}'::jsonb) as validation_json,
+               order_index, is_required, is_active
+        from public.custom_fields
+        where tenant_id = $1 and form_version_id = $2
+        order by order_index nulls last, label
+        `,
         [tenantId, formVersionId]
       );
 
