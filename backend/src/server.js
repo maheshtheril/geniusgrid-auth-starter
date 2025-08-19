@@ -42,6 +42,7 @@ import leadsImportsRoutes from "./store/leads.imports.routes.js";
 /* ✅ Custom fields (leads) */
 import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 import tenantMenusRoutes from "./routes/tenantMenus.routes.js";
+import customFields from "./routes/customFields.js";
 
 const app = express();
 const PgStore = pgSimple(session);
@@ -203,6 +204,9 @@ app.use("/api/admin", adminOrgRoutes);
 /* Other modules (scoped) */
 app.use("/api/leads-module", requireAuth, leadsModule);
 app.use("/api", requireAuth, tenantMenusRoutes);
+
+app.use("/api/custom-fields", requireAuth, customFields); 
+
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
 // eslint-disable-next-line no-unused-vars

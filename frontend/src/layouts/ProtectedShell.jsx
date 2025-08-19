@@ -1,71 +1,85 @@
+// src/layouts/ProtectedShell.jsx
 import React from "react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import AppSidebar from "@/components/layout/AppSidebar";
 import Topbar from "@/components/layout/Topbar";
 
-export default function ProtectedShell({ title = "GeniusGrid", primaryAction }) {
-  const { pathname } = useLocation();
+const LS_COLLAPSED = "gg:sidebar:collapsed";
+const DESK_OPEN_W = 260; // px
+const DESK_MINI_W = 64;  // px
 
-  // Mobile drawer + desktop collapse
-  const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [collapsed, setCollapsed] = React.useState(false);
+export default function ProtectedShell() {
+  const [collapsed, setCollapsed] = React.useState(() => {
+    try { return localStorage.getItem(LS_COLLAPSED) === "1"; } catch { return false; }
+  });
 
-  // Close mobile drawer when route changes
-  React.useEffect(() => { setMobileOpen(false); }, [pathname]);
+  // If you're on mobile and the drawer was closed, you won't see the sidebar.
+  // Start closed (normal), but the burger will open it.
+  const [drawerOpen, setDrawerOpen] = React.useState(false);
+
+  // Keep a CSS var for app layouts that use --sbw
+  React.useEffect(() => {
+    const w = collapsed ? DESK_MINI_W : DESK_OPEN_W;
+    document.documentElement.style.setProperty("--sbw", `${w}px`);
+  }, [collapsed]);
+
+  const toggleCollapse = React.useCallback(() => {
+    setCollapsed(prev => {
+      const next = !prev;
+      try { localStorage.setItem(LS_COLLAPSED, next ? "1" : "0"); } catch {}
+      return next;
+    });
+  }, []);
 
   return (
-    // Keep header & main aligned with sidebar using --sbw
-    <div
-      className="min-h-screen bg-base-200 text-base-content"
-      style={{ "--sbw": collapsed ? "4rem" : "16rem" }} // 4rem = w-16, 16rem = w-64
-    >
-      {/* Skip link */}
-      <a
-        href="#main"
-        className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 bg-base-100 border border-base-300 rounded px-3 py-1 z-[100]"
-      >
-        Skip to content
-      </a>
-
-      {/* Always render the desktop sidebar so it cannot 'disappear' */}
-      <aside
-        aria-label="Sidebar"
-        data-sb="true"
-        className={`fixed left-0 top-0 h-screen ${collapsed ? "w-16" : "w-64"} z-40 border-r border-base-300 bg-base-100 overflow-y-auto`}
-      >
-        <AppSidebar collapsed={collapsed} onToggleCollapse={() => setCollapsed(v => !v)} />
-      </aside>
-
-      {/* Mobile drawer + overlay (optional; keep for phones) */}
-      <div className={`md:hidden ${mobileOpen ? "" : "pointer-events-none"}`}>
-        <div
-          className={`fixed inset-0 z-50 transition-opacity bg-black/40 backdrop-blur-sm ${mobileOpen ? "opacity-100" : "opacity-0"}`}
-          aria-hidden="true"
-          onClick={() => setMobileOpen(false)}
-        />
-        <div
-          className={`fixed left-0 top-0 bottom-0 z-50 w-72 max-w-[85vw] bg-base-100 border-r border-base-300 transform transition-transform duration-200 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
-          role="dialog" aria-modal="true"
-        >
-          <AppSidebar onRequestClose={() => setMobileOpen(false)} />
-        </div>
-      </div>
-
-      {/* Topbar (aligned to sidebar via md:pl-[var(--sbw)] inside Topbar) */}
-      <Topbar
-        onBurger={() => setMobileOpen(true)}
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed(v => !v)}
-        title={title}
-        primaryAction={primaryAction}
+    <div className="min-h-screen w-full bg-base-200 text-base-content flex">
+      {/* Mobile overlay (click to close) */}
+      <div
+        className={[
+          "fixed inset-0 z-40 md:hidden bg-black/40 backdrop-blur-sm transition-opacity",
+          drawerOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none",
+        ].join(" ")}
+        onClick={() => setDrawerOpen(false)}
       />
 
-      {/* Main content aligned with sidebar */}
-      <main id="main" className="transition-[padding] duration-200 md:pl-[var(--sbw)]">
-        <div className="mx-auto max-w-[1600px] p-3 sm:p-4 md:p-6">
+      {/* Sidebar: drawer on mobile, fixed on desktop */}
+      <aside
+        aria-label="Sidebar"
+        className={[
+          "fixed left-0 top-0 h-screen bg-base-100 border-r border-base-300",
+          "transition-[transform,width] duration-200 ease-out will-change-transform",
+          // Drawer behavior
+          drawerOpen ? "translate-x-0" : "-translate-x-full",
+          // Desktop: ALWAYS visible
+          "md:translate-x-0",
+          // Widths
+          collapsed ? "md:w-16" : "md:w-64",
+          "w-[86vw] max-w-[320px]",
+          // Stacking: keep above content on mobile, below topbar on desktop
+          "z-50 md:z-10",
+          // Sticky on desktop so it scrolls with the page
+          "md:sticky md:top-0 md:self-start",
+        ].join(" ")}
+      >
+        <AppSidebar
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapse}
+          onRequestClose={() => setDrawerOpen(false)}
+        />
+      </aside>
+
+      {/* Main area */}
+      <div className="flex-1 min-w-0">
+        {/* Burger shows only if we pass onBurger */}
+        <Topbar
+          collapsed={collapsed}
+          onToggleCollapse={toggleCollapse}
+          onBurger={() => setDrawerOpen(true)}
+        />
+        <main className="px-2 sm:px-4 md:px-6 py-3">
           <Outlet />
-        </div>
-      </main>
+        </main>
+      </div>
     </div>
   );
 }

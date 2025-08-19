@@ -2,21 +2,26 @@
 import React from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 
-/* ---------- helpers ---------- */
+/* ---------- constants ---------- */
 const LS_EXPANDED = "gg:sidebar:expanded:v1";
-const INDENT_PX = 10; // tighter indent
-const ITEM_PAD_Y = "py-[6px]"; // tighter vertical padding
+const LS_PINS = "gg:sidebar:pins:v1"; // favorites
+const INDENT_PX = 10; // indent
+const ITEM_PAD_Y = "py-[2px]"; // tight vertical padding
+const ENABLE_FLYOUT = (import.meta.env.VITE_SIDEBAR_FLYOUT ?? "1") === "1";
 
-// Always hit /api (same-origin by default; adds /api if missing)
+/* ---------- api helper (unchanged) ---------- */
 function api(path) {
   const raw = (import.meta.env.VITE_API_URL || "").trim();
   const base = raw ? raw.replace(/\/+$/, "") : "";
   const withApi = base ? (base.endsWith("/api") ? base : `${base}/api`) : "/api";
   return `${withApi}${path}`;
 }
+
+/* ---------- utils ---------- */
 const cls = (...xs) => xs.filter(Boolean).join(" ");
 const normalize = (s) => (s || "").toString().toLowerCase();
 
+/* ---------- fuzzy + highlight (unchanged logic) ---------- */
 function fuzzyScore(text, query) {
   const t = normalize(text);
   const q = normalize(query);
@@ -37,7 +42,7 @@ function highlightSubseq(label, query) {
   while (i < l.length) {
     const ch = l[i];
     if (qi < q.length && low[i] === q[qi]) {
-      out.push(<mark key={i} className="bg-base-300 rounded px-0.5">{ch}</mark>);
+      out.push(<mark key={i} className="bg-primary/20 text-primary rounded px-0.5">{ch}</mark>);
       qi++;
     } else out.push(<span key={i}>{ch}</span>);
     i++;
@@ -45,83 +50,21 @@ function highlightSubseq(label, query) {
   return out;
 }
 
-/* ---------- icons (SVG set + smart fallbacks) ---------- */
+/* ---------- icons ---------- */
 const ICON_SVGS = {
-  settings: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 008.6 3.4 1.65 1.65 0 0010.11 2H10a2 2 0 014 0v.09a1.65 1.65 0 001.51 1 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" />
-    </svg>
-  ),
-  sparkles: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 3l1.8 3.9L18 8.7l-3.3 2.4.9 4.2L12 13.8 8.4 15.3l.9-4.2L6 8.7l4.2-.8L12 3z" />
-      <path d="M19 3.5l.7 1.6 1.7.3-1.4 1 .4 1.7-1.4-.8-1.4.8.4-1.7-1.4-1 1.7-.3.7-1.6z" />
-      <path d="M5 17l.9 2 2.1.4-1.6 1.1.5 2.1L5 21.6 3.1 22.6l.5-2.1L2 19.4l2.1-.4L5 17z" />
-    </svg>
-  ),
-  shield: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 22s8-3 8-10V6l-8-3-8 3v6c0 7 8 10 8 10z" />
-    </svg>
-  ),
-  plug: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M12 22v-6" /><path d="M9 7V2" /><path d="M15 7V2" />
-      <path d="M7 7h10v3a5 5 0 1 1-10 0z" />
-    </svg>
-  ),
-  users: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
-  building: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 21h18" /><path d="M4 21V8l8-5 8 5v13" />
-      <path d="M9 21v-6h6v6" /><path d="M9 10h.01" /><path d="M13 10h.01" />
-    </svg>
-  ),
-  key: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <circle cx="7.5" cy="15.5" r="5.5" /><path d="M14 12l7-7" /><path d="M15 5h6v6" />
-    </svg>
-  ),
-  webhooks: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M18 16a3 3 0 1 0 3 3" /><path d="M12 3a3 3 0 1 1-3 3" /><path d="M3 18a3 3 0 1 0 3-3" />
-      <path d="M8 15l2-4 4 8 2-4" />
-    </svg>
-  ),
-  chart: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M3 3v18h18" /><path d="M7 13l3-3 4 4 5-7" />
-    </svg>
-  ),
-  creditcard: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2" y="4" width="20" height="16" rx="2" /><path d="M2 10h20" />
-    </svg>
-  ),
-  filetext: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12V8z" />
-      <path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" />
-    </svg>
-  ),
-  flag: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22V15" />
-    </svg>
-  ),
-  phone: (
-    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M22 16.92v3A2 2 0 0 1 19.82 22a19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.63 2.6a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.48-1.15a2 2 0 0 1 2.11-.45c.83.3 1.7.51 2.6.63A2 2 0 0 1 22 16.92z" />
-    </svg>
-  ),
+  settings: (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 8a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 008.6 3.4 1.65 1.65 0 0010.11 2H10a2 2 0 014 0v.09a1.65 1.65 0 001.51 1 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z" /></svg>),
+  sparkles: (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l1.8 3.9L18 8.7l-3.3 2.4.9 4.2L12 13.8 8.4 15.3l.9-4.2L6 8.7l4.2-.8L12 3z" /><path d="M19 3.5l.7 1.6 1.7.3-1.4 1 .4 1.7-1.4-.8-1.4.8.4-1.7-1.4-1 1.7-.3.7-1.6z" /><path d="M5 17l.9 2 2.1.4-1.6 1.1.5 2.1L5 21.6 3.1 22.6l.5-2.1L2 19.4l2.1-.4L5 17z" /></svg>),
+  shield:  (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 22s8-3 8-10V6l-8-3-8 3v6c0 7 8 10 8 10z" /></svg>),
+  plug:    (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 22v-6" /><path d="M9 7V2" /><path d="M15 7V2" /><path d="M7 7h10v3a5 5 0 1 1-10 0z" /></svg>),
+  users:   (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>),
+  building:(<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 21h18" /><path d="M4 21V8l8-5 8 5v13" /><path d="M9 21v-6h6v6" /><path d="M9 10h.01" /><path d="M13 10h.01" /></svg>),
+  key:     (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="7.5" cy="15.5" r="5.5" /><path d="M14 12l7-7" /><path d="M15 5h6v6" /></svg>),
+  webhooks:(<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 16a3 3 0 1 0 3 3" /><path d="M12 3a3 3 0 1 1-3 3" /><path d="M3 18a3 3 0 1 0 3-3" /><path d="M8 15l2-4 4 8 2-4" /></svg>),
+  chart:   (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 3v18h18" /><path d="M7 13l3-3 4 4 5-7" /></svg>),
+  creditcard:(<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="2" y="4" width="20" height="16" rx="2" /><path d="M2 10h20" /></svg>),
+  filetext:(<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12V8z" /><path d="M14 2v6h6" /><path d="M16 13H8" /><path d="M16 17H8" /><path d="M10 9H8" /></svg>),
+  flag:    (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" /><path d="M4 22V15" /></svg>),
+  phone:   (<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M22 16.92v3A2 2 0 0 1 19.82 22a19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.09 4.18 2 2 0 0 1 4.06 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.63 2.6a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.48-1.15a2 2 0 0 1 2.11-.45c.83.3 1.7.51 2.6.63A2 2 0 0 1 22 16.92z" /></svg>),
 };
 const ICONS_ALIAS = {
   sparkles: "sparkles", ai: "sparkles", "ai-settings": "sparkles",
@@ -137,8 +80,6 @@ const ICONS_ALIAS = {
   "feature-flags": "flag", approvals: "flag", calls: "phone",
   admin: "settings",
 };
-
-// fallback by label (when icon field is null/empty)
 function defaultIconByLabel(label) {
   const l = normalize(label);
   if (l === "admin") return ICON_SVGS.settings;
@@ -170,28 +111,40 @@ function resolveIcon(icon) {
 function IconSlot({ icon, label, compact }) {
   const resolved = resolveIcon(icon) || defaultIconByLabel(label);
   return (
-    <span className={cls("shrink-0 inline-flex items-center justify-center", compact ? "w-6" : "w-5")}>
-      {resolved || (
-        <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" className="opacity-70" aria-hidden="true">
-          <circle cx="12" cy="12" r="3" />
-        </svg>
-      )}
+    <span className={cls("shrink-0 inline-flex items-center justify-center", compact ? "w-6" : "w-5", "text-base-content/80")}>
+      {resolved || (<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" className="opacity-70" aria-hidden="true"><circle cx="12" cy="12" r="3" /></svg>)}
     </span>
   );
 }
+
+/* ---- Expand/Collapse all icons (double chevrons) ---- */
+const ExpandAllIcon = (props) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" {...props}
+       fill="none" stroke="currentColor" strokeWidth="2"
+       strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 7l6 6 6-6" />
+    <path d="M6 12l6 6 6-6" />
+  </svg>
+);
+const CollapseAllIcon = (props) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" {...props}
+       fill="none" stroke="currentColor" strokeWidth="2"
+       strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 17l-6-6-6 6" />
+    <path d="M18 12l-6-6-6 6" />
+  </svg>
+);
 
 /* ---------- smooth collapsible ---------- */
 function Collapsible({ open, children }) {
   const ref = React.useRef(null);
   const [h, setH] = React.useState(open ? "auto" : 0);
-
   React.useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
+    const el = ref.current; if (!el) return;
     if (open) {
       const sh = el.scrollHeight;
       setH(sh);
-      const t = setTimeout(() => setH("auto"), 180);
+      const t = setTimeout(() => setH("auto"), 200);
       return () => clearTimeout(t);
     } else {
       const sh = el.scrollHeight;
@@ -199,32 +152,51 @@ function Collapsible({ open, children }) {
       requestAnimationFrame(() => setH(0));
     }
   }, [open]);
-
   return (
-    <div ref={ref} style={{ height: h, overflow: "hidden", transition: "height 180ms ease" }}>
+    <div ref={ref} style={{ height: h, overflow: "hidden", transition: "height 220ms cubic-bezier(.2,.9,.25,1.2)" }}>
       {children}
     </div>
   );
 }
 
-/* ---------- component ---------- */
-export default function AppSidebar({ onRequestClose, collapsed = false, onToggleCollapse }) {
+/* ---------- HMR-safe wrapper ---------- */
+export default function AppSidebar(props) {
+  const BUILD_KEY = import.meta.env.DEV ? import.meta.url : "prod";
+  return <SidebarCore key={BUILD_KEY} {...props} />;
+}
+
+/* ---------- main component body ---------- */
+function SidebarCore({ onRequestClose, collapsed = false, onToggleCollapse }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
 
   const [items, setItems] = React.useState(null);
   const [error, setError] = React.useState(null);
-  const [query, setQuery] = React.useState(""); // <-- single source of truth
+  const [query, setQuery] = React.useState("");
   const [expanded, setExpanded] = React.useState(() => {
-    try {
-      const raw = localStorage.getItem(LS_EXPANDED);
-      const arr = raw ? JSON.parse(raw) : [];
-      return new Set(Array.isArray(arr) ? arr : []);
-    } catch { return new Set(); }
+    try { const raw = localStorage.getItem(LS_EXPANDED); const arr = raw ? JSON.parse(raw) : []; return new Set(Array.isArray(arr) ? arr : []); }
+    catch { return new Set(); }
   });
+
+  // favorites (pins)
+  const [pins, setPins] = React.useState(() => {
+    try { const raw = localStorage.getItem(LS_PINS); const arr = raw ? JSON.parse(raw) : []; return new Set(Array.isArray(arr) ? arr : []); }
+    catch { return new Set(); }
+  });
+  const togglePin = React.useCallback((id) => {
+    setPins(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      try { localStorage.setItem(LS_PINS, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
+
   const [focusedId, setFocusedId] = React.useState(null);
   const refMap = React.useRef(new Map());
+  const searchRef = React.useRef(null);
 
+  /* ---------- fetch menus (unchanged) ---------- */
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -241,37 +213,27 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
         const arr = Array.isArray(data?.items) ? data.items : (Array.isArray(data) ? data : []);
         if (!alive) return;
         setItems(arr);
-      } catch (e) {
-        if (!alive) return;
-        setError(e);
-      }
+      } catch (e) { if (!alive) return; setError(e); }
     })();
     return () => { alive = false; };
   }, []);
 
+  /* ---------- persist expanded ---------- */
   React.useEffect(() => {
     try { localStorage.setItem(LS_EXPANDED, JSON.stringify([...expanded])); } catch {}
   }, [expanded]);
 
-  /* ---------- build structures ---------- */
+  /* ---------- build maps (unchanged logic) ---------- */
   const maps = React.useMemo(() => {
     const byId = Object.create(null);
     const parentMap = Object.create(null);
-
     const inOrder = (a, b) => {
       const s = (a.sort_order ?? 0) - (b.sort_order ?? 0);
       return s !== 0 ? s : (a.name || "").localeCompare(b.name || "");
     };
-
-    (items || []).forEach((i) => {
-      byId[i.id] = { ...i, children: [] };
-      if (i.parent_id) parentMap[i.id] = i.parent_id;
-    });
-    (items || []).forEach((i) => {
-      if (i.parent_id && byId[i.parent_id]) byId[i.parent_id].children.push(byId[i.id]);
-    });
+    (items || []).forEach((i) => { byId[i.id] = { ...i, children: [] }; if (i.parent_id) parentMap[i.id] = i.parent_id; });
+    (items || []).forEach((i) => { if (i.parent_id && byId[i.parent_id]) byId[i.parent_id].children.push(byId[i.id]); });
     Object.values(byId).forEach((n) => n.children.sort(inOrder));
-
     const roots = (items || []).filter((i) => !i.parent_id).map((i) => byId[i.id]).sort(inOrder);
     return { byId, parentMap, roots };
   }, [items]);
@@ -300,7 +262,6 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     const key = String(activeId);
     if (lastAutoKey.current === key) return;
     lastAutoKey.current = key;
-
     setExpanded((prev) => {
       const next = new Set(prev);
       let p = maps.parentMap[activeId];
@@ -310,9 +271,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   }, [activeId, maps.parentMap]);
 
   React.useEffect(() => {
-    if (!focusedId && (activeId || visibleList[0]?.id)) {
-      setFocusedId(activeId || visibleList[0].id);
-    }
+    if (!focusedId && (activeId || visibleList[0]?.id)) setFocusedId(activeId || visibleList[0].id);
   }, [focusedId, activeId, visibleList]);
   React.useEffect(() => {
     const el = refMap.current.get(focusedId);
@@ -326,7 +285,7 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   });
   const handleNavigate = (path) => { if (path) { navigate(path); onRequestClose?.(); } };
 
-  // search (single query state)
+  // flat & search
   const flat = React.useMemo(() => (items || []).map((i) => ({
     id: i.id, name: i.name, path: i.path, icon: i.icon, parent_id: i.parent_id,
   })), [items]);
@@ -348,6 +307,39 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
     return chain.reverse();
   };
 
+  // pinned list (kept ABOVE guards)
+  const pinned = React.useMemo(() => {
+    if (!pins.size) return [];
+    const list = [];
+    pins.forEach((id) => {
+      const n = maps.byId[id];
+      if (n && n.path) list.push(n);
+    });
+    return list.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+  }, [pins, maps.byId]);
+
+  // hotkeys: / or Cmd/Ctrl+K focus search
+  React.useEffect(() => {
+    const onKey = (e) => {
+      const isCmdK = (e.key.toLowerCase() === 'k') && (e.metaKey || e.ctrlKey);
+      if (e.key === '/' || isCmdK) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // —— hamburger handler: mobile hides, desktop collapses —— //
+  const handleHamburger = () => {
+    if (window.matchMedia("(max-width: 1023px)").matches) {
+      onRequestClose?.();   // hide drawer on mobile/tablet
+    } else {
+      onToggleCollapse?.(); // collapse/expand width on desktop
+    }
+  };
+
   /* ---------- render ---------- */
   if (error) {
     return (
@@ -362,61 +354,59 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
   const showLabels = !collapsed;
 
   return (
-    <div className="flex h-full flex-col text-sm">
+    <div className="relative flex h-full flex-col text-sm gg-sidebar">
+      <div className="gg-ambient" aria-hidden />
+
       {/* top bar */}
-      <div className="p-2 border-b border-base-300 sticky top-0 bg-base-100 z-10">
+      <div className="p-2 border-b border-base-300 sticky top-0 bg-base-100/80 backdrop-blur z-10">
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <img
-              src="/images/company-logo.png"
-              alt="Company logo"
-              className="w-7 h-7 rounded"
-              draggable="false"
-            />
-            {showLabels && <span className="font-semibold truncate">GeniusGrid</span>}
+          <div className="flex items-center gap-1.5 min-w-0">
+            <img src="/images/company-logo.png" alt="Company logo" className="w-12 h-12 rounded shadow-sm" draggable="false" />
+            {showLabels && <span className="font-semibold truncate tracking-wide">GeniusGrid</span>}
           </div>
+
           <div className="flex-1" />
-          {onToggleCollapse && (
-            <button
-              className="btn btn-ghost btn-xs"
-              onClick={onToggleCollapse}
-              title={collapsed ? "Expand" : "Collapse"}
-              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            >
-              {collapsed ? (
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 4h4v16H3z" /><polyline points="13 6 18 12 13 18" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 4h4v16H3z" /><polyline points="18 6 13 12 18 18" />
-                </svg>
-              )}
-            </button>
-          )}
+
+          {/* Sidebar hamburger (in sidebar). Mobile: closes drawer. Desktop: toggles collapse. */}
+          <button
+            className="btn btn-ghost btn-xs"
+            onClick={handleHamburger}
+            aria-label="Toggle sidebar"
+            title="Toggle sidebar"
+          >
+            {/* hamburger icon */}
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+              <path d="M3 6h18M3 12h18M3 18h18" />
+            </svg>
+          </button>
         </div>
 
         {/* search */}
         <div className="mt-2 relative">
           <input
+            ref={searchRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder={showLabels ? "Search…" : "Search"}
-            className={cls("input input-sm input-bordered w-full pr-8", showLabels ? "" : "text-xs")}
+            placeholder={showLabels ? "Search…  ( /  or  ⌘/Ctrl+K )" : "Search"}
+            className={cls(
+              "input input-sm input-bordered w-full pr-10 rounded-xl",
+              "bg-base-200/60 shadow-inner border-base-300/70",
+              "focus:ring-2 focus:ring-primary/30 focus:outline-none",
+              showLabels ? "" : "text-xs"
+            )}
             aria-label="Search menu"
           />
-          <span className="absolute right-2 top-1/2 -translate-y-1/2 opacity-60">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-            </svg>
+          <span className="absolute right-2 top-1/2 -translate-y-1/2 opacity-60 pointer-events-none">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
           </span>
         </div>
 
+        {/* expand/collapse all (double chevrons) */}
         {showLabels && (
-          <div className="mt-2 flex gap-1">
+          <div className="mt-2 flex items-center gap-1">
             <button
-              className="btn btn-ghost btn-xs"
+              className="btn btn-ghost btn-xs gap-1 hover:text-primary"
               title="Expand all"
               onClick={() => {
                 const next = new Set(expanded);
@@ -425,35 +415,81 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
                 });
                 setExpanded(next);
               }}
-            >＋</button>
-            <button className="btn btn-ghost btn-xs" title="Collapse all" onClick={() => setExpanded(new Set())}>–</button>
+            >
+              <ExpandAllIcon />
+            </button>
+            <button
+              className="btn btn-ghost btn-xs gap-1 hover:text-secondary"
+              title="Collapse all"
+              onClick={() => setExpanded(new Set())}
+            >
+              <CollapseAllIcon />
+            </button>
           </div>
         )}
       </div>
 
+      {/* pinned favorites */}
+      {showLabels && pinned.length > 0 && !results && (
+        <div className="px-2 pt-2 overflow-x-auto thin-scroll">
+          <div className="text-[11px] uppercase tracking-wider opacity-60 px-2 mb-1">Pinned</div>
+          <div className="flex flex-nowrap gap-1.5 min-w-max">
+            {pinned.map(n => (
+              <NavLink
+                key={n.id}
+                to={n.path}
+                onClick={() => onRequestClose?.()}
+                className="inline-flex items-center gap-2 px-2 h-7 rounded-lg bg-base-200 hover:bg-base-300 transition shadow-sm"
+                title={n.name}
+              >
+                <IconSlot icon={n.icon} label={n.name} compact={false} />
+                <span className="truncate">{n.name}</span>
+                <button
+                  type="button"
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); togglePin(n.id); }}
+                  className="ml-0.5 opacity-70 hover:opacity-100"
+                  title="Unpin"
+                >
+                  ★
+                </button>
+              </NavLink>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* search results */}
       {results && (
-        <div className="overflow-y-auto p-1">
-          <ul className="menu menu-compact p-1">
+        <div className="overflow-y-auto overflow-x-auto p-1 thin-scroll">
+          <ul className="menu menu-compact p-1 min-w-max whitespace-nowrap">
             {results.map((r) => {
               const chain = crumb(r.id);
               const label = (showLabels
                 ? <span className="truncate">{highlightSubseq(chain.at(-1)?.name || r.name, query)}</span>
                 : null);
               const title = showLabels ? undefined : (chain.map((n) => n.name).join(" / ") || r.name);
+              const isPinned = pins.has(r.id);
               return (
                 <li key={r.id} className={cls(!showLabels && "tooltip tooltip-right")} data-tip={title}>
-                  {r.path ? (
-                    <NavLink to={r.path} onClick={() => onRequestClose?.()} className={cls("flex items-center gap-2 px-2", ITEM_PAD_Y)}>
-                      <IconSlot icon={r.icon} label={r.name} compact={collapsed} />
-                      {label}
-                    </NavLink>
-                  ) : (
-                    <span className={cls("flex items-center gap-2 px-2 opacity-80", ITEM_PAD_Y)}>
-                      <IconSlot icon={r.icon} label={r.name} compact={collapsed} />
-                      {label}
-                    </span>
-                  )}
+                  <div className="flex items-center justify-between">
+                    {r.path ? (
+                      <NavLink to={r.path} onClick={() => onRequestClose?.()} className={cls("flex items-center gap-1.5 px-2", ITEM_PAD_Y, "rounded hover:bg-base-200 transition")}>
+                        <IconSlot icon={r.icon} label={r.name} compact={collapsed} />
+                        {label}
+                      </NavLink>
+                    ) : (
+                      <span className={cls("flex items-center gap-1.5 px-2 opacity-80", ITEM_PAD_Y)}>
+                        <IconSlot icon={r.icon} label={r.name} compact={collapsed} />
+                        {label}
+                      </span>
+                    )}
+                    <button
+                      className="btn btn-ghost btn-xs"
+                      onClick={() => togglePin(r.id)}
+                      aria-label={isPinned ? "Unpin" : "Pin"}
+                      title={isPinned ? "Unpin" : "Pin"}
+                    >{isPinned ? "★" : "☆"}</button>
+                  </div>
                 </li>
               );
             })}
@@ -463,8 +499,8 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
 
       {/* tree */}
       {!results && (
-        <nav className="flex-1 overflow-y-auto" role="tree" aria-label="Application navigation">
-          <ul className="menu menu-compact p-1">
+        <nav className="flex-1 overflow-y-auto overflow-x-auto thin-scroll" role="tree" aria-label="Application navigation">
+          <ul className="menu menu-compact p-1 min-w-max whitespace-nowrap">
             {maps.roots.map((n) => (
               <TreeNode
                 key={n.id}
@@ -478,6 +514,8 @@ export default function AppSidebar({ onRequestClose, collapsed = false, onToggle
                 activeId={activeId}
                 onNavigate={handleNavigate}
                 collapsed={collapsed}
+                pins={pins}
+                onTogglePin={togglePin}
               />
             ))}
           </ul>
@@ -496,10 +534,12 @@ function TreeNode({
   activeId,
   onNavigate,
   collapsed,
+  pins, onTogglePin,
 }) {
   const isOpen = expanded.has(node.id);
   const hasKids = (node.children?.length || 0) > 0;
   const isActive = node.id === activeId;
+  const isPinned = pins?.has(node.id);
 
   const selfRef = React.useCallback((el) => { if (el) refMap.current.set(node.id, el); }, [node.id, refMap]);
   const showLabels = !collapsed;
@@ -514,6 +554,7 @@ function TreeNode({
 
   const common = {
     role: "treeitem",
+    "aria-level": depth + 1,
     "aria-expanded": hasKids ? isOpen : undefined,
     "aria-current": isActive ? "page" : undefined,
     tabIndex: node.id === focusedId ? 0 : -1,
@@ -521,59 +562,89 @@ function TreeNode({
     onFocus: () => setFocusedId(node.id),
     onKeyDown,
     className: cls(
-      "relative flex items-center gap-2 px-2 rounded outline-none transition-all duration-200",
+      "relative flex items-center gap-2 px-2 rounded-lg outline-none group/item gg-item",
       ITEM_PAD_Y,
-      isActive ? "bg-primary/10 text-primary" : "hover:bg-base-200",
-      isActive && "before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:bg-primary before:rounded"
+      isActive ? "gg-item-active" : "gg-item-hover",
+      "focus-visible:ring-2 focus-visible:ring-primary/30"
     ),
     ...(showLabels ? { style: { paddingLeft: `${depth * INDENT_PX}px` } } : {}),
+    title: !showLabels ? titleText : undefined,
   };
+
+  const Chevron = (
+    <button
+      className={cls(
+        "mr-0.5 px-1 py-1 rounded-md hover:bg-base-200/70 transition-transform chev-spring",
+        hasKids ? "opacity-100" : "opacity-0 pointer-events-none"
+      )}
+      aria-label={isOpen ? "Collapse" : "Expand"}
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggle(node.id); }}
+    >
+      <svg
+        viewBox="0 0 24 24"
+        width="14"
+        height="14"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        className="transition-transform duration-200 ease-out drop-shadow-sm"
+        style={{ transform: `rotate(${isOpen ? 90 : 0}deg)` }}
+      >
+        <path d="M8 5l8 7-8 7" />
+      </svg>
+    </button>
+  );
+
+  const PinBtn = node.path && (
+    <button
+      className="ml-auto btn btn-ghost btn-xs opacity-0 group-hover/item:opacity-100 transition-opacity"
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTogglePin?.(node.id); }}
+      aria-label={isPinned ? "Unpin" : "Pin"}
+      title={isPinned ? "Unpin" : "Pin"}
+    >
+      {isPinned ? "★" : "☆"}
+    </button>
+  );
 
   const LabelInner = (
     <>
       <IconSlot icon={node.icon} label={node.name} compact={collapsed} />
-      {showLabels && <span className={cls("truncate", !node.path && "font-semibold")}>{node.name}</span>}
+      {showLabels && (
+        <span
+          className={cls(
+            "truncate",
+            !node.path && "font-semibold uppercase tracking-wide text-xs opacity-80"
+          )}
+        >
+          {node.name}
+        </span>
+      )}
+      {PinBtn}
     </>
   );
 
-  return (
-    <li>
-      <div className="flex items-center">
-        {/* chevron (hidden in mini) */}
-        {showLabels ? (
-          <button
-            className={cls(
-              "mr-1 px-1 py-1 rounded hover:bg-base-200 transition-transform duration-200",
-              hasKids ? "opacity-100" : "opacity-0 pointer-events-none"
-            )}
-            aria-label={isOpen ? "Collapse" : "Expand"}
-            onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggle(node.id); }}
-          >
-            <span
-              className="inline-block transition-transform"
-              style={{ transform: `rotate(${isOpen ? 90 : 0}deg)` }}
-            >▸</span>
-          </button>
-        ) : null}
+  const enableFlyout = collapsed && ENABLE_FLYOUT && depth === 0 && hasKids;
 
-        {/* item (parent label toggles when no path) */}
+  return (
+    <li className={enableFlyout ? "relative group/fly" : undefined}>
+      <div className="flex items-center gap-1">
+        {showLabels ? Chevron : null}
+
         {node.path ? (
-          <NavLink to={node.path} {...common} onClick={() => onNavigate(node.path)} title={!showLabels ? titleText : undefined}>
+          <NavLink to={node.path} {...common} onClick={() => onNavigate(node.path)}>
             {LabelInner}
           </NavLink>
         ) : (
-          <div
-            {...common}
-            onClick={() => { if (hasKids) toggle(node.id); }}
-            title={!showLabels ? titleText : undefined}
-          >
+          <div {...common} onClick={() => { if (hasKids) toggle(node.id); }}>
             {LabelInner}
           </div>
         )}
       </div>
 
       {/* children (animated) */}
-      {hasKids && (
+      {hasKids && !enableFlyout && (
         <Collapsible open={isOpen}>
           <ul>
             {node.children.map((c) => (
@@ -589,10 +660,49 @@ function TreeNode({
                 activeId={activeId}
                 onNavigate={onNavigate}
                 collapsed={collapsed}
+                pins={pins}
+                onTogglePin={onTogglePin}
               />
             ))}
           </ul>
         </Collapsible>
+      )}
+
+      {/* collapsed flyout (top-level only) */}
+      {enableFlyout && (
+        <div className="absolute left-full top-0 ml-2 z-50 opacity-0 translate-y-2 scale-95 pointer-events-none group-hover/fly:opacity-100 group-hover/fly:translate-y-0 group-hover/fly:scale-100 group-hover/fly:pointer-events-auto transition duration-150">
+          <div className="bg-base-100/95 backdrop-blur rounded-2xl shadow-xl border border-base-300 w-72 p-2">
+            <ul className="menu menu-compact">
+              {node.children.map((c) => (
+                <li key={c.id}>
+                  {c.path ? (
+                    <NavLink
+                      to={c.path}
+                      onClick={() => onNavigate(c.path)}
+                      className={cls("flex items-center gap-2 px-2", ITEM_PAD_Y, "rounded-lg hover:bg-base-200/70")}
+                      title={c.name}
+                    >
+                      <IconSlot icon={c.icon} label={c.name} />
+                      <span className="truncate">{c.name}</span>
+                      <button
+                        className="ml-auto btn btn-ghost btn-xs opacity-70 hover:opacity-100"
+                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onTogglePin?.(c.id); }}
+                        title={pins?.has(c.id) ? "Unpin" : "Pin"}
+                      >
+                        {pins?.has(c.id) ? "★" : "☆"}
+                      </button>
+                    </NavLink>
+                  ) : (
+                    <span className={cls("flex items-center gap-2 px-2 opacity-80", ITEM_PAD_Y)}>
+                      <IconSlot icon={c.icon} label={c.name} />
+                      <span className="truncate">{c.name}</span>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
       )}
     </li>
   );

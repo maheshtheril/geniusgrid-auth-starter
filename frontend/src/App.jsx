@@ -67,7 +67,8 @@ const AuditLogs          = React.lazy(() => import("@/pages/AuditLogs.jsx"));
 
 /* -------- Admin: Data & Customization -------- */
 const AdminSettings      = React.lazy(() => import("@/pages/AdminSettings.jsx"));
-const CustomFields       = React.lazy(() => import("@/pages/CustomFields.jsx"));
+const CustomFields       = React.lazy(() => import("@/pages/admin/CustomFieldsPage.jsx"));
+const CustomForms       = React.lazy(() => import("@/pages/admin/CustomFormsPage.jsx"));
 const PipelinesStages    = React.lazy(() => import("@/pages/PipelinesStages.jsx"));
 const TemplatesAdmin     = React.lazy(() => import("@/pages/TemplatesAdmin.jsx"));
 const NotificationsAdmin = React.lazy(() => import("@/pages/NotificationsAdmin.jsx"));
@@ -90,6 +91,7 @@ const AdminApprovals     = React.lazy(() => import("@/pages/AdminApprovals.jsx")
 const BillingSubscription= React.lazy(() => import("@/pages/BillingSubscription.jsx"));
 const UsageLimits        = React.lazy(() => import("@/pages/UsageLimits.jsx"));
 const SystemLogs         = React.lazy(() => import("@/pages/SystemLogs.jsx"));
+
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -364,6 +366,7 @@ export default function App() {
               {/* Data & Customization */}
               <Route path="settings"       element={<React.Suspense fallback={<Fallback label="Loading Settings…" />}><AdminSettings /></React.Suspense>} />
               <Route path="custom-fields"  element={<React.Suspense fallback={<Fallback label="Loading Custom Fields…" />}><CustomFields /></React.Suspense>} />
+              <Route path="custom-forms"  element={<React.Suspense fallback={<Fallback label="Loading Custom Forms…" />}><CustomForms /></React.Suspense>} />
               <Route path="pipelines"      element={<React.Suspense fallback={<Fallback label="Loading Pipelines & Stages…" />}><PipelinesStages /></React.Suspense>} />
               <Route path="templates"      element={<React.Suspense fallback={<Fallback label="Loading Templates…" />}><TemplatesAdmin /></React.Suspense>} />
               <Route path="notifications"  element={<React.Suspense fallback={<Fallback label="Loading Notifications…" />}><NotificationsAdmin /></React.Suspense>} />
@@ -463,6 +466,7 @@ export default function App() {
                     </React.Suspense>
                   }
                 />
+               
                 <Route path="plans"       element={<React.Suspense fallback={<Fallback label="Loading Plans…" />}><PlansPage /></React.Suspense>} />
                 <Route path="rules"       element={<React.Suspense fallback={<Fallback label="Loading Rules…" />}><RulesPage /></React.Suspense>} />
                 <Route path="tiers"       element={<React.Suspense fallback={<Fallback label="Loading Tiers…" />}><TiersPage /></React.Suspense>} />

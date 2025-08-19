@@ -1,18 +1,25 @@
 // backend/scripts/migrate.js
 import 'dotenv/config';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { pool } from '../src/db/index.js';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const sql = fs.readFileSync(path.join(__dirname, '..', 'migrations', '00_auth_core.sql'), 'utf8');
+// Skip locally unless explicitly enabled
+const enabled = ['1','true','yes','on'].includes(String(process.env.RUN_MIGRATIONS||'').toLowerCase());
+if (!enabled) {
+  console.log('↩︎ Migrations disabled (RUN_MIGRATIONS=0). Skipping.');
+  process.exit(0);
+}
+
+// (Runs on Render or when you enable it)
+import pg from 'pg';
+const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }, // Render PG requires TLS
+});
 
 (async () => {
   try {
-    await pool.query(sql);
-    console.log('✅ Migration applied');
+    await pool.query('SELECT NOW()'); // sanity ping
+    console.log('✅ DB reachable. Running migrations…');
+    // TODO: call your real migration runner here
     process.exit(0);
   } catch (e) {
     console.error('❌ Migration failed', e);

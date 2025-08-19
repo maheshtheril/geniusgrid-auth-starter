@@ -1,22 +1,32 @@
 // src/main.jsx
-import "./styles/theme-runtime.css";
-import "./styles.css";
-import "./styles/sidebar.css";
-import "./styles/tokens.css";
-import "./styles/responsive-globals.css";
 
+// 1) Tailwind FIRST: registers base/components/utilities layers
+import "@/styles/tailwind.css";
+
+// 2) Then your skins/overrides (these win over Tailwind)
+import "./styles/sidebar.css";
+import "./styles/light-overrides.css";
+
+// 3) Other global styles & tokens
+import "./styles/tokens.css";
+import "./styles/theme-runtime.css";
+import "./styles/responsive-globals.css";
+import "./styles.css";
 
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 
-// ✅ Static, safe import (no early calls)
+// ✅ Theme tokens mapper (hex/HSL → Tailwind/DaisyUI vars)
 import { applyTheme } from "@/theme/applyTheme";
-import "./styles/light-overrides.css";
-import { installAiProspectMock } from "./mocks/installAiProspectMock";
 
-installAiProspectMock();
+// If you still need other mocks, import them here — but DO NOT mock /api/tenant/* or /api/notifications*
+// (Removed installAiProspectMock & installTopbarMocks to use DB-driven menus)
+
+// Expose applyTheme so the Topbar toggle can call it safely
+window.applyTheme = applyTheme;
+
 // Optional deps — app still boots if these fail to import
 let uiApi = null;
 try {
@@ -60,8 +70,8 @@ const FALLBACK_THEME = {
 };
 
 // Theme order & storage keys
-const THEMES = ["dark", "light", "night"]; // default cycle: dark → light → night
-const LS_KEYS = ["gg.theme", "theme"]; // read/write both for compatibility
+const THEMES = ["dark", "light", "night"];
+const LS_KEYS = ["gg.theme", "theme"];
 
 function readSavedMode() {
   for (const k of LS_KEYS) {
@@ -74,26 +84,25 @@ function saveMode(mode) {
   for (const k of LS_KEYS) safeSetLS(k, mode);
 }
 function safeGetLS(key) {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
+  try { return localStorage.getItem(key); } catch { return null; }
 }
 function safeSetLS(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {}
-}
-function applyDomMode(mode) {
-  document.documentElement.setAttribute("data-theme", mode);
-  if (document.body) document.body.setAttribute("data-theme", mode);
+  try { localStorage.setItem(key, value); } catch {}
 }
 // Default to dark unless user explicitly saved something
 function chooseInitialMode() {
   const saved = readSavedMode();
-  if (saved) return saved;
-  return "dark";
+  return saved || "dark";
+}
+function applyDomMode(mode) {
+  const root = document.documentElement;
+  // daisyUI theme hook
+  root.setAttribute("data-theme", mode);
+  document.body?.setAttribute("data-theme", mode);
+  // Tailwind dark: variant + native color-scheme
+  const darkLike = mode === "dark" || mode === "night";
+  root.classList.toggle("dark", darkLike);
+  root.style.colorScheme = darkLike ? "dark" : "light";
 }
 
 const rootEl = document.getElementById("root");
@@ -102,7 +111,7 @@ const rootEl = document.getElementById("root");
   // === 1) Decide & apply mode IMMEDIATELY to avoid flash ===
   const initialMode = chooseInitialMode();
   applyDomMode(initialMode);
-  saveMode(initialMode); // persist earliest decision
+  saveMode(initialMode);
 
   // === 2) Load theme tokens (server → fallback) WITHOUT changing mode ===
   let themeConfig = null;
@@ -117,7 +126,7 @@ const rootEl = document.getElementById("root");
   // Expose tokens for ThemeToggle (if it wants to reuse them)
   window.__GG_THEME = themeConfig;
 
-  // Apply tokens for the already-chosen mode (don’t override mode)
+  // Apply tokens for the already-chosen mode
   try {
     if (typeof applyTheme === "function") {
       applyTheme(themeConfig, initialMode);

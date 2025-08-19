@@ -71,9 +71,13 @@ function Field({ label, required, htmlFor, children, hint, error }) {
   );
 }
 
-function Input({ id, value, onChange, placeholder, type = "text", invalid }) {
+const Input = React.forwardRef(function Input(
+  { id, value, onChange, placeholder, type = "text", invalid, ...rest },
+  ref
+) {
   return (
     <input
+      ref={ref}
       id={id}
       type={type}
       className={`gg-input w-full h-10 md:h-11 ${invalid ? "ring-1 ring-rose-400/60" : ""}`}
@@ -81,23 +85,29 @@ function Input({ id, value, onChange, placeholder, type = "text", invalid }) {
       onChange={onChange}
       placeholder={placeholder}
       aria-invalid={!!invalid}
+      {...rest}
     />
   );
-}
+});
 
-function Select({ id, value, onChange, children, invalid }) {
+const Select = React.forwardRef(function Select(
+  { id, value, onChange, children, invalid, ...rest },
+  ref
+) {
   return (
     <select
+      ref={ref}
       id={id}
       className={`gg-input w-full h-10 md:h-11 ${invalid ? "ring-1 ring-rose-400/60" : ""}`}
       value={value}
       onChange={onChange}
       aria-invalid={!!invalid}
+      {...rest}
     >
       {children}
     </select>
   );
-}
+});
 
 /* ---------------------- CountrySelect (with SVG flags) --------------------- */
 function CountrySelect({ options, value, onChange, disabled }) {
@@ -334,8 +344,7 @@ export default function AddLeadDrawer({
 
   // grouped custom fields
   const { generalCF, advanceCF } = useMemo(() => {
-    const g = [],
-      a = [];
+    const g = [], a = [];
     for (const f of cfList) (f.group === "advance" ? a : g).push(f);
     return { generalCF: g, advanceCF: a };
   }, [cfList]);
@@ -580,7 +589,14 @@ export default function AddLeadDrawer({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Lead Name" required htmlFor="lead-name" error={problems.name}>
                   <div className="relative">
-                    <Input id="lead-name" value={form.name} onChange={update("name")} placeholder="e.g., Priya Sharma" invalid={!!problems.name} />
+                    <Input
+                      ref={firstInputRef}
+                      id="lead-name"
+                      value={form.name}
+                      onChange={update("name")}
+                      placeholder="e.g., Priya Sharma"
+                      invalid={!!problems.name}
+                    />
                     <User2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
                   </div>
                 </Field>
@@ -759,7 +775,7 @@ function CFModal({ onClose, onSaved }) {
 
     try {
       setSaving(true);
-      const resp = await http.post("/api/leads/custom-fields", payload);
+      const resp = await http.post("leads/custom-fields", payload); // no leading /api
       const saved = resp?.data || {};
       const fieldForUi = {
         id: saved.id || safeRandomId(),

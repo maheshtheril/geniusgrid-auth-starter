@@ -1,0 +1,39 @@
+@layer utilities {
+  /* nicer, consistent thin scrollbars */
+  .thin-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+  .thin-scroll::-webkit-scrollbar-thumb { background: color-mix(in oklab, oklch(var(--b3)) 70%, transparent); border-radius: 4px; }
+  .thin-scroll:hover::-webkit-scrollbar-thumb { background: color-mix(in oklab, oklch(var(--b3)) 85%, transparent); }
+}
+
+/* Sidebar container skin */
+@layer components {
+  .gg-sidebar {
+    /* layered glass + gradient */
+    background-image:
+      linear-gradient(to bottom, color-mix(in oklab, oklch(var(--b2)) 85%, transparent), color-mix(in oklab, oklch(var(--b1)) 92%, transparent));
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, oklch(var(--b3)) 45%, transparent);
+  }
+
+  /* ambient brand glow that uses DaisyUI vars (--p, --s) */
+  .gg-ambient {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(520px 200px at -140px -80px, color-mix(in oklab, oklch(var(--p)) 28%, transparent), transparent 70%),
+      radial-gradient(440px 180px at 115% -40px, color-mix(in oklab, oklch(var(--s)) 22%, transparent), transparent 65%);
+    opacity: .7;
+  }
+
+  /* item states */
+  .gg-item        { @apply rounded-lg transition-all duration-200; }
+  .gg-item-hover  { @apply hover:bg-base-200/70; }
+  .gg-item-active {
+    /* soft gradient band + thin ring */
+    background-image: linear-gradient(to right, color-mix(in oklab, oklch(var(--p)) 18%, transparent), color-mix(in oklab, oklch(var(--s)) 12%, transparent));
+    box-shadow:
+      inset 3px 0 0 oklch(var(--p) / .9),
+      0 0 0 1px color-mix(in oklab, oklch(var(--b3)) 40%, transparent);
+    color: oklch(var(--p));
+  }
+}

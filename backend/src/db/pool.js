@@ -7,7 +7,10 @@ function pgConfig() {
   if (process.env.DATABASE_URL) {
     return {
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.DB_SSL === '0' ? false : { rejectUnauthorized: false },
+      ssl:
+        process.env.DATABASE_SSL === 'false' || process.env.DATABASE_SSL === '0'
+          ? false
+          : { rejectUnauthorized: false },
     };
   }
   return {
@@ -16,7 +19,10 @@ function pgConfig() {
     database: process.env.PGDATABASE,
     user: process.env.PGUSER,
     password: process.env.PGPASSWORD,
-    ssl: process.env.DB_SSL === '1' ? { rejectUnauthorized: false } : false,
+    ssl:
+      process.env.DATABASE_SSL === 'true' || process.env.DATABASE_SSL === '1'
+        ? { rejectUnauthorized: false }
+        : false,
   };
 }
 

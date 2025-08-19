@@ -7,6 +7,7 @@
     "dev": "node --watch src/server.js",
     "migrate": "node scripts/migrate.js",
     "start": "npm run migrate && node src/server.js",
+    "start:local": "cross-env RUN_MIGRATIONS=0 node src/server.js",
     "seed:countries": "node scripts/seed-countries.cjs",
     "seed\\:countries": "node scripts/seed-countries.cjs",
     "worker:prospect": "node src/workers/prospect.worker.js"

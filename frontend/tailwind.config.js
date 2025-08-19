@@ -1,4 +1,7 @@
 /** @type {import('tailwindcss').Config} */
+import forms from "@tailwindcss/forms";
+import daisyui from "daisyui";
+
 export default {
   content: ["./index.html", "./src/**/*.{js,jsx,ts,tsx}"],
   darkMode: "class",
@@ -25,6 +28,31 @@ export default {
       },
     },
   },
-  plugins: [require("daisyui")],
-  daisyui: { themes: ["light", "dark", "night"] },
+  // IMPORTANT: put forms FIRST, DaisyUI LAST
+  plugins: [forms({ strategy: "class" }), daisyui],
+  daisyui: {
+    themes: [
+      {
+        geniusgrid: {
+          primary:   "#7AA2FF",
+          secondary: "#5EEAD4",
+          accent:    "#F472B6",
+          neutral:   "#2A2F3B",
+          "base-100":"#0E1217",
+          "base-200":"#141A22",
+          "base-300":"#1E2530",
+          // ensure readable text on dark base
+          "base-content":"#E5E7EB",
+          info:      "#60A5FA",
+          success:   "#34D399",
+          warning:   "#FBBF24",
+          error:     "#F87171",
+        },
+      },
+      "dark",
+      "light",
+      "night",
+    ],
+    logs: false,
+  },
 };
