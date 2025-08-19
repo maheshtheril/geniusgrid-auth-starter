@@ -182,3 +182,66 @@ h2 { font-size: clamp(1.125rem, 2.2vw, 1.5rem); }
 @supports not ((backdrop-filter: blur(4px)) or (-webkit-backdrop-filter: blur(4px))) {
   .glass { background: linear-gradient(to bottom right, rgba(255,255,255,.65), rgba(245,245,245,.55)); }
 }
+/* global.css (or wherever your theme vars live) */
+:root {
+  /* light */
+  --text: #0c111b;
+  --muted: #5b6576;
+  --surface: #ffffff;
+  --elev: #f7f8fb;
+  --border: #e5e9f0;
+  --hover: #eef2f9;
+  --ring: rgba(59,130,246,.35);
+  --input-placeholder: #8b95a7;
+}
+
+[data-theme="dark"] {
+  --text: #e6e9ef;
+  --muted: #9aa3b2;              /* <- clearly lighter than body text */
+  --surface: #0f1115;
+  --elev: #151922;               /* card/input bg */
+  --border: #273043;
+  --hover: #1b2230;
+  --ring: rgba(56,189,248,.40);
+  --input-placeholder: #8a95a6;  /* <- placeholder/hint grey */
+}
+
+/* apply to hint labels */
+.gg-muted { color: var(--muted); }
+/* Inputs, selects, textareas */
+.gg-input,
+.gg-input[type="text"],
+.gg-input[type="email"],
+.gg-input[type="number"],
+.gg-input[type="date"],
+.gg-input[type="file"],
+select.gg-input,
+textarea.gg-input {
+  background: var(--elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  outline: 0;
+}
+
+/* Placeholder color (both themes, uses var) */
+.gg-input::placeholder,
+textarea.gg-input::placeholder {
+  color: var(--input-placeholder);
+  opacity: 1; /* some browsers lower opacity by default */
+}
+
+/* Clear, accessible focus */
+.gg-input:focus-visible,
+select.gg-input:focus-visible,
+textarea.gg-input:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
+/* Panels/cards (so the input stands out against background) */
+.gg-panel,
+.gg-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+

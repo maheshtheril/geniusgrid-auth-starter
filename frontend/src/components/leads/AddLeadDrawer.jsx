@@ -725,6 +725,59 @@ export default function AddLeadDrawer({
       </aside>
 
       <style>{`
+      :root {
+  --input-placeholder: #8b95a7;
+}
+[data-theme="dark"] {
+  --muted: #9aa3b2;
+  --elev: #151922;
+  --border: #273043;
+  --ring: rgba(56,189,248,.40);
+  --input-placeholder: #8a95a6;
+}
+.gg-muted { color: var(--muted); }
+.gg-input,
+select.gg-input,
+textarea.gg-input {
+  background: var(--elev);
+  color: var(--text, #e6e9ef);
+  border: 1px solid var(--border);
+}
+.gg-input::placeholder,
+textarea.gg-input::placeholder { color: var(--input-placeholder); opacity: 1; }
+.gg-input:focus-visible,
+select.gg-input:focus-visible,
+textarea.gg-input:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+:root {
+  --input-placeholder: #8b95a7;
+}
+[data-theme="dark"] {
+  --muted: #9aa3b2;
+  --elev: #151922;
+  --border: #273043;
+  --ring: rgba(56,189,248,.40);
+  --input-placeholder: #8a95a6;
+}
+.gg-muted { color: var(--muted); }
+.gg-input,
+select.gg-input,
+textarea.gg-input {
+  background: var(--elev);
+  color: var(--text, #e6e9ef);
+  border: 1px solid var(--border);
+}
+.gg-input::placeholder,
+textarea.gg-input::placeholder { color: var(--input-placeholder); opacity: 1; }
+.gg-input:focus-visible,
+select.gg-input:focus-visible,
+textarea.gg-input:focus-visible {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes slideIn { 0% { transform: translateX(28px); opacity: .0; } 60% { transform: translateX(-3px); opacity: 1; } 100% { transform: translateX(0); } }
         .animate-fadeIn { animation: fadeIn .18s ease-out both; }
