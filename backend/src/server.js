@@ -1,4 +1,3 @@
-// src/server.js
 import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
@@ -11,10 +10,10 @@ import pino from "pino";
 import pinoHttp from "pino-http";
 import { randomUUID } from "crypto";
 import rateLimit from "express-rate-limit";
-import adminOrgRoutes from "./routes/admin.org.routes.js";
 
 import { pool } from "./db/pool.js";
 import { requireAuth } from "./middleware/requireAuth.js";
+import { attachCtx } from "./middleware/ctx.middleware.js";
 
 /* ---------- Routes ---------- */
 import uiRoutes from "./routes/ui.routes.js";
@@ -43,6 +42,7 @@ import leadsImportsRoutes from "./store/leads.imports.routes.js";
 import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 import tenantMenusRoutes from "./routes/tenantMenus.routes.js";
 import customFields from "./routes/customFields.js";
+import adminOrgRoutes from "./routes/admin.org.routes.js";
 
 const app = express();
 const PgStore = pgSimple(session);
@@ -57,9 +57,7 @@ const ORIGINS = [
   "http://localhost:5173",
   "https://geniusgrid-web.onrender.com",
   ...(process.env.FRONTEND_ORIGINS ? process.env.FRONTEND_ORIGINS.split(",") : []),
-]
-  .map((s) => s.trim())
-  .filter(Boolean);
+].map((s) => s.trim()).filter(Boolean);
 
 /* ---------- Logger ---------- */
 const logger = pino({
@@ -140,26 +138,15 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
+      secure: isProd,               // HTTPS only in prod
+      sameSite: isProd ? "none" : "lax", // cross-site cookie in prod
       maxAge: Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60 * 1000,
     },
   })
 );
 
-/* ---------- Tenant GUC helper ---------- */
-app.use(async (req, _res, next) => {
-  try {
-    const tid = req.session?.tenantId || req.session?.tenant_id;
-    if (tid) {
-      await pool.query("SELECT set_config('app.tenant_id', $1, false)", [tid]);
-    }
-  } catch (e) {
-    req.log?.warn({ err: e }, "tenant-scope set_config failed");
-  } finally {
-    next();
-  }
-});
+/* ---------- Attach req.ctx for downstream routes ---------- */
+app.use(attachCtx);
 
 /* ---------- Rate limiting ---------- */
 const apiLimiter = rateLimit({
@@ -201,11 +188,13 @@ app.use("/api/leads", requireAuth, leadsMergeRoutes);
 /* Imports (scoped) */
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
 app.use("/api/admin", adminOrgRoutes);
+
 /* Other modules (scoped) */
 app.use("/api/leads-module", requireAuth, leadsModule);
 app.use("/api", requireAuth, tenantMenusRoutes);
 
-app.use("/api/custom-fields", requireAuth, customFields); 
+/* Custom-fields root router */
+app.use("/api/custom-fields", requireAuth, customFields);
 
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
@@ -232,9 +221,7 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 function shutdown(sig) {
   logger.warn({ sig }, "Shutting down...");
   server.close(async () => {
-    try {
-      await pool.end();
-    } catch {}
+    try { await pool.end(); } catch {}
     logger.warn("Closed HTTP & PG pool. Bye.");
     process.exit(0);
   });
