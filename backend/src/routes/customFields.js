@@ -1,35 +1,29 @@
-// src/routes/customFields.js
+// src/routes/customFields.js (GET only shown)
 import express from "express";
 import { withClient } from "../db/pool.js";
 
 const router = express.Router();
 
-/* ---------------- helpers ---------------- */
-
 async function pgSetContext(client, tenantId, userId) {
-  if (!tenantId || !userId) return; // no-op if unauth
+  if (!tenantId || !userId) return;
   await client.query(
-    `select
-       set_config('app.tenant_id', $1, true),
-       set_config('app.user_id',   $2, true)`,
+    `select set_config('app.tenant_id',$1,true), set_config('app.user_id',$2,true)`,
     [String(tenantId), String(userId)]
   );
 }
 
 async function ensureFormAndActiveVersion(client, tenantId, recordType, req) {
-  // 1) form: need a unique constraint to support ON CONFLICT
-  const insFormSQL = `
-    insert into public.custom_forms (tenant_id, module_name, code, name, is_active)
-    values ($1, 'crm', $2, initcap($2)||' Form', true)
-    on conflict (tenant_id, code) do nothing
-    returning id
-  `;
-  const { rows: formRows } = await client.query(insFormSQL, [tenantId, recordType]);
+  // create/find form (requires uq_custom_forms_tenant_code)
+  const { rows: formRows } = await client.query(
+    `insert into public.custom_forms (tenant_id,module_name,code,name,is_active)
+     values ($1,'crm',$2, initcap($2)||' Form', true)
+     on conflict (tenant_id, code) do nothing
+     returning id`,
+    [tenantId, recordType]
+  );
 
-  let formId;
-  if (formRows.length) {
-    formId = formRows[0].id;
-  } else {
+  let formId = formRows[0]?.id;
+  if (!formId) {
     const { rows } = await client.query(
       `select id from public.custom_forms
        where tenant_id=$1 and code=$2
@@ -38,22 +32,19 @@ async function ensureFormAndActiveVersion(client, tenantId, recordType, req) {
     );
     formId = rows[0]?.id;
   }
-
   if (!formId) {
     req?.log?.error({ tenantId, recordType }, "custom_forms not found/created");
     throw Object.assign(new Error("Form not found/created"), { status: 500 });
   }
 
-  // 2) active version
+  // find/create active version
   const { rows: verRows } = await client.query(
     `select id from public.custom_form_versions
        where tenant_id=$1 and form_id=$2
          and status='active' and effective_to is null
-       order by version desc
-       limit 1`,
+       order by version desc limit 1`,
     [tenantId, formId]
   );
-
   if (verRows.length) return { formId, formVersionId: verRows[0].id };
 
   const { rows: created } = await client.query(
@@ -63,11 +54,8 @@ async function ensureFormAndActiveVersion(client, tenantId, recordType, req) {
      returning id`,
     [tenantId, formId]
   );
-
   return { formId, formVersionId: created[0].id };
 }
-
-/* ---------------- routes ---------------- */
 
 // GET /api/custom-fields?record_type=lead
 router.get("/", async (req, res) => {
@@ -100,9 +88,9 @@ router.get("/", async (req, res) => {
     req.log?.error({ err }, "GET /api/custom-fields failed");
     res.status(Number(err?.status || 500)).json({
       error: err?.message || "Server error",
-      code: err?.code || undefined,
-      detail: err?.detail || undefined,
-      hint: err?.hint || undefined,
+      code: err?.code,
+      detail: err?.detail,
+      hint: err?.hint,
     });
   }
 });
