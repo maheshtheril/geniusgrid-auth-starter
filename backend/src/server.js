@@ -55,7 +55,7 @@ const APP_URL =
 /* ---------- CORS ---------- */
 const ORIGINS = [
   "http://localhost:5173",
-  "https://geniusgrid-web.onrender.com",
+  "https://geniusgrid.onrender.com",
   ...(process.env.FRONTEND_ORIGINS ? process.env.FRONTEND_ORIGINS.split(",") : []),
 ].map((s) => s.trim()).filter(Boolean);
 
