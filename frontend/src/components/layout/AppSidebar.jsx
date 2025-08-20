@@ -19,7 +19,15 @@ function api(path) {
 
 /* ---------- utils ---------- */
 const cls = (...xs) => xs.filter(Boolean).join(" ");
-const normalize = (s) => (s || "").toString().toLowerCase();
+const normalize = (s) => (s ?? "").toString().toLowerCase();
+
+/* NEW: ultra-safe helpers used everywhere instead of raw .toLowerCase() */
+const lower = (v) => String(v ?? "").toLowerCase();
+const normPath = (p) => {
+  const s = String(p ?? "").trim();
+  if (!s) return "";
+  return s.startsWith("/") ? s.replace(/\/+$/, "") : "/" + s;
+};
 
 /* ---------- fuzzy + highlight (unchanged logic) ---------- */
 function fuzzyScore(text, query) {
@@ -34,11 +42,11 @@ function fuzzyScore(text, query) {
   return qi === q.length ? score + Math.max(0, 6 - (ti - qi)) : -1;
 }
 function highlightSubseq(label, query) {
-  const l = label ?? "";
+  const l = String(label ?? "");
   const q = normalize(query);
   if (!q) return l;
   let i = 0, qi = 0, out = [];
-  const low = l.toLowerCase();
+  const low = lower(l);
   while (i < l.length) {
     const ch = l[i];
     if (qi < q.length && low[i] === q[qi]) {
@@ -102,7 +110,7 @@ function resolveIcon(icon) {
   if (!icon) return null;
   const raw = ("" + icon).trim();
   if (raw.includes("✨")) return ICON_SVGS.sparkles;
-  const key = raw.replace(/:/g, "").toLowerCase();
+  const key = lower(raw.replace(/:/g, ""));
   const name = ICONS_ALIAS[key] || key;
   if (ICON_SVGS[name]) return ICON_SVGS[name];
   if (/[\u{1F300}-\u{1FAFF}]/u.test(raw)) return <span aria-hidden="true">{raw}</span>;
@@ -169,6 +177,7 @@ export default function AppSidebar(props) {
 function SidebarCore({ onRequestClose, collapsed = false, onToggleCollapse }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
+  const pathnameLower = lower(pathname);
 
   const [items, setItems] = React.useState(null);
   const [error, setError] = React.useState(null);
@@ -231,20 +240,20 @@ function SidebarCore({ onRequestClose, collapsed = false, onToggleCollapse }) {
       const s = (a.sort_order ?? 0) - (b.sort_order ?? 0);
       return s !== 0 ? s : (a.name || "").localeCompare(b.name || "");
     };
-    (items || []).forEach((i) => { byId[i.id] = { ...i, children: [] }; if (i.parent_id) parentMap[i.id] = i.parent_id; });
-    (items || []).forEach((i) => { if (i.parent_id && byId[i.parent_id]) byId[i.parent_id].children.push(byId[i.id]); });
+    (items || []).forEach((i) => { if (!i) return; byId[i.id] = { ...i, children: [] }; if (i.parent_id) parentMap[i.id] = i.parent_id; });
+    (items || []).forEach((i) => { if (i?.parent_id && byId[i.parent_id]) byId[i.parent_id].children.push(byId[i.id]); });
     Object.values(byId).forEach((n) => n.children.sort(inOrder));
-    const roots = (items || []).filter((i) => !i.parent_id).map((i) => byId[i.id]).sort(inOrder);
+    const roots = (items || []).filter((i) => i && !i.parent_id).map((i) => byId[i.id]).sort(inOrder);
     return { byId, parentMap, roots };
   }, [items]);
 
   const activeId = React.useMemo(() => {
     if (!items) return null;
     const best = items
-      .filter((i) => i.path && pathname.startsWith(i.path))
-      .sort((a, b) => (b.path?.length || 0) - (a.path?.length || 0))[0];
+      .filter((i) => i?.path && pathnameLower.startsWith(lower(i.path)))
+      .sort((a, b) => (String(b.path || "").length) - (String(a.path || "").length))[0];
     return best?.id || null;
-  }, [items, pathname]);
+  }, [items, pathnameLower]);
 
   const visibleList = React.useMemo(() => {
     const vis = [];
@@ -293,7 +302,7 @@ function SidebarCore({ onRequestClose, collapsed = false, onToggleCollapse }) {
     const q = query.trim();
     if (!q) return null;
     return flat
-      .map((i) => ({ i, s: fuzzyScore(i.name + " " + (i.path || ""), q) }))
+      .map((i) => ({ i, s: fuzzyScore((i.name ?? "") + " " + (i.path ?? ""), q) }))
       .filter((x) => x.s >= 0)
       .sort((a, b) => b.s - a.s)
       .slice(0, 50)
@@ -321,8 +330,9 @@ function SidebarCore({ onRequestClose, collapsed = false, onToggleCollapse }) {
   // hotkeys: / or Cmd/Ctrl+K focus search
   React.useEffect(() => {
     const onKey = (e) => {
-      const isCmdK = (e.key.toLowerCase() === 'k') && (e.metaKey || e.ctrlKey);
-      if (e.key === '/' || isCmdK) {
+      const key = lower(e?.key);
+      const isCmdK = (key === "k") && (e?.metaKey || e?.ctrlKey);
+      if (key === "/" || isCmdK) {
         e.preventDefault();
         searchRef.current?.focus();
       }
@@ -411,7 +421,7 @@ function SidebarCore({ onRequestClose, collapsed = false, onToggleCollapse }) {
               onClick={() => {
                 const next = new Set(expanded);
                 (items || []).forEach((i) => {
-                  if (items.find((x) => x.parent_id === i.id)) next.add(i.id);
+                  if ((items || []).find((x) => x?.parent_id === i?.id)) next.add(i.id);
                 });
                 setExpanded(next);
               }}
@@ -546,10 +556,11 @@ function TreeNode({
   const titleText = node.name;
 
   const onKeyDown = (e) => {
-    if (e.key === "ArrowRight" && hasKids && !isOpen) { e.preventDefault(); toggle(node.id); }
-    else if (e.key === "ArrowLeft" && hasKids && isOpen) { e.preventDefault(); toggle(node.id); }
-    else if ((e.key === "Enter" || e.key === " ") && node.path) { e.preventDefault(); onNavigate(node.path); }
-    else if ((e.key === "Enter" || e.key === " ") && !node.path && hasKids) { e.preventDefault(); toggle(node.id); }
+    const key = lower(e?.key);
+    if (key === "arrowright" && hasKids && !isOpen) { e.preventDefault(); toggle(node.id); }
+    else if (key === "arrowleft" && hasKids && isOpen) { e.preventDefault(); toggle(node.id); }
+    else if ((key === "enter" || key === " ") && node.path) { e.preventDefault(); onNavigate(node.path); }
+    else if ((key === "enter" || key === " ") && !node.path && hasKids) { e.preventDefault(); toggle(node.id); }
   };
 
   const common = {

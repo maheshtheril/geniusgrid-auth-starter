@@ -9,13 +9,17 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useEnv } from "@/store/useEnv";
 import { readMode } from "@/theme/mode";
 
-// ---- OPTIONAL ENDPOINT SWITCHES (no calls if false) ----
+/* ---------- tiny safe-helpers ---------- */
+const lower = (v) => String(v ?? "").toLowerCase();
+const safeArr = (a) => (Array.isArray(a) ? a : []);
+
+/* ---- OPTIONAL ENDPOINT SWITCHES (no calls if false) ---- */
 const HAS = {
   quick: (import.meta.env.VITE_HAS_QUICK ?? "0") === "1",
   notif: (import.meta.env.VITE_HAS_NOTIF ?? "0") === "1",
 };
 
-// --- helper to mute repeated 404s when flags are ON but APIs are missing ---
+/* --- helper to mute repeated 404s when flags are ON but APIs are missing --- */
 const __mute404Until = new Map();
 async function tryGet(url, fallback) {
   const until = __mute404Until.get(url);
@@ -42,9 +46,12 @@ function api(path) {
   return `${withApi}${path}`;
 }
 
-// ---- theme helpers ----
+/* ---- theme helpers ---- */
 const THEMES = ["dark", "light", "night"];
-function saveMode(mode) { try { localStorage.setItem("gg.theme", mode); } catch {} try { localStorage.setItem("theme", mode); } catch {} }
+function saveMode(mode) {
+  try { localStorage.setItem("gg.theme", mode); } catch {}
+  try { localStorage.setItem("theme", mode); } catch {}
+}
 function applyDomModeInline(mode) {
   const root = document.documentElement;
   root.setAttribute("data-theme", mode);
@@ -55,7 +62,7 @@ function applyDomModeInline(mode) {
   try { window.applyTheme?.(window.__GG_THEME || {}, mode); } catch {}
 }
 
-// ---- FY helpers ----
+/* ---- FY helpers ---- */
 function computeFYLabel(date = new Date(), startMonth = 4, startDay = 1) {
   const y = date.getFullYear(), m = date.getMonth() + 1, d = date.getDate();
   const startsThisYear = (m > startMonth) || (m === startMonth && d >= startDay);
@@ -77,12 +84,12 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
   const [modules, setModules] = React.useState([]);
   const [quickActions, setQuickActions] = React.useState([]);
   const [open, setOpen] = React.useState({ module:false, create:false, notif:false, help:false, user:false, company:false });
-  const [theme, setTheme] = React.useState(() => readMode());
+  const [theme, setTheme] = React.useState(() => readMode() || "dark");
   const [q, setQ] = React.useState("");
   const [notif, setNotif] = React.useState({ loading:true, items:[], unread:0 });
 
   const company = React.useMemo(
-    () => companies.find(c => c.id === activeCompanyId) || companies[0] || null,
+    () => safeArr(companies).find(c => c?.id === activeCompanyId) || safeArr(companies)[0] || null,
     [companies, activeCompanyId]
   );
   const fyLabel = React.useMemo(() => {
@@ -102,14 +109,14 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
     // Menus (usually exists)
     (async () => {
       const data = await tryGet(api("/tenant/menus?level=top"), []);
-      setModules(Array.isArray(data) ? data : []);
+      setModules(safeArr(data));
     })();
 
     // Quick actions — only if enabled
     (async () => {
       if (!HAS.quick) { setQuickActions([]); return; }
       const data = await tryGet(api("/tenant/quick-actions"), []);
-      setQuickActions(Array.isArray(data) ? data : []);
+      setQuickActions(safeArr(data));
     })();
 
     // Notifications — only if enabled
@@ -120,11 +127,11 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
         const summary = await tryGet(api("/notifications/summary"), null);
         if (summary) {
           unread = Number(summary?.unread_count || 0);
-          items = Array.isArray(summary?.items) ? summary.items : [];
+          items = safeArr(summary?.items);
         } else {
           const list = await tryGet(api("/notifications?limit=10"), []);
           unread = Number(list?.unread_count || 0);
-          items = Array.isArray(list?.items) ? list.items : (Array.isArray(list) ? list : []);
+          items = safeArr(list?.items?.length ? list.items : list);
         }
         setNotif({ loading:false, items, unread });
       } catch {
@@ -134,6 +141,7 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
   }, [theme]);
 
   React.useEffect(() => {
+    // close any open dropdowns on route change
     setOpen({ module:false, create:false, notif:false, help:false, user:false, company:false });
   }, [loc.pathname]);
 
@@ -188,20 +196,29 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
 
           {/* Company */}
           <div className="relative">
-            <button className="btn btn-ghost btn-sm gap-2" onClick={() => setOpen(o => ({ ...o, company: !o.company }))} aria-haspopup="menu" aria-expanded={open.company} title={company?.name || "Select company"}>
+            <button
+              className="btn btn-ghost btn-sm gap-2"
+              onClick={() => setOpen(o => ({ ...o, company: !o.company }))}
+              aria-haspopup="menu"
+              aria-expanded={open.company}
+              title={company?.name || "Select company"}
+            >
               <span className="font-medium truncate max-w-[22ch]">{company?.name || "Select Company"}</span>
               <span className="badge badge-outline text-xs">{fyLabel}</span>
               <ChevronDown className="w-4 h-4 opacity-70" />
             </button>
-            {open.company && companies.length > 0 && (
+            {open.company && safeArr(companies).length > 0 && (
               <div className="absolute left-0 mt-1 min-w-56 p-2 rounded-box bg-base-100 border border-base-300 shadow-lg">
                 <div className="text-xs opacity-70 px-2 pb-1">Switch company</div>
                 <ul className="menu">
-                  {companies.map(c => (
-                    <li key={c.id}>
-                      <button className="justify-between" onClick={() => { setActiveCompany?.(c.id); setOpen(o => ({ ...o, company:false })); }}>
-                        <span className="truncate">{c.name}</span>
-                        {c.id === company?.id && <span className="badge badge-primary badge-xs">Active</span>}
+                  {safeArr(companies).map(c => (
+                    <li key={c?.id ?? `co-${Math.random().toString(36).slice(2)}`}>
+                      <button
+                        className="justify-between"
+                        onClick={() => { c?.id && setActiveCompany?.(c.id); setOpen(o => ({ ...o, company:false })); }}
+                      >
+                        <span className="truncate">{c?.name ?? "Company"}</span>
+                        {c?.id && c.id === company?.id && <span className="badge badge-primary badge-xs">Active</span>}
                       </button>
                     </li>
                   ))}
@@ -211,18 +228,29 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
           </div>
 
           {/* Modules */}
-          {modules.length > 0 && (
+          {safeArr(modules).length > 0 && (
             <div className="relative">
-              <button className="btn btn-ghost btn-sm gap-1" onClick={() => setOpen(o => ({ ...o, module: !o.module }))} aria-haspopup="menu" aria-expanded={open.module}>
+              <button
+                className="btn btn-ghost btn-sm gap-1"
+                onClick={() => setOpen(o => ({ ...o, module: !o.module }))}
+                aria-haspopup="menu"
+                aria-expanded={open.module}
+              >
                 <span className="hidden sm:inline">Modules</span>
                 <ChevronDown className="w-4 h-4" />
               </button>
               {open.module && (
                 <div className="absolute mt-1 min-w-44 p-1 rounded-box bg-base-100 border border-base-300 shadow-lg">
-                  {modules.map(m => (
-                    <Link key={m.id} to={m.path} className="flex items-center px-3 py-2 rounded-md hover:bg-base-200">
-                      {m.name}
-                    </Link>
+                  {safeArr(modules).map(m => (
+                    m?.path ? (
+                      <Link key={m.id ?? m.path} to={m.path} className="flex items-center px-3 py-2 rounded-md hover:bg-base-200">
+                        {m?.name ?? m.path}
+                      </Link>
+                    ) : (
+                      <div key={m?.id ?? Math.random()} className="flex items-center px-3 py-2 rounded-md opacity-70 cursor-default">
+                        {m?.name ?? "Module"}
+                      </div>
+                    )
                   ))}
                 </div>
               )}
@@ -247,18 +275,30 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
 
         {/* Right side */}
         <div className="flex items-center gap-1">
-          {HAS.quick && quickActions.length > 0 && (
+          {HAS.quick && safeArr(quickActions).length > 0 && (
             <div className="relative">
-              <button className="btn btn-primary btn-sm" onClick={() => setOpen(o => ({ ...o, create: !o.create }))} aria-haspopup="menu" aria-expanded={open.create} title="Quick create">
+              <button
+                className="btn btn-primary btn-sm"
+                onClick={() => setOpen(o => ({ ...o, create: !o.create }))}
+                aria-haspopup="menu"
+                aria-expanded={open.create}
+                title="Quick create"
+              >
                 <Plus className="w-4 h-4" />
                 <span className="hidden lg:inline">Create</span>
               </button>
               {open.create && (
                 <div className="absolute right-0 mt-1 min-w-48 p-1 rounded-box bg-base-100 border border-base-300 shadow-lg">
-                  {quickActions.map(a => (
-                    <Link key={a.path} to={a.path} className="flex px-3 py-2 rounded-md hover:bg-base-200">
-                      {a.label}
-                    </Link>
+                  {safeArr(quickActions).map(a => (
+                    a?.path ? (
+                      <Link key={a.path} to={a.path} className="flex px-3 py-2 rounded-md hover:bg-base-200">
+                        {a?.label ?? "Action"}
+                      </Link>
+                    ) : (
+                      <div key={a?.label ?? Math.random()} className="flex px-3 py-2 rounded-md opacity-70 cursor-default">
+                        {a?.label ?? "Action"}
+                      </div>
+                    )
                   ))}
                 </div>
               )}
@@ -268,11 +308,17 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
           {/* Notifications */}
           {HAS.notif && (
             <div className="relative">
-              <button className="btn btn-ghost btn-sm relative" title="Notifications" onClick={() => setOpen(o => ({ ...o, notif: !o.notif }))} aria-haspopup="menu" aria-expanded={open.notif}>
+              <button
+                className="btn btn-ghost btn-sm relative"
+                title="Notifications"
+                onClick={() => setOpen(o => ({ ...o, notif: !o.notif }))}
+                aria-haspopup="menu"
+                aria-expanded={open.notif}
+              >
                 <Bell className="w-5 h-5" />
-                {notif.unread > 0 && (
+                {Number(notif?.unread || 0) > 0 && (
                   <span className="indicator-item badge badge-error badge-xs absolute -top-1 -right-1">
-                    {notif.unread > 99 ? "99+" : notif.unread}
+                    {Number(notif.unread) > 99 ? "99+" : Number(notif.unread)}
                   </span>
                 )}
               </button>
@@ -285,27 +331,28 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
                   <div className="max-h-80 overflow-auto pr-1">
                     {notif.loading ? (
                       <div className="p-3 text-sm opacity-70">Loading…</div>
-                    ) : notif.items.length === 0 ? (
+                    ) : safeArr(notif.items).length === 0 ? (
                       <div className="p-3 text-sm opacity-70">No notifications</div>
                     ) : (
                       <ul className="menu">
-                        {notif.items.map(it => {
-                          const unread = !it.read_at;
+                        {safeArr(notif.items).map(it => {
+                          const unread = !it?.read_at;
+                          const created = it?.created_at ? new Date(it.created_at) : null;
                           return (
-                            <li key={it.id} className="!my-0">
+                            <li key={it?.id ?? Math.random()} className="!my-0">
                               <div className={`px-2 py-2 rounded-md ${unread ? "bg-base-200" : "hover:bg-base-200"}`}>
                                 <div className="flex items-start gap-2">
                                   {unread ? <span className="mt-1 w-2 h-2 rounded-full bg-primary" /> : <CheckCircle2 className="w-4 h-4 mt-[2px] opacity-60" />}
                                   <div className="min-w-0 flex-1">
-                                    <div className="text-sm font-medium truncate" title={it.title || it.message}>
-                                      {it.title || it.message || "Notification"}
+                                    <div className="text-sm font-medium truncate" title={it?.title || it?.message || "Notification"}>
+                                      {it?.title || it?.message || "Notification"}
                                     </div>
-                                    {it.subtitle && <div className="text-xs opacity-70 truncate">{it.subtitle}</div>}
-                                    {it.created_at && <div className="text-[11px] opacity-60 mt-0.5">{new Date(it.created_at).toLocaleString()}</div>}
+                                    {it?.subtitle && <div className="text-xs opacity-70 truncate">{it.subtitle}</div>}
+                                    {created && <div className="text-[11px] opacity-60 mt-0.5">{created.toLocaleString()}</div>}
                                   </div>
-                                  {unread && <button className="btn btn-ghost btn-xs" onClick={() => markOneRead(it.id)}>Mark read</button>}
+                                  {unread && it?.id && <button className="btn btn-ghost btn-xs" onClick={() => markOneRead(it.id)}>Mark read</button>}
                                 </div>
-                                {it.href && <Link to={it.href} className="link link-primary text-xs mt-1 inline-block">Open</Link>}
+                                {it?.href && <Link to={it.href} className="link link-primary text-xs mt-1 inline-block">Open</Link>}
                               </div>
                             </li>
                           );
@@ -323,7 +370,13 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
 
           {/* Help */}
           <div className="relative">
-            <button className="btn btn-ghost btn-sm" onClick={() => setOpen(o => ({ ...o, help: !o.help }))} aria-haspopup="menu" aria-expanded={open.help} title="Help & docs">
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => setOpen(o => ({ ...o, help: !o.help }))}
+              aria-haspopup="menu"
+              aria-expanded={open.help}
+              title="Help & docs"
+            >
               <CircleHelp className="w-5 h-5" />
             </button>
             {open.help && (
@@ -344,10 +397,16 @@ export default function Topbar({ collapsed, onToggleCollapse, onBurger }) {
 
           {/* User */}
           <div className="relative">
-            <button className="btn btn-ghost btn-sm gap-2" onClick={() => setOpen(o => ({ ...o, user: !o.user }))} aria-haspopup="menu" aria-expanded={open.user} title="Account">
+            <button
+              className="btn btn-ghost btn-sm gap-2"
+              onClick={() => setOpen(o => ({ ...o, user: !o.user }))}
+              aria-haspopup="menu"
+              aria-expanded={open.user}
+              title="Account"
+            >
               <div className="avatar placeholder">
                 <div className="w-7 rounded-full bg-base-300 text-base-content/80">
-                  <span className="text-xs">{user?.name?.[0]?.toUpperCase() || "U"}</span>
+                  <span className="text-xs">{user?.name?.[0]?.toUpperCase?.() || "U"}</span>
                 </div>
               </div>
               <span className="hidden xl:inline text-sm font-medium max-w-[18ch] truncate">

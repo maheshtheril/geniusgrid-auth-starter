@@ -10,8 +10,8 @@ const DESK_MINI_W = 64;  // px
 
 export default function ProtectedShell() {
   const [collapsed, setCollapsed] = React.useState(() => {
-    try { return localStorage.getItem(LS_COLLAPSED) === "1"; } catch { return false; }
-  });
+   try { return (localStorage.getItem(LS_COLLAPSED) ?? "0") === "1"; } catch { return false; }
+ });
 
   // If you're on mobile and the drawer was closed, you won't see the sidebar.
   // Start closed (normal), but the burger will open it.
