@@ -1,10 +1,11 @@
-// src/components/leads/AddLeadDrawer.jsx
-// World-class UI drawer for creating a Lead with typed custom-field values.
+// src/components/leads/AddLeadDrawer.jsx — world-class UI (full, fixed)
 // - Phone input is max width; country dropdown is compact.
-// - Sections: "General" and "Advance" (no "Add custom field" button).
+// - Sections: "General" and "Advance"; no "Add custom field" button.
 // - Custom fields loaded from /api/custom-fields?record_type=lead
-// - Submits multipart/form-data with typed custom_field_values[*] (plus record_type)
-// - On 400, auto-fallbacks to JSON body with custom_field_values array.
+// - SUBMISSION SHAPE (matches backend):
+//     mobile: "+<code> <local>"  (e.g., "+91 9876543210")
+//     custom_fields[<code>]: <value>
+//     cf_files[<code>]: <File>
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -70,8 +71,7 @@ function Field({ label, required, htmlFor, children, hint, error }) {
     <div className="space-y-1.5">
       {label && (
         <label htmlFor={htmlFor} className="flex items-center gap-1 text-xs md:text-sm gg-muted">
-          {label}
-          {required && <span className="text-rose-400">*</span>}
+          {label}{required && <span className="text-rose-400">*</span>}
         </label>
       )}
       {children}
@@ -238,7 +238,7 @@ export default function AddLeadDrawer({
   prefill,
   stages = ["new", "prospect", "proposal", "negotiation", "closed"],
   sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
-  customFields = [], // compatibility only; not used
+  customFields = [], // compatibility
   variant = "full",
 }) {
   const api = useLeadsApi();
@@ -268,8 +268,7 @@ export default function AddLeadDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [dupMobile, setDupMobile] = useState(null);
-  const [conflict, setConflict] = useState(null); // {message, field, existing_id, existing_name}
-
+  const [conflict, setConflict] = useState(null);
   const [cfList, setCfList] = useState([]);
 
   const firstInputRef = useRef(null);
@@ -300,7 +299,6 @@ export default function AddLeadDrawer({
               ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
               : [],
             accept: f.validation_json?.accept || undefined,
-            group: "advance",
             order_index: f.order_index ?? 0,
           }))
           .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || String(a.label).localeCompare(String(b.label)));
@@ -351,7 +349,7 @@ export default function AddLeadDrawer({
     setForm((f) => ({ ...f, mobile_country: CC, mobile_code: codeByCc[CC] || "" }));
   };
 
-  // duplicate mobile check (E.164)
+  // duplicate mobile check (expect space between code and local)
   useEffect(() => {
     let alive = true;
     if (!String(form.mobile || "").trim()) {
@@ -364,7 +362,7 @@ export default function AddLeadDrawer({
       try {
         const code = String(form.mobile_code || "").replace(/\s+/g, "");
         const local = String(form.mobile || "").replace(/\D+/g, "");
-        const mobile = `${code}${local}`;
+        const mobile = `${code} ${local}`; // <— IMPORTANT: space
         const res = await api.checkMobile({ mobile });
         if (!alive) return;
         const exists = !!res?.exists;
@@ -381,10 +379,7 @@ export default function AddLeadDrawer({
         if (alive) setDupMobile(null);
       }
     }, 450);
-    return () => {
-      alive = false;
-      clearTimeout(timer);
-    };
+    return () => { alive = false; clearTimeout(timer); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.mobile, form.mobile_code, api]);
 
@@ -430,42 +425,13 @@ export default function AddLeadDrawer({
     fd.append(key, String(value));
   }
 
-  function cfToTypedPair(cf, raw) {
-    const t = String(cf.type || "").toLowerCase();
-    if (raw === undefined || raw === null || raw === "") return null;
-
-    switch (t) {
-      case "number": {
-        const n = Number(raw);
-        if (Number.isNaN(n)) return null;
-        return { key: "value_number", val: n };
-      }
-      case "date": {
-        const d = String(raw).slice(0, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
-        return { key: "value_date", val: d };
-      }
-      case "checkbox":
-        return { key: "value_json", val: !!raw };
-      case "multiselect": {
-        const arr = Array.isArray(raw) ? raw : [raw].filter(Boolean);
-        return { key: "value_json", val: arr };
-      }
-      case "select":
-      case "textarea":
-      case "text":
-      default:
-        return { key: "value_text", val: String(raw) };
-    }
-  }
-
   function buildFormData(extra = {}) {
     const fd = new FormData();
 
     // normalize phone/date/revenue
     const code = String(form.mobile_code || "").replace(/\s+/g, "");
     const local = String(form.mobile || "").replace(/\D+/g, "");
-    const mobile = `${code}${local}`;
+    const mobile = `${code} ${local}`; // <— keep the space
     const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined;
     const revenue =
       form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
@@ -473,7 +439,6 @@ export default function AddLeadDrawer({
         : undefined;
 
     const base = {
-      record_type: "lead", // important for backends that need it for CFV rows
       name: String(form.name || "").trim(),
       mobile,
       email: form.email?.trim() || undefined,
@@ -487,76 +452,26 @@ export default function AddLeadDrawer({
     };
     Object.entries(base).forEach(([k, v]) => fdAppend(fd, k, v));
 
-    // typed custom_field_values (+ record_type)
-    let i = 0;
+    // custom fields (codes) and files
     for (const cf of cfList) {
-      const raw = custom[cf.key];
+      const key = cf.key;
+      const v = custom[key];
+      if (v === undefined || v === null || v === "") continue;
 
       if (cf.type === "file") {
-        if (raw instanceof File) {
-          fdAppend(fd, `custom_field_values[${i}][record_type]`, "lead");
-          fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
-          fdAppend(fd, `custom_field_values[${i}][file]`, raw);
-          i++;
-        } else if (cf.required) {
-          fdAppend(fd, `custom_field_values[${i}][record_type]`, "lead");
-          fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
-          i++;
-        }
-        continue;
-      }
-
-      const typed = cfToTypedPair(cf, raw);
-      if (typed || cf.required) {
-        fdAppend(fd, `custom_field_values[${i}][record_type]`, "lead");
-        fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
-        if (typed) fdAppend(fd, `custom_field_values[${i}][${typed.key}]`, typed.val);
-        i++;
+        if (v instanceof File) fdAppend(fd, `cf_files[${key}]`, v);
+      } else {
+        // booleans as "true"/"false", arrays as JSON
+        if (typeof v === "boolean") fdAppend(fd, `custom_fields[${key}]`, v ? "true" : "false");
+        else if (Array.isArray(v)) fdAppend(fd, `custom_fields[${key}]`, v);
+        else fdAppend(fd, `custom_fields[${key}]`, v);
       }
     }
+
+    // Expose for quick debugging in DevTools
+    try { window.__LEAD_DEBUG__ = { base, custom, cfListPreview: cfList.map(f => f.key) }; } catch {}
 
     return fd;
-  }
-
-  // Build a pure JSON body (fallback path) — includes typed custom_field_values[]
-  function buildJsonBody(extra = {}) {
-    const code = String(form.mobile_code || "").replace(/\s+/g, "");
-    const local = String(form.mobile || "").replace(/\D+/g, "");
-    const mobile = `${code}${local}`;
-    const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined;
-    const revenue =
-      form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
-        ? +form.expected_revenue
-        : undefined;
-
-    const rows = [];
-    for (const cf of cfList) {
-      const raw = custom[cf.key];
-      const typed = cfToTypedPair(cf, raw);
-      if (cf.type === "file") continue; // files require multipart; skip in JSON fallback
-      if (typed || cf.required) {
-        rows.push({
-          record_type: "lead",
-          field_id: cf.id,
-          [typed ? typed.key : "value_text"]: typed ? typed.val : "", // send empty to allow server required check
-        });
-      }
-    }
-
-    return {
-      record_type: "lead",
-      name: String(form.name || "").trim(),
-      mobile,
-      email: form.email?.trim() || undefined,
-      expected_revenue: revenue,
-      follow_up_date: follow,
-      profession: form.profession || undefined,
-      stage: form.stage,
-      status: form.status || "new",
-      source: form.source,
-      custom_field_values: rows,
-      ...extra,
-    };
   }
 
   async function postFormData(fd, config) {
@@ -567,34 +482,20 @@ export default function AddLeadDrawer({
     return await http.post("leads", fd, config);
   }
 
-  async function postJson(body, config) {
-    return await http.post("leads", body, config);
-  }
-
   async function createAnyway() {
     setError("");
     setSaving(true);
     try {
       const fd = buildFormData({ allow_duplicate: true, force: true });
-      let created;
-      try {
-        created = await postFormData(fd, { params: { allow_duplicate: 1, force: 1 } });
-      } catch (err1) {
-        // 400 fallback to JSON
-        if (err1?.response?.status === 400) {
-          const body = buildJsonBody({ allow_duplicate: true, force: true });
-          created = await postJson(body, { params: { allow_duplicate: 1, force: 1 } });
-        } else {
-          throw err1;
-        }
-      }
+      const created = await postFormData(fd, { params: { allow_duplicate: 1, force: 1 } });
+
       const btn = document.getElementById("addlead-save");
       if (btn) {
         btn.classList.add("success-pulse");
         setTimeout(() => onSuccess?.(created), 220);
       } else onSuccess?.(created);
     } catch (err) {
-      console.error(err);
+      console.error("POST /leads (force) failed:", err?.response || err);
       const data = err?.response?.data;
       const status = err?.response?.status;
       const msg =
@@ -623,19 +524,7 @@ export default function AddLeadDrawer({
     submittingRef.current = true;
     try {
       const fd = buildFormData();
-      let created;
-      try {
-        created = await postFormData(fd);
-      } catch (err1) {
-        if (err1?.response?.status === 409) throw err1; // keep duplicate flow
-        if (err1?.response?.status === 400) {
-          // Retry with JSON shape (no files)
-          const body = buildJsonBody();
-          created = await postJson(body);
-        } else {
-          throw err1;
-        }
-      }
+      const created = await postFormData(fd);
 
       const btn = document.getElementById("addlead-save");
       if (btn) {
@@ -643,7 +532,7 @@ export default function AddLeadDrawer({
         setTimeout(() => onSuccess?.(created), 220);
       } else onSuccess?.(created);
     } catch (err) {
-      console.error(err);
+      console.error("POST /leads failed:", err?.response || err);
       const status = err?.response?.status;
       const data = err?.response?.data || {};
       const msg =
@@ -651,6 +540,7 @@ export default function AddLeadDrawer({
         data?.message ||
         data?.error ||
         "This lead conflicts with an existing record (likely same mobile/email).";
+
       if (status === 409) {
         const field = (data?.field || "").toString().toLowerCase();
         if (field === "mobile" || /mobile|phone/i.test(msg)) setDupMobile(true);
@@ -884,9 +774,7 @@ export default function AddLeadDrawer({
         <div className="px-4 md:px-5 py-3 border-t border-[color:var(--border)] flex items-center justify-between gap-3 sticky bottom-0 bg-[var(--surface)]">
           <div className="flex items-center gap-2 text-xs md:text-sm gg-muted">
             <CheckCircle2 className="w-4 h-4" />
-            <span>
-              Required fields marked with <span className="text-rose-400">*</span>
-            </span>
+            <span>Required fields marked with <span className="text-rose-400">*</span></span>
           </div>
           <div className="flex items-center gap-2">
             <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
