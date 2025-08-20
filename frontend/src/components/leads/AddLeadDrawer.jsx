@@ -111,6 +111,7 @@ const Select = React.forwardRef(function Select(
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  thead
   const [hi, setHi] = useState(0);
   const boxRef = useRef(null);
   const btnRef = useRef(null);
@@ -417,8 +418,22 @@ export default function AddLeadDrawer({
 
   const isValid = Object.keys(problems).length === 0;
 
+  // helpers for FD
+  function fdAppend(fd, key, value) {
+    if (value === undefined || value === null) return;
+    if (value instanceof Blob || value instanceof File) {
+      fd.append(key, value);
+      return;
+    }
+    if (typeof value === "object") {
+      fd.append(key, JSON.stringify(value));
+    } else {
+      fd.append(key, String(value));
+    }
+  }
+
   // payload builder — normalized for server compatibility
-  function buildPayload(extra = {}) {
+  function buildFormData(extra = {}) {
     const custom_field_values = [];
     const files = {};
 
@@ -436,69 +451,59 @@ export default function AddLeadDrawer({
       }
     }
 
-    // Normalize phone to E.164-like and date to YYYY-MM-DD or null
+    // Normalize phone and date
     const code   = String(form.mobile_code || "").replace(/\s+/g, "");
     const local  = String(form.mobile || "").replace(/\D+/g, "");
-    const mobile = `${code}${local}` || null;
-    const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : null;
+    const mobile = `${code}${local}`;
+    const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined;
     const revenue =
       form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
         ? +form.expected_revenue
-        : null;
+        : undefined;
 
     const base = {
       name: String(form.name || "").trim(),
       mobile,
-      email: form.email?.trim() || null,
+      email: form.email?.trim() || undefined,
       expected_revenue: revenue,
       follow_up_date: follow,
-      profession: form.profession || null,
+      profession: form.profession || undefined,
       stage: form.stage,
       status: form.status || "new",
       source: form.source,
-      custom_field_values, // <-- normalized array
       ...extra,
     };
 
-    const hasFiles = Object.keys(files).length > 0;
-    return { base, files, hasFiles };
+    // Always use multipart/form-data for consistent server parsing
+    const fd = new FormData();
+    Object.entries(base).forEach(([k, v]) => fdAppend(fd, k, v));
+
+    // 1) JSON string version
+    fdAppend(fd, "custom_field_values", custom_field_values);
+
+    // 2) Flattened bracket notation (best-effort for parsers that don’t read JSON field)
+    custom_field_values.forEach((row, i) => {
+      fdAppend(fd, `custom_field_values[${i}][field_id]`, row.field_id);
+      fdAppend(fd, `custom_field_values[${i}][value]`, row.value);
+    });
+
+    // Files
+    Object.entries(files).forEach(([k, f]) => fdAppend(fd, k, f));
+
+    return fd;
   }
 
   async function createAnyway() {
     setError("");
     setSaving(true);
     try {
-      const { base, files, hasFiles } = buildPayload({ allow_duplicate: true, force: true });
+      const fd = buildFormData({ allow_duplicate: true, force: true });
       let created;
-
-      // Send both body flags and query params for broader backend compatibility
-      const params = { params: { allow_duplicate: 1, force: 1 } };
-
-      if (hasFiles && api.createLeadMultipart) {
-        const fd = new FormData();
-        for (const [k, v] of Object.entries(base)) {
-          if (k === "custom_field_values") {
-            fd.append(k, JSON.stringify(v)); // only this array is stringified in multipart
-          } else {
-            fd.append(k, v == null ? "" : String(v));
-          }
-        }
-        for (const [k, f] of Object.entries(files)) {
-          if (f) fd.append(k, f);
-        }
-        try {
-          created = await api.createLeadMultipart(fd, params);
-        } catch {
-          created = await api.createLeadMultipart(fd);
-        }
-      } else {
-        try {
-          created = await api.createLead(base, params); // plain JSON
-        } catch {
-          created = await api.createLead(base);
-        }
+      try {
+        created = await api.createLeadMultipart(fd, { params: { allow_duplicate: 1, force: 1 } });
+      } catch {
+        created = await api.createLeadMultipart(fd);
       }
-
       const btn = document.getElementById("addlead-save");
       if (btn) {
         btn.classList.add("success-pulse");
@@ -508,7 +513,7 @@ export default function AddLeadDrawer({
       console.error(err);
       const status = err?.response?.status;
       const msg = err?.response?.data?.message || "Duplicate is blocked by server policy.";
-      setError(status === 409 ? msg : "Failed to create lead. Please try again.");
+      setError(status === 409 ? msg : (err?.response?.data?.message || "Failed to create lead. Please try again."));
     } finally {
       setSaving(false);
     }
@@ -528,25 +533,8 @@ export default function AddLeadDrawer({
     setSaving(true);
     submittingRef.current = true;
     try {
-      const { base, files, hasFiles } = buildPayload();
-      let created;
-
-      if (hasFiles && api.createLeadMultipart) {
-        const fd = new FormData();
-        for (const [k, v] of Object.entries(base)) {
-          if (k === "custom_field_values") {
-            fd.append(k, JSON.stringify(v)); // only this array is stringified in multipart
-          } else {
-            fd.append(k, v == null ? "" : String(v));
-          }
-        }
-        for (const [k, f] of Object.entries(files)) {
-          if (f) fd.append(k, f);
-        }
-        created = await api.createLeadMultipart(fd);
-      } else {
-        created = await api.createLead(base); // plain JSON
-      }
+      const fd = buildFormData();
+      const created = await api.createLeadMultipart(fd);
 
       const btn = document.getElementById("addlead-save");
       if (btn) {
@@ -567,11 +555,12 @@ export default function AddLeadDrawer({
           existing_id: data?.existing_id || data?.id || null,
           existing_name: data?.existing_name || data?.name || null,
         });
-        setError(""); // move details into conflict card
+        setError("");
       } else if (status === 400) {
         setError(msg);
       } else {
-        setError(err?.response?.data?.message || "Server error while creating lead.");
+        // Show whatever the server sent to help diagnose 500s
+        setError(typeof data === "string" ? data : (data?.message || "Server error while creating lead."));
       }
     } finally {
       setSaving(false);
