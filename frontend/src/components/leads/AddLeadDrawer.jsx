@@ -172,6 +172,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
         type="button"
         ref={btnRef}
         disabled={disabled}
+        /* reduced width to give phone input more room */
         className={`gg-input h-10 md:h-11 w-16 sm:w-20 flex items-center gap-2 justify-between shrink-0 ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -192,7 +193,14 @@ function CountrySelect({ options, value, onChange, disabled }) {
         <div className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)] bg-[var(--surface)] border border-[color:var(--border)] rounded-2xl shadow-2xl p-2" role="dialog">
           <div className="flex items-center gap-2 mb-2 px-1">
             <Flag className="w-4 h-4 opacity-70" />
-            <input type="text" className="gg-input w-full h-10" placeholder="Search country or code" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onListKey} />
+            <input
+              type="text"
+              className="gg-input w-full h-10"
+              placeholder="Search country or code"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onListKey}
+            />
           </div>
           <ul role="listbox" className="max-h-64 overflow-auto" tabIndex={-1} onKeyDown={onListKey}>
             {filtered.map((o, idx) => (
@@ -340,7 +348,7 @@ export default function AddLeadDrawer({
     setForm((f) => ({ ...f, mobile_country: CC, mobile_code: codeByCc[CC] || "" }));
   };
 
-  // duplicate mobile check (debounced) — normalize as +CC local (with a space)
+  // duplicate mobile check (debounced) — normalize as "+CC local" (with a space)
   useEffect(() => {
     let alive = true;
     if (!String(form.mobile || "").trim()) {
@@ -422,7 +430,7 @@ export default function AddLeadDrawer({
   function buildFormData(extra = {}) {
     const fd = new FormData();
 
-    // Normalize phone: "+91 9999999999" (note the space)
+    // Normalize phone: "+91 9999999999" (space)
     const code   = String(form.mobile_code || "").replace(/\s+/g, "");
     const local  = String(form.mobile || "").replace(/\D+/g, "");
     const mobile = `${code} ${local}`;
@@ -445,7 +453,7 @@ export default function AddLeadDrawer({
       ...extra,
     };
 
-    // append base
+    // append base fields
     Object.entries(base).forEach(([k, v]) => fd.append(k, v ?? ""));
 
     // encode custom fields into cfv[i][field_id] + value_*
