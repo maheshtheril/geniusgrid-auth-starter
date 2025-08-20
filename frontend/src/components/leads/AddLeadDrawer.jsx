@@ -417,25 +417,29 @@ export default function AddLeadDrawer({
 
   const isValid = Object.keys(problems).length === 0;
 
-  // payload builder — normalize for server compatibility
+  // payload builder — normalized for server compatibility
   function buildPayload(extra = {}) {
-    const customForJson = {};
+    const custom_field_values = [];
     const files = {};
 
     for (const cf of cfList) {
-      const key = cf.key;
-      const v = custom[key];
+      const v = custom[cf.key];
+
       if (cf.type === "file") {
-        if (v instanceof File) files[`cf_files[${key}]`] = v;
-      } else {
-        if (v !== undefined) customForJson[key] = v;
+        if (v instanceof File) files[`cf_files[${cf.id}]`] = v; // key by field_id
+        continue;
+      }
+
+      const isEmpty = v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
+      if (!isEmpty || cf.required) {
+        custom_field_values.push({ field_id: cf.id, value: v });
       }
     }
 
-    // Normalize phone to E.164 and date to YYYY-MM-DD or null
+    // Normalize phone to E.164-like and date to YYYY-MM-DD or null
     const code   = String(form.mobile_code || "").replace(/\s+/g, "");
     const local  = String(form.mobile || "").replace(/\D+/g, "");
-    const mobile = `${code}${local}`;
+    const mobile = `${code}${local}` || null;
     const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : null;
     const revenue =
       form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
@@ -452,8 +456,7 @@ export default function AddLeadDrawer({
       stage: form.stage,
       status: form.status || "new",
       source: form.source,
-      // send as JSON string to avoid backend parsing issues
-      custom_fields: JSON.stringify(customForJson),
+      custom_field_values, // <-- normalized array
       ...extra,
     };
 
@@ -474,9 +477,8 @@ export default function AddLeadDrawer({
       if (hasFiles && api.createLeadMultipart) {
         const fd = new FormData();
         for (const [k, v] of Object.entries(base)) {
-          const isBlob = v instanceof Blob || v instanceof File;
-          if (typeof v === "object" && v !== null && !isBlob) {
-            fd.append(k, JSON.stringify(v));
+          if (k === "custom_field_values") {
+            fd.append(k, JSON.stringify(v)); // only this array is stringified in multipart
           } else {
             fd.append(k, v == null ? "" : String(v));
           }
@@ -491,7 +493,7 @@ export default function AddLeadDrawer({
         }
       } else {
         try {
-          created = await api.createLead(base, params);
+          created = await api.createLead(base, params); // plain JSON
         } catch {
           created = await api.createLead(base);
         }
@@ -532,9 +534,8 @@ export default function AddLeadDrawer({
       if (hasFiles && api.createLeadMultipart) {
         const fd = new FormData();
         for (const [k, v] of Object.entries(base)) {
-          const isBlob = v instanceof Blob || v instanceof File;
-          if (typeof v === "object" && v !== null && !isBlob) {
-            fd.append(k, JSON.stringify(v));
+          if (k === "custom_field_values") {
+            fd.append(k, JSON.stringify(v)); // only this array is stringified in multipart
           } else {
             fd.append(k, v == null ? "" : String(v));
           }
@@ -544,7 +545,7 @@ export default function AddLeadDrawer({
         }
         created = await api.createLeadMultipart(fd);
       } else {
-        created = await api.createLead(base);
+        created = await api.createLead(base); // plain JSON
       }
 
       const btn = document.getElementById("addlead-save");
@@ -808,7 +809,7 @@ export default function AddLeadDrawer({
               {advanceCF.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{advanceCF.map(renderCF)}</div>
               ) : (
-                <div className="gg-card p-3 text-sm text:[color:var(--muted)]">
+                <div className="gg-card p-3 text-sm text-[color:var(--muted)]">
                   No custom fields yet.
                 </div>
               )}
@@ -841,7 +842,7 @@ export default function AddLeadDrawer({
 
             {/* Hidden submit to ensure Enter works anywhere in the form */}
             <button type="submit" className="hidden" />
-            
+
             {error && (
               <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">
                 {error}
