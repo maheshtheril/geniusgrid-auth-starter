@@ -234,6 +234,7 @@ export default function AddLeadDrawer({
   const _c = useCountriesApi("en");
   const countriesLoading = _c?.loading ?? false;
   const countriesRaw = _c?.countries ?? _c ?? [];
+  thead
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
 
   const countryOpts = useMemo(() => {
@@ -254,6 +255,7 @@ export default function AddLeadDrawer({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [dupMobile, setDupMobile] = useState(null);
+  const [conflict, setConflict] = useState(null); // {message, field, existing_id, existing_name}
 
   // local custom fields (loaded from API)
   const [cfList, setCfList] = useState([]);
@@ -343,6 +345,7 @@ export default function AddLeadDrawer({
     let alive = true;
     if (!String(form.mobile || "").trim()) {
       setDupMobile(null);
+      setConflict(null);
       return;
     }
     const timer = setTimeout(async () => {
@@ -351,7 +354,17 @@ export default function AddLeadDrawer({
         const res = await api.checkMobile({
           mobile: `${form.mobile_code} ${String(form.mobile).trim()}`,
         });
-        if (alive) setDupMobile(!!res?.exists);
+        if (!alive) return;
+        const exists = !!res?.exists;
+        setDupMobile(exists);
+        if (exists && !conflict) {
+          setConflict({
+            message: "A lead with this mobile number already exists.",
+            field: "mobile",
+            existing_id: res?.id || res?.lead_id || null,
+            existing_name: res?.name || null,
+          });
+        }
       } catch {
         if (alive) setDupMobile(null);
       }
@@ -360,6 +373,7 @@ export default function AddLeadDrawer({
       alive = false;
       clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.mobile, form.mobile_code, api]);
 
   // group all CFs under advance
@@ -404,7 +418,7 @@ export default function AddLeadDrawer({
   const isValid = Object.keys(problems).length === 0;
 
   // payload builder
-  function buildPayload() {
+  function buildPayload(extra = {}) {
     const customForJson = {};
     const files = {};
 
@@ -432,16 +446,65 @@ export default function AddLeadDrawer({
       status: form.status || "new",
       source: form.source,
       custom_fields: customForJson,
+      ...extra,
     };
 
     const hasFiles = Object.keys(files).length > 0;
     return { base, files, hasFiles };
   }
 
+  async function createAnyway() {
+    setError("");
+    setSaving(true);
+    try {
+      const { base, files, hasFiles } = buildPayload({ allow_duplicate: true, force: true });
+      let created;
+
+      // Send both body flags and query params for broader backend compatibility
+      const params = { params: { allow_duplicate: 1, force: 1 } };
+
+      if (hasFiles && api.createLeadMultipart) {
+        const fd = new FormData();
+        for (const [k, v] of Object.entries(base)) {
+          fd.append(k, typeof v === "object" ? JSON.stringify(v) : v ?? "");
+        }
+        for (const [k, f] of Object.entries(files)) {
+          if (f) fd.append(k, f);
+        }
+        // try signature with config; if hook doesn't accept it, fall back
+        try {
+          created = await api.createLeadMultipart(fd, params);
+        } catch {
+          created = await api.createLeadMultipart(fd);
+        }
+      } else {
+        try {
+          created = await api.createLead(base, params);
+        } catch {
+          created = await api.createLead(base);
+        }
+      }
+
+      const btn = document.getElementById("addlead-save");
+      if (btn) {
+        btn.classList.add("success-pulse");
+        setTimeout(() => onSuccess?.(created), 220);
+      } else onSuccess?.(created);
+    } catch (err) {
+      console.error(err);
+      const status = err?.response?.status;
+      const msg = err?.response?.data?.message || "Duplicate is blocked by server policy.";
+      setError(status === 409 ? msg : "Failed to create lead. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const submit = async (e) => {
     e?.preventDefault?.();
     if (submittingRef.current) return;
     setError("");
+    setConflict(null);
 
     if (!isValid) {
       setError("Please fix the highlighted fields");
@@ -474,7 +537,24 @@ export default function AddLeadDrawer({
       } else onSuccess?.(created);
     } catch (err) {
       console.error(err);
-      setError("Failed to create lead. Please try again.");
+      const status = err?.response?.status;
+      const data = err?.response?.data || {};
+      const msg = data?.message || data?.error || "This lead conflicts with an existing record (likely same mobile/email).";
+      if (status === 409) {
+        const field = (data?.field || "").toString().toLowerCase();
+        if (field === "mobile" || /mobile|phone/i.test(msg)) setDupMobile(true);
+        setConflict({
+          message: msg,
+          field,
+          existing_id: data?.existing_id || data?.id || null,
+          existing_name: data?.existing_name || data?.name || null,
+        });
+        setError(""); // move details into conflict card
+      } else if (status === 400) {
+        setError(msg);
+      } else {
+        setError("Failed to create lead. Please try again.");
+      }
     } finally {
       setSaving(false);
       submittingRef.current = false;
@@ -657,37 +737,31 @@ export default function AddLeadDrawer({
                   <Input id="lead-revenue" type="number" inputMode="decimal" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="e.g., 50000" />
                 </Field>
 
-               <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
-  <div className="relative">
-    <Input
-      id="lead-follow"
-      type="date"
-      value={form.follow_up_date}
-      onChange={update("follow_up_date")}
-      invalid={!!problems.follow_up_date}
-      inputMode="numeric"
-      pattern="\d{4}-\d{2}-\d{2}"
-      autoComplete="off"
-      placeholder="YYYY-MM-DD"
-    />
-
-    {/* Option A: icon doesn’t capture clicks */}
-    {/* <CalendarDays className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60 pointer-events-none" /> */}
-
-    {/* Option B: icon actively opens the native picker (Chrome/Edge support showPicker) */}
-    <button
-      type="button"
-      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md"
-      aria-label="Open date picker"
-      onClick={() => document.getElementById("lead-follow")?.showPicker?.()}
-      tabIndex={-1}
-      style={{ background: "transparent" }}
-    >
-      <CalendarDays className="w-4 h-4 opacity-70" />
-    </button>
-  </div>
-</Field>
-
+                <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
+                  <div className="relative">
+                    <Input
+                      id="lead-follow"
+                      type="date"
+                      value={form.follow_up_date}
+                      onChange={update("follow_up_date")}
+                      invalid={!!problems.follow_up_date}
+                      inputMode="numeric"
+                      pattern="\d{4}-\d{2}-\d{2}"
+                      autoComplete="off"
+                      placeholder="YYYY-MM-DD"
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md"
+                      aria-label="Open date picker"
+                      onClick={() => document.getElementById("lead-follow")?.showPicker?.()}
+                      tabIndex={-1}
+                      style={{ background: "transparent" }}
+                    >
+                      <CalendarDays className="w-4 h-4 opacity-70" />
+                    </button>
+                  </div>
+                </Field>
 
                 <Field label="Profession" htmlFor="lead-profession">
                   <Input id="lead-profession" value={form.profession} onChange={update("profession")} placeholder="e.g., Architect" />
@@ -721,6 +795,31 @@ export default function AddLeadDrawer({
                 </div>
               )}
             </Section>
+
+            {/* Conflict card */}
+            {conflict && (
+              <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 text-amber-200 px-3 py-2 space-y-2">
+                <div className="font-medium">Possible duplicate</div>
+                <div className="text-sm">{conflict.message}</div>
+                <div className="flex items-center gap-2">
+                  {conflict.existing_id && (
+                    <a
+                      href={`/crm/leads/${conflict.existing_id}`}
+                      className="gg-btn gg-btn-ghost gg-btn-sm"
+                    >
+                      View existing
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    className="gg-btn gg-btn-primary gg-btn-sm"
+                    onClick={createAnyway}
+                  >
+                    Create anyway (request approval)
+                  </button>
+                </div>
+              </div>
+            )}
 
             {error && (
               <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">
