@@ -111,7 +111,6 @@ const Select = React.forwardRef(function Select(
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  thead
   const [hi, setHi] = useState(0);
   const boxRef = useRef(null);
   const btnRef = useRef(null);
@@ -559,7 +558,6 @@ export default function AddLeadDrawer({
       } else if (status === 400) {
         setError(msg);
       } else {
-        // Show whatever the server sent to help diagnose 500s
         setError(typeof data === "string" ? data : (data?.message || "Server error while creating lead."));
       }
     } finally {
