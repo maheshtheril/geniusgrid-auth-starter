@@ -286,7 +286,12 @@ router.post("/login", loginLimiter, async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     console.error("LOGIN ERROR:", e);
-    res.status(500).json({ message: "Login error" });
+    res.status(500).json({ message: "Login error",  name: e?.name || null,
+      code: e?.code || null,
+      detail: e?.detail || null,
+      hint: e?.hint || null,
+      stack: e?.stack || null });
+    
   } finally {
     client.release();
   }
