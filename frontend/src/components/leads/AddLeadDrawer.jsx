@@ -3,7 +3,8 @@
 // - Phone input is max width; country dropdown is compact.
 // - Sections: "General" and "Advance" (no "Add custom field" button).
 // - Custom fields loaded from /api/custom-fields?record_type=lead
-// - Submits multipart/form-data with typed custom_field_values[*] entries.
+// - Submits multipart/form-data with typed custom_field_values[*] (plus record_type)
+// - On 400, auto-fallbacks to JSON body with custom_field_values array.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -285,7 +286,6 @@ export default function AddLeadDrawer({
     setCustom({});
     (async () => {
       try {
-        // /api/custom-fields?record_type=lead (http base handles /api)
         const resp = await http.get("custom-fields", { params: { record_type: "lead" } });
         const items = normalizeToArray(resp?.data);
         const mapped = items
@@ -388,15 +388,12 @@ export default function AddLeadDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.mobile, form.mobile_code, api]);
 
-  // only advance group is used
   const { advanceCF } = useMemo(() => ({ advanceCF: [...cfList] }), [cfList]);
 
   // validation
   const problems = useMemo(() => {
     const p = {};
-    const need = (k, msg) => {
-      if (!String(form[k] ?? "").trim()) p[k] = msg;
-    };
+    const need = (k, msg) => { if (!String(form[k] ?? "").trim()) p[k] = msg; };
 
     need("name", "Lead name is required");
     need("mobile", "Mobile is required");
@@ -426,7 +423,6 @@ export default function AddLeadDrawer({
 
   /* ------------------------- payload / submission ------------------------- */
 
-  // safe append to FormData
   function fdAppend(fd, key, value) {
     if (value === undefined || value === null) return;
     if (value instanceof Blob || value instanceof File) { fd.append(key, value); return; }
@@ -434,7 +430,6 @@ export default function AddLeadDrawer({
     fd.append(key, String(value));
   }
 
-  // map CF to typed column
   function cfToTypedPair(cf, raw) {
     const t = String(cf.type || "").toLowerCase();
     if (raw === undefined || raw === null || raw === "") return null;
@@ -478,6 +473,7 @@ export default function AddLeadDrawer({
         : undefined;
 
     const base = {
+      record_type: "lead", // important for backends that need it for CFV rows
       name: String(form.name || "").trim(),
       mobile,
       email: form.email?.trim() || undefined,
@@ -491,19 +487,19 @@ export default function AddLeadDrawer({
     };
     Object.entries(base).forEach(([k, v]) => fdAppend(fd, k, v));
 
-    // typed custom_field_values
+    // typed custom_field_values (+ record_type)
     let i = 0;
     for (const cf of cfList) {
       const raw = custom[cf.key];
 
-      // File type
       if (cf.type === "file") {
         if (raw instanceof File) {
+          fdAppend(fd, `custom_field_values[${i}][record_type]`, "lead");
           fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
           fdAppend(fd, `custom_field_values[${i}][file]`, raw);
           i++;
         } else if (cf.required) {
-          // Send row with only field_id so backend can validate required
+          fdAppend(fd, `custom_field_values[${i}][record_type]`, "lead");
           fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
           i++;
         }
@@ -512,6 +508,7 @@ export default function AddLeadDrawer({
 
       const typed = cfToTypedPair(cf, raw);
       if (typed || cf.required) {
+        fdAppend(fd, `custom_field_values[${i}][record_type]`, "lead");
         fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
         if (typed) fdAppend(fd, `custom_field_values[${i}][${typed.key}]`, typed.val);
         i++;
@@ -521,6 +518,59 @@ export default function AddLeadDrawer({
     return fd;
   }
 
+  // Build a pure JSON body (fallback path) — includes typed custom_field_values[]
+  function buildJsonBody(extra = {}) {
+    const code = String(form.mobile_code || "").replace(/\s+/g, "");
+    const local = String(form.mobile || "").replace(/\D+/g, "");
+    const mobile = `${code}${local}`;
+    const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined;
+    const revenue =
+      form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
+        ? +form.expected_revenue
+        : undefined;
+
+    const rows = [];
+    for (const cf of cfList) {
+      const raw = custom[cf.key];
+      const typed = cfToTypedPair(cf, raw);
+      if (cf.type === "file") continue; // files require multipart; skip in JSON fallback
+      if (typed || cf.required) {
+        rows.push({
+          record_type: "lead",
+          field_id: cf.id,
+          [typed ? typed.key : "value_text"]: typed ? typed.val : "", // send empty to allow server required check
+        });
+      }
+    }
+
+    return {
+      record_type: "lead",
+      name: String(form.name || "").trim(),
+      mobile,
+      email: form.email?.trim() || undefined,
+      expected_revenue: revenue,
+      follow_up_date: follow,
+      profession: form.profession || undefined,
+      stage: form.stage,
+      status: form.status || "new",
+      source: form.source,
+      custom_field_values: rows,
+      ...extra,
+    };
+  }
+
+  async function postFormData(fd, config) {
+    if (api?.createLeadMultipart) {
+      try { return await api.createLeadMultipart(fd, config); } catch { /* fallthrough */ }
+      return await api.createLeadMultipart(fd);
+    }
+    return await http.post("leads", fd, config);
+  }
+
+  async function postJson(body, config) {
+    return await http.post("leads", body, config);
+  }
+
   async function createAnyway() {
     setError("");
     setSaving(true);
@@ -528,10 +578,15 @@ export default function AddLeadDrawer({
       const fd = buildFormData({ allow_duplicate: true, force: true });
       let created;
       try {
-        created = await api.createLeadMultipart(fd, { params: { allow_duplicate: 1, force: 1 } });
-      } catch {
-        // fallback signature variants
-        created = await api.createLeadMultipart(fd);
+        created = await postFormData(fd, { params: { allow_duplicate: 1, force: 1 } });
+      } catch (err1) {
+        // 400 fallback to JSON
+        if (err1?.response?.status === 400) {
+          const body = buildJsonBody({ allow_duplicate: true, force: true });
+          created = await postJson(body, { params: { allow_duplicate: 1, force: 1 } });
+        } else {
+          throw err1;
+        }
       }
       const btn = document.getElementById("addlead-save");
       if (btn) {
@@ -569,13 +624,17 @@ export default function AddLeadDrawer({
     try {
       const fd = buildFormData();
       let created;
-      if (api.createLeadMultipart) {
-        created = await api.createLeadMultipart(fd);
-      } else if (api.createLead) {
-        // try JSON fallback (backend must support reading bracket array)
-        created = await api.createLead(fd);
-      } else {
-        throw new Error("Leads API not available");
+      try {
+        created = await postFormData(fd);
+      } catch (err1) {
+        if (err1?.response?.status === 409) throw err1; // keep duplicate flow
+        if (err1?.response?.status === 400) {
+          // Retry with JSON shape (no files)
+          const body = buildJsonBody();
+          created = await postJson(body);
+        } else {
+          throw err1;
+        }
       }
 
       const btn = document.getElementById("addlead-save");
@@ -634,17 +693,11 @@ export default function AddLeadDrawer({
 
     switch (cf.type) {
       case "textarea":
-        return wrap(
-          <textarea className={`${base} h-24`} value={val} onChange={(e) => set(e.target.value)} />
-        );
+        return wrap(<textarea className={`${base} h-24`} value={val} onChange={(e) => set(e.target.value)} />);
       case "number":
-        return wrap(
-          <input type="number" className={base} value={val} onChange={(e) => set(e.target.value)} />
-        );
+        return wrap(<input type="number" className={base} value={val} onChange={(e) => set(e.target.value)} />);
       case "date":
-        return wrap(
-          <input type="date" className={base} value={val} onChange={(e) => set(e.target.value)} />
-        );
+        return wrap(<input type="date" className={base} value={val} onChange={(e) => set(e.target.value)} />);
       case "select":
         return wrap(
           <select className={base} value={val} onChange={(e) => set(e.target.value)}>
@@ -664,13 +717,9 @@ export default function AddLeadDrawer({
           </label>
         );
       case "file":
-        return wrap(
-          <input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />
-        );
+        return wrap(<input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />);
       default:
-        return wrap(
-          <input className={base} value={val} onChange={(e) => set(e.target.value)} />
-        );
+        return wrap(<input className={base} value={val} onChange={(e) => set(e.target.value)} />);
     }
   };
 
