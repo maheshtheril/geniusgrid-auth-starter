@@ -9,7 +9,6 @@ export default defineConfig(async ({ mode }) => {
 
   const plugins = [react()];
 
-  // Lazy-load visualizer only when ANALYZE=true (so prod builds don’t need the package)
   if (analyze) {
     try {
       const { visualizer } = await import("rollup-plugin-visualizer");
@@ -19,30 +18,41 @@ export default defineConfig(async ({ mode }) => {
           template: "treemap",
           gzipSize: true,
           brotliSize: true,
-          open: true, // local only; won’t open on remote CI
+          open: true,
         })
       );
     } catch {
       console.warn(
-        "ANALYZE=true but 'rollup-plugin-visualizer' is not installed. " +
-          "Install with: npm i -D rollup-plugin-visualizer"
+        "ANALYZE=true but 'rollup-plugin-visualizer' is not installed. Install with: npm i -D rollup-plugin-visualizer"
       );
     }
   }
+
+  // Backend target for dev proxy (change if your backend port differs)
+  const DEV_API_TARGET = process.env.VITE_DEV_API_TARGET || "http://localhost:3000";
 
   return {
     plugins,
     resolve: {
       alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
     },
-    server: { host: true, port: 5173 },
+    server: {
+      host: true,
+      port: 5173,
+      proxy: {
+        // Any request to /api/* will be proxied to your backend
+        "/api": {
+          target: DEV_API_TARGET,
+          changeOrigin: true,
+          secure: false,
+          cookieDomainRewrite: { "*": "localhost" },
+          cookiePathRewrite: { "/": "/" },
+        },
+      },
+    },
     preview: { host: true, port: 5173 },
-    optimizeDeps: {
-      include: ["react", "react-dom", "react-router-dom"],
-    },
-    esbuild: {
-      drop: isProd ? ["console", "debugger"] : [],
-    },
+    optimizeDeps: { include: ["react", "react-dom", "react-router-dom"] },
+    esbuild: { drop: isProd ? ["console", "debugger"] : [] },
     build: {
       target: "es2022",
       sourcemap: false,
@@ -55,7 +65,7 @@ export default defineConfig(async ({ mode }) => {
           manualChunks(id) {
             if (id.includes("node_modules")) {
               if (id.includes("/@radix-ui/")) return "vendor-radix";
-              if (id.includes("lucide-react")) return "vendor-lucide";      // icons
+              if (id.includes("lucide-react")) return "vendor-lucide";
               if (id.includes("recharts")) return "vendor-recharts";
               if (id.includes("framer-motion")) return "vendor-motion";
               if (id.includes("react-router")) return "vendor-router";

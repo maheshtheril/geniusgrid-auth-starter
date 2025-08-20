@@ -1,3 +1,4 @@
+// src/server.js
 import "dotenv/config";
 import express from "express";
 import helmet from "helmet";
@@ -47,17 +48,22 @@ import adminOrgRoutes from "./routes/admin.org.routes.js";
 const app = express();
 const PgStore = pgSimple(session);
 const isProd = process.env.NODE_ENV === "production";
-const PORT = Number(process.env.PORT || 4000);
-const APP_URL =
-  process.env.APP_URL ||
-  (isProd ? "https://your-api.onrender.com" : "http://localhost:4000");
+
+// Port comes from env, default 3000 in dev, 8080 in prod
+const PORT = Number(process.env.PORT || (isProd ? 8080 : 3000));
+
+// APP_URL comes from env; if not set, build from PORT
+const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
 /* ---------- CORS ---------- */
 const ORIGINS = [
+  process.env.FRONTEND_ORIGIN,
   "http://localhost:5173",
   "https://geniusgrid.onrender.com",
   ...(process.env.FRONTEND_ORIGINS ? process.env.FRONTEND_ORIGINS.split(",") : []),
-].map((s) => s.trim()).filter(Boolean);
+]
+  .filter(Boolean)
+  .map((s) => s.trim());
 
 /* ---------- Logger ---------- */
 const logger = pino({
@@ -138,8 +144,8 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd,               // HTTPS only in prod
-      sameSite: isProd ? "none" : "lax", // cross-site cookie in prod
+      secure: isProd, // HTTPS only in prod
+      sameSite: isProd ? "none" : "lax",
       maxAge: Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60 * 1000,
     },
   })
@@ -168,32 +174,22 @@ app.use("/api/auth", authMe);
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 
 /* ✅ PROTECTED: AI prospect namespace (requires auth) */
-app.use("/api/ai/prospect", requireAuth, aiProspectRoutes); // /api/ai/prospect/jobs,...
+app.use("/api/ai/prospect", requireAuth, aiProspectRoutes);
 
-/* ---------- PROTECTED routes (scoped; no broad '/api' wall) ---------- */
+/* ---------- PROTECTED routes ---------- */
 app.use("/api/admin", requireAuth, adminUsers);
 app.use("/api/dashboard", requireAuth, dashboardRoutes);
 app.use("/api/crm", requireAuth, customFieldsRoutes);
-
-/* ⚠️ Mount specific custom-fields BEFORE generic /api/leads to avoid :id collisions */
 app.use("/api", requireAuth, leadsCustomFieldsRoutes);
-
-/* Leads core + utilities */
 app.use("/api/leads", requireAuth, leadsRoutes);
 app.use("/api/leads", requireAuth, leadsAiRoutes);
 app.use("/api/leads", requireAuth, leadsDupRoutes);
 app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
-
-/* Imports (scoped) */
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
 app.use("/api/admin", adminOrgRoutes);
-
-/* Other modules (scoped) */
 app.use("/api/leads-module", requireAuth, leadsModule);
 app.use("/api", requireAuth, tenantMenusRoutes);
-
-/* Custom-fields root router */
 app.use("/api/custom-fields", requireAuth, customFields);
 
 /* ---------- 404 & Errors ---------- */
@@ -221,7 +217,9 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 function shutdown(sig) {
   logger.warn({ sig }, "Shutting down...");
   server.close(async () => {
-    try { await pool.end(); } catch {}
+    try {
+      await pool.end();
+    } catch {}
     logger.warn("Closed HTTP & PG pool. Bye.");
     process.exit(0);
   });
