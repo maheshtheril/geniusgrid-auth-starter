@@ -111,7 +111,6 @@ const Select = React.forwardRef(function Select(
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  thead
   const [hi, setHi] = useState(0);
   const boxRef = useRef(null);
   const btnRef = useRef(null);
