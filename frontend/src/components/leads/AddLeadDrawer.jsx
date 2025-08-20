@@ -1,11 +1,11 @@
 // src/components/leads/AddLeadDrawer.jsx — world-class UI (full, updated)
-// Phone input is max width; country dropdown & dial code are compact.
+// Phone input is max width; country dropdown is compact.
 // Clean sections. Title "Advance". No "Add custom field" button.
 // Custom fields are loaded from /api/custom-fields?record_type=lead.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Info } from "lucide-react";
+import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Info, X } from "lucide-react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
 import { http } from "@/lib/http";
@@ -111,6 +111,7 @@ const Select = React.forwardRef(function Select(
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  thead
   const [hi, setHi] = useState(0);
   const boxRef = useRef(null);
   const btnRef = useRef(null);
@@ -170,7 +171,8 @@ function CountrySelect({ options, value, onChange, disabled }) {
         type="button"
         ref={btnRef}
         disabled={disabled}
-        className={`gg-input h-10 md:h-11 w-24 sm:w-28 flex items-center gap-2 justify-between shrink-0 ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
+        /* reduced width to give phone input more room */
+        className={`gg-input h-10 md:h-11 w-16 sm:w-20 flex items-center gap-2 justify-between shrink-0 ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => !disabled && setOpen((o) => !o)}
@@ -181,7 +183,7 @@ function CountrySelect({ options, value, onChange, disabled }) {
               <span className={`fi fi-${selected.cc.toLowerCase()}`} aria-hidden />
               <span className="truncate text-sm font-medium">{selected.cc}</span>
             </>
-          ) : (<span className="opacity-60">Country</span>)}
+          ) : (<span className="opacity-60">CC</span>)}
         </span>
         <span className="opacity-60">▾</span>
       </button>
@@ -270,36 +272,34 @@ export default function AddLeadDrawer({
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
-    // Load from backend: /api/custom-fields?record_type=lead
     (async () => {
       try {
         const resp = await http.get("custom-fields", { params: { record_type: "lead" } });
         const items = normalizeToArray(resp?.data);
-        // Map DB fields → UI fields
         const mapped = items
-          .filter((f) => f?.is_active !== false) // only active ones
+          .filter((f) => f?.is_active !== false)
           .map((f) => ({
             id: f.id,
             key: f.code,
             label: f.label,
-            type: f.field_type, // text, textarea, select, number, date, checkbox, file
+            type: f.field_type,
             required: !!f.is_required,
             options: Array.isArray(f.options_json)
               ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
               : [],
             accept: f.validation_json?.accept || undefined,
-            group: "advance", // all custom fields show under Advance
+            group: "advance",
             order_index: f.order_index ?? 0,
           }))
           .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || String(a.label).localeCompare(String(b.label)));
         setCfList(mapped);
       } catch (e) {
         console.error("Failed to load custom fields", e);
-        setCfList([]); // fail safe
+        setCfList([]);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // mount only
+  }, []);
 
   // sync dial code when countries arrive
   useEffect(() => {
@@ -601,6 +601,16 @@ export default function AddLeadDrawer({
               <div className="gg-muted text-xs">Fill in the details below</div>
             </div>
           </div>
+          {/* Top-right Close button */}
+          <button
+            type="button"
+            className="gg-btn gg-btn-ghost"
+            onClick={onClose}
+            aria-label="Close"
+            title="Close"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         <form onSubmit={submit} className="flex-1 overflow-auto">
@@ -676,13 +686,6 @@ export default function AddLeadDrawer({
                   </Select>
                 </Field>
               </div>
-
-              {generalCF.length > 0 && (
-                <div className="pt-1">
-                  <div className="text-sm font-medium mb-2">Custom fields — General</div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{generalCF.map(renderCF)}</div>
-                </div>
-              )}
             </Section>
 
             <Section title="Advance">
@@ -725,59 +728,30 @@ export default function AddLeadDrawer({
       </aside>
 
       <style>{`
-      :root {
-  --input-placeholder: #8b95a7;
-}
-[data-theme="dark"] {
-  --muted: #9aa3b2;
-  --elev: #151922;
-  --border: #273043;
-  --ring: rgba(56,189,248,.40);
-  --input-placeholder: #8a95a6;
-}
-.gg-muted { color: var(--muted); }
-.gg-input,
-select.gg-input,
-textarea.gg-input {
-  background: var(--elev);
-  color: var(--text, #e6e9ef);
-  border: 1px solid var(--border);
-}
-.gg-input::placeholder,
-textarea.gg-input::placeholder { color: var(--input-placeholder); opacity: 1; }
-.gg-input:focus-visible,
-select.gg-input:focus-visible,
-textarea.gg-input:focus-visible {
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px var(--ring);
-}
-:root {
-  --input-placeholder: #8b95a7;
-}
-[data-theme="dark"] {
-  --muted: #9aa3b2;
-  --elev: #151922;
-  --border: #273043;
-  --ring: rgba(56,189,248,.40);
-  --input-placeholder: #8a95a6;
-}
-.gg-muted { color: var(--muted); }
-.gg-input,
-select.gg-input,
-textarea.gg-input {
-  background: var(--elev);
-  color: var(--text, #e6e9ef);
-  border: 1px solid var(--border);
-}
-.gg-input::placeholder,
-textarea.gg-input::placeholder { color: var(--input-placeholder); opacity: 1; }
-.gg-input:focus-visible,
-select.gg-input:focus-visible,
-textarea.gg-input:focus-visible {
-  border-color: var(--ring);
-  box-shadow: 0 0 0 3px var(--ring);
-}
-
+        :root { --input-placeholder: #8b95a7; }
+        [data-theme="dark"] {
+          --muted: #9aa3b2;
+          --elev: #151922;
+          --border: #273043;
+          --ring: rgba(56,189,248,.40);
+          --input-placeholder: #8a95a6;
+        }
+        .gg-muted { color: var(--muted); }
+        .gg-input,
+        select.gg-input,
+        textarea.gg-input {
+          background: var(--elev);
+          color: var(--text, #e6e9ef);
+          border: 1px solid var(--border);
+        }
+        .gg-input::placeholder,
+        textarea.gg-input::placeholder { color: var(--input-placeholder); opacity: 1; }
+        .gg-input:focus-visible,
+        select.gg-input:focus-visible,
+        textarea.gg-input:focus-visible {
+          border-color: var(--ring);
+          box-shadow: 0 0 0 3px var(--ring);
+        }
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes slideIn { 0% { transform: translateX(28px); opacity: .0; } 60% { transform: translateX(-3px); opacity: 1; } 100% { transform: translateX(0); } }
         .animate-fadeIn { animation: fadeIn .18s ease-out both; }
