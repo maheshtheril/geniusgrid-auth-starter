@@ -43,17 +43,12 @@ import leadsImportsRoutes from "./store/leads.imports.routes.js";
 import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 import tenantMenusRoutes from "./routes/tenantMenus.routes.js";
 import customFields from "./routes/customFields.js";
-import adminOrgRoutes from "./routes/admin.org.routes.js";
+
+/* 🔧 Dev diagnostics (header‑gated) */
 import devDiag from "./routes/dev.diag.js";
-const DIAG_KEY = process.env.DIAG_KEY || "dev-diag";
 
-app.use("/api/dev", (req, res, next) => {
-  if (req.get("x-diag-key") === DIAG_KEY) return next();
-  return res.status(401).json({ message: "Unauthorized" });
-});
-app.use("/api/dev", devDiag);
-
-const app = express();
+/* ---------- App init ---------- */
+const app = express(); // <-- define app BEFORE any app.use
 const PgStore = pgSimple(session);
 const isProd = process.env.NODE_ENV === "production";
 
@@ -170,6 +165,14 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use("/api/", apiLimiter);
+
+/* ---------- DEV DIAG (public but header‑gated, BEFORE protected) ---------- */
+const DIAG_KEY = process.env.DIAG_KEY || "dev-diag";
+app.use("/api/dev", (req, res, next) => {
+  if (req.get("x-diag-key") === DIAG_KEY) return next();
+  return res.status(401).json({ message: "Unauthorized" });
+});
+app.use("/api/dev", devDiag); // GET /api/dev/diag
 
 /* ---------- PUBLIC routes (no auth) ---------- */
 app.use("/api/ui", uiRoutes);
