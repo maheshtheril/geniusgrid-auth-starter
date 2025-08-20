@@ -1,12 +1,4 @@
-// src/components/leads/AddLeadDrawer.jsx — world-class UI (full, fixed)
-// - Phone input is max width; country dropdown is compact.
-// - Sections: "General" and "Advance"; no "Add custom field" button.
-// - Custom fields loaded from /api/custom-fields?record_type=lead
-// - SUBMISSION SHAPE (matches backend):
-//     mobile: "+<code> <local>"  (e.g., "+91 9876543210")
-//     custom_fields[<code>]: <value>
-//     cf_files[<code>]: <File>
-
+// src/components/leads/AddLeadDrawer.jsx
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CheckCircle2, Phone, Mail, CalendarDays, User2, Flag, Info, X } from "lucide-react";
@@ -16,10 +8,8 @@ import { http } from "@/lib/http";
 import "flag-icons/css/flag-icons.min.css";
 
 /* ------------------------------ helpers ------------------------------ */
-
 const flagFromIso2 = (iso2 = "") =>
   iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
-
 function normalizeToArray(maybe) {
   if (Array.isArray(maybe)) return maybe;
   if (Array.isArray(maybe?.data)) return maybe.data;
@@ -28,13 +18,6 @@ function normalizeToArray(maybe) {
   if (maybe && typeof maybe === "object" && "items" in maybe && Array.isArray(maybe.items)) return maybe.items;
   return [];
 }
-
-function cap(s) {
-  return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
-}
-
-/* -------------------------- Base lead form shape -------------------------- */
-
 const INIT = {
   name: "",
   mobile_country: "IN",
@@ -48,9 +31,9 @@ const INIT = {
   status: "new",
   source: "",
 };
+function cap(s) { return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1); }
 
 /* --------------------------------- UI atoms -------------------------------- */
-
 function Section({ title, subtitle, children, right }) {
   return (
     <section className="gg-panel rounded-2xl p-4 md:p-5 space-y-4">
@@ -65,7 +48,6 @@ function Section({ title, subtitle, children, right }) {
     </section>
   );
 }
-
 function Field({ label, required, htmlFor, children, hint, error }) {
   return (
     <div className="space-y-1.5">
@@ -80,47 +62,30 @@ function Field({ label, required, htmlFor, children, hint, error }) {
     </div>
   );
 }
-
 const Input = React.forwardRef(function Input(
-  { id, value, onChange, placeholder, type = "text", invalid, ...rest },
-  ref
+  { id, value, onChange, placeholder, type = "text", invalid, ...rest }, ref
 ) {
   return (
     <input
-      ref={ref}
-      id={id}
-      type={type}
+      ref={ref} id={id} type={type}
       className={`gg-input w-full h-10 md:h-11 ${invalid ? "ring-1 ring-rose-400/60" : ""}`}
-      value={value}
-      onChange={onChange}
-      placeholder={placeholder}
-      aria-invalid={!!invalid}
-      {...rest}
+      value={value} onChange={onChange} placeholder={placeholder} aria-invalid={!!invalid} {...rest}
     />
   );
 });
-
 const Select = React.forwardRef(function Select(
-  { id, value, onChange, children, invalid, ...rest },
-  ref
+  { id, value, onChange, children, invalid, ...rest }, ref
 ) {
   return (
     <select
-      ref={ref}
-      id={id}
+      ref={ref} id={id}
       className={`gg-input w-full h-10 md:h-11 ${invalid ? "ring-1 ring-rose-400/60" : ""}`}
-      value={value}
-      onChange={onChange}
-      aria-invalid={!!invalid}
-      {...rest}
-    >
-      {children}
-    </select>
+      value={value} onChange={onChange} aria-invalid={!!invalid} {...rest}
+    >{children}</select>
   );
 });
 
 /* ---------------------- CountrySelect (with SVG flags) --------------------- */
-
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -129,19 +94,13 @@ function CountrySelect({ options, value, onChange, disabled }) {
   const btnRef = useRef(null);
 
   const lower = (s) => String(s || "").toLowerCase();
-  const selected = useMemo(
-    () => options.find((o) => lower(o.cc) === lower(value)) || null,
-    [options, value]
-  );
-
+  const selected = useMemo(() => options.find((o) => lower(o.cc) === lower(value)) || null, [options, value]);
   const filtered = useMemo(() => {
     const q = lower(query).trim();
     if (!q) return options;
-    return options.filter(
-      (o) =>
-        lower(o.name).includes(q) ||
-        lower(o.cc).includes(q) ||
-        String(o.code).replace("+", "").includes(q.replace("+", ""))
+    return options.filter((o) =>
+      lower(o.name).includes(q) || lower(o.cc).includes(q) ||
+      String(o.code).replace("+", "").includes(q.replace("+", ""))
     );
   }, [options, query]);
 
@@ -154,14 +113,12 @@ function CountrySelect({ options, value, onChange, disabled }) {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, [open]);
-
   useEffect(() => { setHi(0); }, [query, open]);
 
   const choose = (cc) => { onChange?.(cc); setOpen(false); setQuery(""); btnRef.current?.focus(); };
-
   const onKeyDown = (e) => {
     if (!open) {
-      if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
+      if (["ArrowDown","Enter"," "].includes(e.key)) {
         e.preventDefault(); setOpen(true);
         setTimeout(() => boxRef.current?.querySelector("input[type='text']")?.focus(), 0);
       }
@@ -169,7 +126,6 @@ function CountrySelect({ options, value, onChange, disabled }) {
     }
     if (e.key === "Escape") { setOpen(false); btnRef.current?.focus(); }
   };
-
   const onListKey = (e) => {
     if (!open) return;
     if (e.key === "ArrowDown") { e.preventDefault(); setHi((h) => Math.min(h + 1, filtered.length - 1)); }
@@ -180,21 +136,14 @@ function CountrySelect({ options, value, onChange, disabled }) {
   return (
     <div className="relative" ref={boxRef} onKeyDown={onKeyDown}>
       <button
-        type="button"
-        ref={btnRef}
-        disabled={disabled}
+        type="button" ref={btnRef} disabled={disabled}
         className={`gg-input h-10 md:h-11 w-16 sm:w-20 flex items-center gap-2 justify-between shrink-0 ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
-        aria-haspopup="listbox"
-        aria-expanded={open}
+        aria-haspopup="listbox" aria-expanded={open}
         onClick={() => !disabled && setOpen((o) => !o)}
       >
         <span className="flex items-center gap-2 overflow-hidden">
-          {selected ? (
-            <>
-              <span className={`fi fi-${selected.cc.toLowerCase()}`} aria-hidden />
-              <span className="truncate text-sm font-medium">{selected.cc}</span>
-            </>
-          ) : (<span className="opacity-60">CC</span>)}
+          {selected ? (<><span className={`fi fi-${selected.cc.toLowerCase()}`} aria-hidden />
+            <span className="truncate text-sm font-medium">{selected.cc}</span></>) : (<span className="opacity-60">CC</span>)}
         </span>
         <span className="opacity-60">▾</span>
       </button>
@@ -203,18 +152,14 @@ function CountrySelect({ options, value, onChange, disabled }) {
         <div className="absolute z-[99999] mt-1 w-[22rem] max-w-[calc(100vw-2rem)] bg-[var(--surface)] border border-[color:var(--border)] rounded-2xl shadow-2xl p-2" role="dialog">
           <div className="flex items-center gap-2 mb-2 px-1">
             <Flag className="w-4 h-4 opacity-70" />
-            <input type="text" className="gg-input w-full h-10" placeholder="Search country or code" value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onListKey} />
+            <input type="text" className="gg-input w-full h-10" placeholder="Search country or code"
+              value={query} onChange={(e) => setQuery(e.target.value)} onKeyDown={onListKey} />
           </div>
           <ul role="listbox" className="max-h-64 overflow-auto" tabIndex={-1} onKeyDown={onListKey}>
             {filtered.map((o, idx) => (
-              <li
-                key={o.cc}
-                role="option"
-                aria-selected={o.cc === value}
+              <li key={o.cc} role="option" aria-selected={o.cc === value}
                 className={`flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer ${idx === hi ? "bg-[color:var(--hover)]" : ""}`}
-                onMouseEnter={() => setHi(idx)}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => choose(o.cc)}
+                onMouseEnter={() => setHi(idx)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(o.cc)}
               >
                 <span className={`fi fi-${o.cc.toLowerCase()}`} aria-hidden />
                 <span className="truncate">{o.name}</span>
@@ -231,11 +176,8 @@ function CountrySelect({ options, value, onChange, disabled }) {
 }
 
 /* ============================== AddLeadDrawer ============================== */
-
 export default function AddLeadDrawer({
-  onClose,
-  onSuccess,
-  prefill,
+  onClose, onSuccess, prefill,
   stages = ["new", "prospect", "proposal", "negotiation", "closed"],
   sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
   customFields = [], // compatibility
@@ -248,29 +190,25 @@ export default function AddLeadDrawer({
   const countriesLoading = _c?.loading ?? false;
   const countriesRaw = _c?.countries ?? _c ?? [];
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
-
   const countryOpts = useMemo(() => {
     if (!countries.length) return [];
-    return countries
-      .map((c) => {
-        const cc = String(c.iso2 || c.cc || c.code || "").toUpperCase();
-        const code = c.default_dial || c.dial || c.phone_code || "";
-        const name = c.name_en || c.name || c.translation || cc;
-        return { cc, code, name, emoji: c.emoji_flag || c.flag || flagFromIso2(cc) };
-      })
-      .filter((o) => o.cc && o.code);
+    return countries.map((c) => {
+      const cc = String(c.iso2 || c.cc || c.code || "").toUpperCase();
+      const code = c.default_dial || c.dial || c.phone_code || "";
+      const name = c.name_en || c.name || c.translation || cc;
+      return { cc, code, name, emoji: c.emoji_flag || c.flag || flagFromIso2(cc) };
+    }).filter((o) => o.cc && o.code);
   }, [countries]);
 
   /* ------------------------------ state ------------------------------ */
-
   const [form, setForm] = useState(INIT);
   const [custom, setCustom] = useState({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [serverErrors, setServerErrors] = useState(null); // { field: message } or array
   const [dupMobile, setDupMobile] = useState(null);
   const [conflict, setConflict] = useState(null);
   const [cfList, setCfList] = useState([]);
-
   const firstInputRef = useRef(null);
   const submittingRef = useRef(false);
 
@@ -279,7 +217,7 @@ export default function AddLeadDrawer({
     [countryOpts]
   );
 
-  // load + reset
+  // load CFs + reset
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
@@ -340,16 +278,14 @@ export default function AddLeadDrawer({
   }, [onClose]);
 
   /* ------------------------------ helpers ------------------------------ */
-
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target?.value ?? e }));
   const updateFileCF = (key) => (e) => setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
-
   const onCountryPicked = (cc) => {
     const CC = String(cc || "").toUpperCase();
     setForm((f) => ({ ...f, mobile_country: CC, mobile_code: codeByCc[CC] || "" }));
   };
 
-  // duplicate mobile check (expect space between code and local)
+  // dup mobile — backend expects a space between dial code & local number
   useEffect(() => {
     let alive = true;
     if (!String(form.mobile || "").trim()) {
@@ -362,7 +298,7 @@ export default function AddLeadDrawer({
       try {
         const code = String(form.mobile_code || "").replace(/\s+/g, "");
         const local = String(form.mobile || "").replace(/\D+/g, "");
-        const mobile = `${code} ${local}`; // <— IMPORTANT: space
+        const mobile = `${code} ${local}`;
         const res = await api.checkMobile({ mobile });
         if (!alive) return;
         const exists = !!res?.exists;
@@ -389,121 +325,165 @@ export default function AddLeadDrawer({
   const problems = useMemo(() => {
     const p = {};
     const need = (k, msg) => { if (!String(form[k] ?? "").trim()) p[k] = msg; };
-
     need("name", "Lead name is required");
     need("mobile", "Mobile is required");
     need("follow_up_date", "Follow-up date is required");
     need("stage", "Lead stage is required");
     need("source", "Source is required");
-
     if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) p.email = "Invalid email";
     if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile)) p.mobile = "Invalid phone number";
     if (dupMobile) p.mobile = "Duplicate number — will be sent for approval";
-
     for (const cf of cfList) {
       if (!cf.required) continue;
       const v = custom?.[cf.key];
-      if (cf.type === "checkbox") {
-        if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`;
-      } else if (cf.type === "file") {
-        if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`;
-      } else if (v === undefined || v === null || v === "") {
-        p[`cf:${cf.key}`] = `${cf.label} is required`;
-      }
+      if (cf.type === "checkbox") { if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`; }
+      else if (cf.type === "file") { if (!v) p[`cf:${cf.key}`] = `${cf.label} is required`; }
+      else if (v === undefined || v === null || v === "") { p[`cf:${cf.key}`] = `${cf.label} is required`; }
     }
     return p;
   }, [form, custom, cfList, dupMobile]);
-
   const isValid = Object.keys(problems).length === 0;
 
-  /* ------------------------- payload / submission ------------------------- */
+  /* ------------------------- payload builders ------------------------- */
+  const tidy = (obj) => {
+    const out = {};
+    Object.entries(obj || {}).forEach(([k, v]) => {
+      if (v === undefined) return;
+      out[k] = v;
+    });
+    return out;
+  };
 
-  function fdAppend(fd, key, value) {
-    if (value === undefined || value === null) return;
-    if (value instanceof Blob || value instanceof File) { fd.append(key, value); return; }
-    if (typeof value === "object") { fd.append(key, JSON.stringify(value)); return; }
-    fd.append(key, String(value));
-  }
-
-  function buildFormData(extra = {}) {
-    const fd = new FormData();
-
-    // normalize phone/date/revenue
+  // JSON variant — uses your custom_field_values table shape
+  function buildJsonBody(extra = {}) {
     const code = String(form.mobile_code || "").replace(/\s+/g, "");
     const local = String(form.mobile || "").replace(/\D+/g, "");
-    const mobile = `${code} ${local}`; // <— keep the space
-    const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined;
-    const revenue =
-      form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
-        ? +form.expected_revenue
-        : undefined;
-
-    const base = {
+    const body = tidy({
       name: String(form.name || "").trim(),
-      mobile,
+      mobile: `${code} ${local}`, // keep the space
       email: form.email?.trim() || undefined,
-      expected_revenue: revenue,
-      follow_up_date: follow,
+      expected_revenue:
+        form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
+          ? +form.expected_revenue
+          : undefined,
+      follow_up_date: form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined,
       profession: form.profession || undefined,
       stage: form.stage,
       status: form.status || "new",
       source: form.source,
       ...extra,
-    };
-    Object.entries(base).forEach(([k, v]) => fdAppend(fd, k, v));
+    });
 
-    // custom fields (codes) and files
+    const custom_field_values = [];
+    for (const cf of cfList) {
+      const v = custom[cf.key];
+      if (v === undefined || v === null || v === "") continue;
+      if (cf.type === "file") continue; // handled in multipart
+      const row = { field_id: cf.id, record_type: "lead" };
+      if (cf.type === "number") {
+        const n = Number(v);
+        if (!Number.isNaN(n)) row.value_number = n;
+        else row.value_text = String(v);
+      } else if (cf.type === "date") {
+        row.value_date = String(v).slice(0, 10);
+      } else if (cf.type === "checkbox") {
+        row.value_json = !!v;
+      } else if (Array.isArray(v)) {
+        row.value_json = v;
+      } else {
+        row.value_text = String(v);
+      }
+      custom_field_values.push(row);
+    }
+    if (custom_field_values.length) body.custom_field_values = custom_field_values;
+    return body;
+  }
+
+  // Multipart variant — custom_fields[code] & cf_files[code]
+  function buildFormData(extra = {}) {
+    const fd = new FormData();
+    const code = String(form.mobile_code || "").replace(/\s+/g, "");
+    const local = String(form.mobile || "").replace(/\D+/g, "");
+    const base = tidy({
+      name: String(form.name || "").trim(),
+      mobile: `${code} ${local}`,
+      email: form.email?.trim() || undefined,
+      expected_revenue:
+        form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
+          ? +form.expected_revenue
+          : undefined,
+      follow_up_date: form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined,
+      profession: form.profession || undefined,
+      stage: form.stage,
+      status: form.status || "new",
+      source: form.source,
+      ...extra,
+    });
+    Object.entries(base).forEach(([k, v]) => v !== undefined && fd.append(k, v));
+
     for (const cf of cfList) {
       const key = cf.key;
       const v = custom[key];
       if (v === undefined || v === null || v === "") continue;
-
       if (cf.type === "file") {
-        if (v instanceof File) fdAppend(fd, `cf_files[${key}]`, v);
-      } else {
-        // booleans as "true"/"false", arrays as JSON
-        if (typeof v === "boolean") fdAppend(fd, `custom_fields[${key}]`, v ? "true" : "false");
-        else if (Array.isArray(v)) fdAppend(fd, `custom_fields[${key}]`, v);
-        else fdAppend(fd, `custom_fields[${key}]`, v);
+        if (v instanceof File) fd.append(`cf_files[${key}]`, v);
+        continue;
       }
+      if (typeof v === "boolean") fd.append(`custom_fields[${key}]`, v ? "true" : "false");
+      else if (Array.isArray(v)) fd.append(`custom_fields[${key}]`, JSON.stringify(v));
+      else fd.append(`custom_fields[${key}]`, v);
     }
-
-    // Expose for quick debugging in DevTools
-    try { window.__LEAD_DEBUG__ = { base, custom, cfListPreview: cfList.map(f => f.key) }; } catch {}
-
     return fd;
   }
 
+  async function postJSON(body, config) {
+    if (api?.createLead) {
+      try { return await api.createLead(body, { ...(config || {}), headers: { "Content-Type": "application/json" } }); }
+      catch (e) { throw e; }
+    }
+    return http.post("leads", body, { ...(config || {}), headers: { "Content-Type": "application/json" } });
+  }
   async function postFormData(fd, config) {
     if (api?.createLeadMultipart) {
       try { return await api.createLeadMultipart(fd, config); } catch { /* fallthrough */ }
       return await api.createLeadMultipart(fd);
     }
-    return await http.post("leads", fd, config);
+    return http.post("leads", fd, config);
   }
 
   async function createAnyway() {
-    setError("");
-    setSaving(true);
+    setError(""); setServerErrors(null); setSaving(true);
     try {
-      const fd = buildFormData({ allow_duplicate: true, force: true });
-      const created = await postFormData(fd, { params: { allow_duplicate: 1, force: 1 } });
-
+      // prefer multipart if any files are present
+      const hasFile = cfList.some((cf) => cf.type === "file" && custom[cf.key] instanceof File);
+      let created;
+      if (hasFile) {
+        const fd = buildFormData({ allow_duplicate: true, force: true });
+        created = await postFormData(fd, { params: { allow_duplicate: 1, force: 1 } });
+      } else {
+        // try JSON first, fallback to multipart if 400
+        try {
+          const body = buildJsonBody({ allow_duplicate: true, force: true });
+          created = await postJSON(body, { params: { allow_duplicate: 1, force: 1 } });
+        } catch (e) {
+          if (e?.response?.status === 400) {
+            const fd = buildFormData({ allow_duplicate: true, force: true });
+            created = await postFormData(fd, { params: { allow_duplicate: 1, force: 1 } });
+          } else {
+            throw e;
+          }
+        }
+      }
       const btn = document.getElementById("addlead-save");
-      if (btn) {
-        btn.classList.add("success-pulse");
-        setTimeout(() => onSuccess?.(created), 220);
-      } else onSuccess?.(created);
+      if (btn) { btn.classList.add("success-pulse"); setTimeout(() => onSuccess?.(created), 220); }
+      else onSuccess?.(created);
     } catch (err) {
       console.error("POST /leads (force) failed:", err?.response || err);
       const data = err?.response?.data;
       const status = err?.response?.status;
-      const msg =
-        (typeof data === "string" && data) ||
-        data?.message ||
-        data?.error ||
-        `Server error${status ? ` (${status})` : ""} while creating lead.`;
+      const msg = (typeof data === "string" && data) || data?.message || data?.error || `Server error${status ? ` (${status})` : ""}.`;
       setError(msg);
+      setServerErrors(data?.errors || null);
     } finally {
       setSaving(false);
     }
@@ -512,25 +492,34 @@ export default function AddLeadDrawer({
   const submit = async (e) => {
     e?.preventDefault?.();
     if (submittingRef.current) return;
-    setError("");
-    setConflict(null);
+    setError(""); setServerErrors(null); setConflict(null);
+    if (!isValid) { setError("Please fix the highlighted fields"); return; }
 
-    if (!isValid) {
-      setError("Please fix the highlighted fields");
-      return;
-    }
-
-    setSaving(true);
-    submittingRef.current = true;
+    setSaving(true); submittingRef.current = true;
     try {
-      const fd = buildFormData();
-      const created = await postFormData(fd);
+      const hasFile = cfList.some((cf) => cf.type === "file" && custom[cf.key] instanceof File);
+      let created;
+      if (hasFile) {
+        const fd = buildFormData();
+        created = await postFormData(fd);
+      } else {
+        try {
+          const body = buildJsonBody();
+          created = await postJSON(body);
+        } catch (e) {
+          if (e?.response?.status === 400) {
+            // fallback to multipart with custom_fields[code]
+            const fd = buildFormData();
+            created = await postFormData(fd);
+          } else {
+            throw e;
+          }
+        }
+      }
 
       const btn = document.getElementById("addlead-save");
-      if (btn) {
-        btn.classList.add("success-pulse");
-        setTimeout(() => onSuccess?.(created), 220);
-      } else onSuccess?.(created);
+      if (btn) { btn.classList.add("success-pulse"); setTimeout(() => onSuccess?.(created), 220); }
+      else onSuccess?.(created);
     } catch (err) {
       console.error("POST /leads failed:", err?.response || err);
       const status = err?.response?.status;
@@ -553,6 +542,7 @@ export default function AddLeadDrawer({
         setError("");
       } else {
         setError(msg);
+        setServerErrors(data?.errors || null);
       }
     } finally {
       setSaving(false);
@@ -561,7 +551,6 @@ export default function AddLeadDrawer({
   };
 
   /* --------------------------- render CF controls -------------------------- */
-
   const renderCF = (cf) => {
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
@@ -601,9 +590,7 @@ export default function AddLeadDrawer({
         return (
           <label key={cf.id || key} className="flex items-center gap-2">
             <input type="checkbox" checked={!!val} onChange={(e) => set(e.target.checked)} />
-            <span className="text-sm">
-              {cf.label} {reqMark}
-            </span>
+            <span className="text-sm">{cf.label} {reqMark}</span>
           </label>
         );
       case "file":
@@ -614,15 +601,12 @@ export default function AddLeadDrawer({
   };
 
   /* -------------------------------- render -------------------------------- */
-
   const el = (
     <div className="fixed inset-0 z-[9999]">
       <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] animate-fadeIn" onClick={onClose} aria-hidden />
       <aside
         className="absolute right-0 top-0 h-full w-full sm:w-[780px] bg-[var(--surface)] border-l border-[color:var(--border)] shadow-2xl animate-slideIn will-change-transform flex flex-col"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Add Lead"
+        role="dialog" aria-modal="true" aria-label="Add Lead"
       >
         <div className="px-4 md:px-5 py-3 border-b border-[color:var(--border)] flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -639,38 +623,36 @@ export default function AddLeadDrawer({
           </button>
         </div>
 
-        {/* Form has an id so footer submit works even outside the form container */}
         <form id="addlead-form" onSubmit={submit} className="flex-1 overflow-auto">
           <div className="p-4 md:p-5 pt-6 space-y-5">
             <Section title="General" subtitle="Core information to create the lead.">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Lead Name" required htmlFor="lead-name" error={problems.name}>
                   <div className="relative">
-                    <Input
-                      ref={firstInputRef}
-                      id="lead-name"
-                      value={form.name}
-                      onChange={update("name")}
-                      placeholder="e.g., Priya Sharma"
-                      invalid={!!problems.name}
-                    />
+                    <Input ref={firstInputRef} id="lead-name" value={form.name} onChange={update("name")}
+                      placeholder="e.g., Priya Sharma" invalid={!!problems.name} />
                     <User2 className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
                   </div>
                 </Field>
-
                 <Field label="Email" htmlFor="lead-email" error={problems.email}>
                   <div className="relative">
-                    <Input id="lead-email" value={form.email} onChange={update("email")} placeholder="you@company.com" invalid={!!problems.email} />
+                    <Input id="lead-email" value={form.email} onChange={update("email")}
+                      placeholder="you@company.com" invalid={!!problems.email} />
                     <Mail className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
                   </div>
                 </Field>
-
-                <Field label="Mobile" required htmlFor="lead-mobile" hint={dupMobile === true ? undefined : "Duplicate numbers are checked automatically."} error={problems.mobile}>
+                <Field label="Mobile" required htmlFor="lead-mobile"
+                  hint={dupMobile === true ? undefined : "Duplicate numbers are checked automatically."}
+                  error={problems.mobile}
+                >
                   <div className="flex gap-1.5 items-stretch">
-                    <CountrySelect options={countryOpts} value={form.mobile_country} onChange={onCountryPicked} disabled={countriesLoading || !countryOpts.length} />
-                    <input readOnly className="gg-input h-10 md:h-11 w-12 sm:w-14 text-center shrink-0" value={form.mobile_code} aria-label="Dial code" />
+                    <CountrySelect options={countryOpts} value={form.mobile_country} onChange={onCountryPicked}
+                      disabled={countriesLoading || !countryOpts.length} />
+                    <input readOnly className="gg-input h-10 md:h-11 w-12 sm:w-14 text-center shrink-0"
+                      value={form.mobile_code} aria-label="Dial code" />
                     <div className="relative flex-1 min-w-0">
-                      <Input id="lead-mobile" value={form.mobile} onChange={update("mobile")} placeholder="Enter mobile number" invalid={!!problems.mobile} />
+                      <Input id="lead-mobile" value={form.mobile} onChange={update("mobile")}
+                        placeholder="Enter mobile number" invalid={!!problems.mobile} />
                       <Phone className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
                     </div>
                   </div>
@@ -680,55 +662,37 @@ export default function AddLeadDrawer({
                     </div>
                   )}
                 </Field>
-
                 <Field label="Expected Revenue" htmlFor="lead-revenue">
-                  <Input id="lead-revenue" type="number" inputMode="decimal" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="e.g., 50000" />
+                  <Input id="lead-revenue" type="number" inputMode="decimal" value={form.expected_revenue}
+                    onChange={update("expected_revenue")} placeholder="e.g., 50000" />
                 </Field>
-
                 <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
                   <div className="relative">
-                    <Input
-                      id="lead-follow"
-                      type="date"
-                      value={form.follow_up_date}
-                      onChange={update("follow_up_date")}
-                      invalid={!!problems.follow_up_date}
-                      inputMode="numeric"
-                      pattern="\d{4}-\d{2}-\d{2}"
-                      autoComplete="off"
-                      placeholder="YYYY-MM-DD"
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md"
+                    <Input id="lead-follow" type="date" value={form.follow_up_date} onChange={update("follow_up_date")}
+                      invalid={!!problems.follow_up_date} inputMode="numeric" pattern="\d{4}-\d{2}-\d{2}"
+                      autoComplete="off" placeholder="YYYY-MM-DD" />
+                    <button type="button" className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md"
                       aria-label="Open date picker"
                       onClick={() => document.getElementById("lead-follow")?.showPicker?.()}
-                      tabIndex={-1}
-                      style={{ background: "transparent" }}
+                      tabIndex={-1} style={{ background: "transparent" }}
                     >
                       <CalendarDays className="w-4 h-4 opacity-70" />
                     </button>
                   </div>
                 </Field>
-
                 <Field label="Profession" htmlFor="lead-profession">
-                  <Input id="lead-profession" value={form.profession} onChange={update("profession")} placeholder="e.g., Architect" />
+                  <Input id="lead-profession" value={form.profession} onChange={update("profession")}
+                    placeholder="e.g., Architect" />
                 </Field>
-
                 <Field label="Lead Stage" required htmlFor="lead-stage" error={problems.stage}>
                   <Select id="lead-stage" value={form.stage} onChange={update("stage")} invalid={!!problems.stage}>
-                    {stages.map((s) => (
-                      <option key={s} value={s}>{cap(s)}</option>
-                    ))}
+                    {stages.map((s) => (<option key={s} value={s}>{cap(s)}</option>))}
                   </Select>
                 </Field>
-
                 <Field label="Source" required htmlFor="lead-source" error={problems.source}>
                   <Select id="lead-source" value={form.source} onChange={update("source")} invalid={!!problems.source}>
                     <option value="">Select a Source</option>
-                    {sources.map((s) => (
-                      <option key={s} value={s}>{s}</option>
-                    ))}
+                    {sources.map((s) => (<option key={s} value={s}>{s}</option>))}
                   </Select>
                 </Field>
               </div>
@@ -742,16 +706,13 @@ export default function AddLeadDrawer({
               )}
             </Section>
 
-            {/* Conflict card */}
             {conflict && (
               <div className="rounded-xl border border-amber-400/40 bg-amber-500/10 text-amber-200 px-3 py-2 space-y-2">
                 <div className="font-medium">Possible duplicate</div>
                 <div className="text-sm">{conflict.message}</div>
                 <div className="flex items-center gap-2">
                   {conflict.existing_id && (
-                    <a href={`/crm/leads/${conflict.existing_id}`} className="gg-btn gg-btn-ghost gg-btn-sm">
-                      View existing
-                    </a>
+                    <a href={`/crm/leads/${conflict.existing_id}`} className="gg-btn gg-btn-ghost gg-btn-sm">View existing</a>
                   )}
                   <button type="button" className="gg-btn gg-btn-primary gg-btn-sm" onClick={createAnyway}>
                     Create anyway (request approval)
@@ -760,7 +721,16 @@ export default function AddLeadDrawer({
               </div>
             )}
 
-            {/* Hidden submit so Enter works anywhere */}
+            {/* Server-side validation errors */}
+            {serverErrors && (
+              <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2 space-y-1">
+                {Array.isArray(serverErrors)
+                  ? serverErrors.map((m, i) => <div key={i}>• {String(m)}</div>)
+                  : Object.entries(serverErrors).map(([k, v]) => <div key={k}><b>{k}:</b> {String(v)}</div>)}
+              </div>
+            )}
+
+            {/* Hidden submit to allow Enter anywhere */}
             <button type="submit" className="hidden" />
 
             {error && (
@@ -779,12 +749,8 @@ export default function AddLeadDrawer({
           <div className="flex items-center gap-2">
             <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
             <button
-              id="addlead-save"
-              className="gg-btn gg-btn-primary"
-              type="submit"
-              form="addlead-form"
-              disabled={saving || !isValid}
-              aria-disabled={saving || !isValid}
+              id="addlead-save" className="gg-btn gg-btn-primary" type="submit" form="addlead-form"
+              disabled={saving || !isValid} aria-disabled={saving || !isValid}
             >
               {saving ? "Saving…" : "Save Lead"}
             </button>
@@ -802,20 +768,12 @@ export default function AddLeadDrawer({
           --input-placeholder: #8a95a6;
         }
         .gg-muted { color: var(--muted); }
-        .gg-input,
-        select.gg-input,
-        textarea.gg-input {
-          background: var(--elev);
-          color: var(--text, #e6e9ef);
-          border: 1px solid var(--border);
+        .gg-input, select.gg-input, textarea.gg-input {
+          background: var(--elev); color: var(--text, #e6e9ef); border: 1px solid var(--border);
         }
-        .gg-input::placeholder,
-        textarea.gg-input::placeholder { color: var(--input-placeholder); opacity: 1; }
-        .gg-input:focus-visible,
-        select.gg-input:focus-visible,
-        textarea.gg-input:focus-visible {
-          border-color: var(--ring);
-          box-shadow: 0 0 0 3px var(--ring);
+        .gg-input::placeholder, textarea.gg-input::placeholder { color: var(--input-placeholder); opacity: 1; }
+        .gg-input:focus-visible, select.gg-input:focus-visible, textarea.gg-input:focus-visible {
+          border-color: var(--ring); box-shadow: 0 0 0 3px var(--ring);
         }
         @keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
         @keyframes slideIn { 0% { transform: translateX(28px); opacity: .0; } 60% { transform: translateX(-3px); opacity: 1; } 100% { transform: translateX(0); } }
