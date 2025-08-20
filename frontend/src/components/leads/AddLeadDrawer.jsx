@@ -234,7 +234,6 @@ export default function AddLeadDrawer({
   const _c = useCountriesApi("en");
   const countriesLoading = _c?.loading ?? false;
   const countriesRaw = _c?.countries ?? _c ?? [];
-  thead
   const countries = useMemo(() => normalizeToArray(countriesRaw), [countriesRaw]);
 
   const countryOpts = useMemo(() => {
