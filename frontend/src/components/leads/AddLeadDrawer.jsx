@@ -657,12 +657,37 @@ export default function AddLeadDrawer({
                   <Input id="lead-revenue" type="number" inputMode="decimal" value={form.expected_revenue} onChange={update("expected_revenue")} placeholder="e.g., 50000" />
                 </Field>
 
-                <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
-                  <div className="relative">
-                    <Input id="lead-follow" type="date" value={form.follow_up_date} onChange={update("follow_up_date")} invalid={!!problems.follow_up_date} />
-                    <CalendarDays className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60" />
-                  </div>
-                </Field>
+               <Field label="Follow Up Date" required htmlFor="lead-follow" error={problems.follow_up_date}>
+  <div className="relative">
+    <Input
+      id="lead-follow"
+      type="date"
+      value={form.follow_up_date}
+      onChange={update("follow_up_date")}
+      invalid={!!problems.follow_up_date}
+      inputMode="numeric"
+      pattern="\d{4}-\d{2}-\d{2}"
+      autoComplete="off"
+      placeholder="YYYY-MM-DD"
+    />
+
+    {/* Option A: icon doesn’t capture clicks */}
+    {/* <CalendarDays className="w-4 h-4 absolute right-3 top-1/2 -translate-y-1/2 opacity-60 pointer-events-none" /> */}
+
+    {/* Option B: icon actively opens the native picker (Chrome/Edge support showPicker) */}
+    <button
+      type="button"
+      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-md"
+      aria-label="Open date picker"
+      onClick={() => document.getElementById("lead-follow")?.showPicker?.()}
+      tabIndex={-1}
+      style={{ background: "transparent" }}
+    >
+      <CalendarDays className="w-4 h-4 opacity-70" />
+    </button>
+  </div>
+</Field>
+
 
                 <Field label="Profession" htmlFor="lead-profession">
                   <Input id="lead-profession" value={form.profession} onChange={update("profession")} placeholder="e.g., Architect" />
