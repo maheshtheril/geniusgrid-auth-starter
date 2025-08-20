@@ -3,7 +3,20 @@ import axios from "axios";
 
 /** Normalize baseURL so it ends with /api exactly once */
 function normalizeBaseURL(raw) {
-  let s = (raw || "https://geniusgrid-auth-starter.onrender.com").trim();
+  let s = (raw ?? "").trim();
+
+  if (!s) {
+    const msg = "VITE_API_URL is required (set it to https://<backend>.onrender.com/api)";
+    if (import.meta.env.PROD) {
+      // In production we must not fall back to anything
+      throw new Error(msg);
+    } else {
+      // Dev-only convenience (e.g., if you proxy /api in vite.config)
+      console.warn(msg + " — falling back to '/api' for development.");
+      return "/api";
+    }
+  }
+
   if (s.endsWith("/")) s = s.slice(0, -1);
   if (!/\/api$/i.test(s)) s = s + "/api";
   return s;
@@ -21,24 +34,21 @@ const api = axios.create({
 api.defaults.headers.common["X-Requested-With"] = "XMLHttpRequest";
 api.defaults.headers.common["Accept"] = "application/json";
 
-// Dev hint (shows once)
 if (import.meta?.env?.DEV) {
   // eslint-disable-next-line no-console
   console.info("[HTTP] baseURL =", baseURL);
 }
 
-// Export both styles
 export default api;
 export { api };
 
-// Convenience helpers (no auto-dedupe by default to avoid CanceledError noise)
+// Convenience helpers
 const get   = (url, config = {})       => api.get(url, config);
 const post  = (url, data, config = {}) => api.post(url, data, config);
 const patch = (url, data, config = {}) => api.patch(url, data, config);
 const del   = (url, config = {})       => api.delete(url, config);
 export { get, post, patch, del };
 
-// Handy predicates for callers
 export const isCanceled = (e) => axios.isCancel?.(e) || e?.code === "ERR_CANCELED";
 
 // ---------- request throttle + optional dedupe ----------
@@ -106,7 +116,6 @@ api.interceptors.response.use(
     const key = cfg?.__inflightKey;
     if (key) inflight.delete(key);
 
-    // Swallow quick duplicates cleanly at callsites (we still reject, but mark it)
     if (isCanceled(error)) {
       error.__canceled = true;
       return Promise.reject(error);
@@ -117,7 +126,6 @@ api.interceptors.response.use(
       cfg.__retryCount = (cfg.__retryCount || 0) + 1;
       if (cfg.__retryCount <= 2) {
         const ra = parseRetryAfter(error.response.headers?.["retry-after"]);
-        // backoff with small jitter
         const fallback = Math.min(1500 * cfg.__retryCount, 3000) + Math.floor(Math.random() * 300);
         await new Promise((r) => setTimeout(r, ra ?? fallback));
         return api(cfg);
