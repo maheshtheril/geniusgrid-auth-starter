@@ -204,7 +204,7 @@ router.post("/password/change", requireAuth, changeLimiter, async (req, res) => 
  * POST /api/auth/login
  * Body: { tenantCode | tenant, email, password }
  */
-router.post("/api/auth/login", loginLimiter, async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email: rawEmail, password, tenantCode: rawTenantCode, tenant } = req.body || {};
   const email = (rawEmail || "").trim().toLowerCase();
   const tenantCode = ((rawTenantCode || tenant) || "").trim();
