@@ -1,7 +1,9 @@
-// src/components/leads/AddLeadDrawer.jsx — world-class UI (full, updated)
-// Phone input is max width; country dropdown is compact.
-// Clean sections. Title "Advance". No "Add custom field" button.
-// Custom fields are loaded from /api/custom-fields?record_type=lead.
+// src/components/leads/AddLeadDrawer.jsx
+// World-class UI drawer for creating a Lead with typed custom-field values.
+// - Phone input is max width; country dropdown is compact.
+// - Sections: "General" and "Advance" (no "Add custom field" button).
+// - Custom fields loaded from /api/custom-fields?record_type=lead
+// - Submits multipart/form-data with typed custom_field_values[*] entries.
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -10,6 +12,8 @@ import useLeadsApi from "@/hooks/useLeadsApi";
 import useCountriesApi from "@/hooks/useCountriesApi";
 import { http } from "@/lib/http";
 import "flag-icons/css/flag-icons.min.css";
+
+/* ------------------------------ helpers ------------------------------ */
 
 const flagFromIso2 = (iso2 = "") =>
   iso2.toUpperCase().replace(/./g, (c) => String.fromCodePoint(127397 + c.charCodeAt(0)));
@@ -23,7 +27,12 @@ function normalizeToArray(maybe) {
   return [];
 }
 
+function cap(s) {
+  return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
+}
+
 /* -------------------------- Base lead form shape -------------------------- */
+
 const INIT = {
   name: "",
   mobile_country: "IN",
@@ -39,6 +48,7 @@ const INIT = {
 };
 
 /* --------------------------------- UI atoms -------------------------------- */
+
 function Section({ title, subtitle, children, right }) {
   return (
     <section className="gg-panel rounded-2xl p-4 md:p-5 space-y-4">
@@ -59,7 +69,8 @@ function Field({ label, required, htmlFor, children, hint, error }) {
     <div className="space-y-1.5">
       {label && (
         <label htmlFor={htmlFor} className="flex items-center gap-1 text-xs md:text-sm gg-muted">
-          {label}{required && <span className="text-rose-400">*</span>}
+          {label}
+          {required && <span className="text-rose-400">*</span>}
         </label>
       )}
       {children}
@@ -108,6 +119,7 @@ const Select = React.forwardRef(function Select(
 });
 
 /* ---------------------- CountrySelect (with SVG flags) --------------------- */
+
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -170,7 +182,6 @@ function CountrySelect({ options, value, onChange, disabled }) {
         type="button"
         ref={btnRef}
         disabled={disabled}
-        /* reduced width to give phone input more room */
         className={`gg-input h-10 md:h-11 w-16 sm:w-20 flex items-center gap-2 justify-between shrink-0 ${disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer"}`}
         aria-haspopup="listbox"
         aria-expanded={open}
@@ -219,13 +230,14 @@ function CountrySelect({ options, value, onChange, disabled }) {
 }
 
 /* ============================== AddLeadDrawer ============================== */
+
 export default function AddLeadDrawer({
   onClose,
   onSuccess,
   prefill,
   stages = ["new", "prospect", "proposal", "negotiation", "closed"],
   sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
-  customFields = [],   // no longer used (kept for compatibility)
+  customFields = [], // compatibility only; not used
   variant = "full",
 }) {
   const api = useLeadsApi();
@@ -248,7 +260,8 @@ export default function AddLeadDrawer({
       .filter((o) => o.cc && o.code);
   }, [countries]);
 
-  // form state
+  /* ------------------------------ state ------------------------------ */
+
   const [form, setForm] = useState(INIT);
   const [custom, setCustom] = useState({});
   const [saving, setSaving] = useState(false);
@@ -256,10 +269,8 @@ export default function AddLeadDrawer({
   const [dupMobile, setDupMobile] = useState(null);
   const [conflict, setConflict] = useState(null); // {message, field, existing_id, existing_name}
 
-  // local custom fields (loaded from API)
   const [cfList, setCfList] = useState([]);
 
-  // refs
   const firstInputRef = useRef(null);
   const submittingRef = useRef(false);
 
@@ -268,12 +279,13 @@ export default function AddLeadDrawer({
     [countryOpts]
   );
 
-  // reset + load custom fields on mount
+  // load + reset
   useEffect(() => {
     setForm({ ...INIT, ...(prefill || {}) });
     setCustom({});
     (async () => {
       try {
+        // /api/custom-fields?record_type=lead (http base handles /api)
         const resp = await http.get("custom-fields", { params: { record_type: "lead" } });
         const items = normalizeToArray(resp?.data);
         const mapped = items
@@ -282,7 +294,7 @@ export default function AddLeadDrawer({
             id: f.id,
             key: f.code,
             label: f.label,
-            type: f.field_type,
+            type: (f.field_type || "text").toLowerCase(),
             required: !!f.is_required,
             options: Array.isArray(f.options_json)
               ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
@@ -301,7 +313,7 @@ export default function AddLeadDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // sync dial code when countries arrive
+  // sync dial code
   useEffect(() => {
     if (countriesLoading) return;
     const hasOpts = countryOpts.length > 0;
@@ -315,7 +327,7 @@ export default function AddLeadDrawer({
     });
   }, [countriesLoading, countryOpts, codeByCc]);
 
-  // lock body scroll, esc to close, focus first
+  // lock body scroll, esc, focus
   useEffect(() => {
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -329,17 +341,17 @@ export default function AddLeadDrawer({
     };
   }, [onClose]);
 
-  // helpers
+  /* ------------------------------ helpers ------------------------------ */
+
   const update = (k) => (e) => setForm((f) => ({ ...f, [k]: e?.target?.value ?? e }));
-  const updateFileCF = (key) => (e) =>
-    setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
+  const updateFileCF = (key) => (e) => setCustom((s) => ({ ...s, [key]: e.target.files?.[0] || null }));
 
   const onCountryPicked = (cc) => {
     const CC = String(cc || "").toUpperCase();
     setForm((f) => ({ ...f, mobile_country: CC, mobile_code: codeByCc[CC] || "" }));
   };
 
-  // duplicate mobile check (debounced) — send E.164 for better backend matching
+  // duplicate mobile check (E.164)
   useEffect(() => {
     let alive = true;
     if (!String(form.mobile || "").trim()) {
@@ -350,7 +362,7 @@ export default function AddLeadDrawer({
     const timer = setTimeout(async () => {
       if (!api?.checkMobile) return;
       try {
-        const code  = String(form.mobile_code || "").replace(/\s+/g, "");
+        const code = String(form.mobile_code || "").replace(/\s+/g, "");
         const local = String(form.mobile || "").replace(/\D+/g, "");
         const mobile = `${code}${local}`;
         const res = await api.checkMobile({ mobile });
@@ -376,11 +388,8 @@ export default function AddLeadDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.mobile, form.mobile_code, api]);
 
-  // group all CFs under advance
-  const { advanceCF } = useMemo(() => {
-    const a = [...cfList];
-    return { advanceCF: a };
-  }, [cfList]);
+  // only advance group is used
+  const { advanceCF } = useMemo(() => ({ advanceCF: [...cfList] }), [cfList]);
 
   // validation
   const problems = useMemo(() => {
@@ -395,10 +404,8 @@ export default function AddLeadDrawer({
     need("stage", "Lead stage is required");
     need("source", "Source is required");
 
-    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      p.email = "Invalid email";
-    if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile))
-      p.mobile = "Invalid phone number";
+    if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) p.email = "Invalid email";
+    if (form.mobile && !/^[0-9\-()+\s]{6,20}$/.test(form.mobile)) p.mobile = "Invalid phone number";
     if (dupMobile) p.mobile = "Duplicate number — will be sent for approval";
 
     for (const cf of cfList) {
@@ -417,42 +424,52 @@ export default function AddLeadDrawer({
 
   const isValid = Object.keys(problems).length === 0;
 
-  // helpers for FD
+  /* ------------------------- payload / submission ------------------------- */
+
+  // safe append to FormData
   function fdAppend(fd, key, value) {
     if (value === undefined || value === null) return;
-    if (value instanceof Blob || value instanceof File) {
-      fd.append(key, value);
-      return;
-    }
-    if (typeof value === "object") {
-      fd.append(key, JSON.stringify(value));
-    } else {
-      fd.append(key, String(value));
+    if (value instanceof Blob || value instanceof File) { fd.append(key, value); return; }
+    if (typeof value === "object") { fd.append(key, JSON.stringify(value)); return; }
+    fd.append(key, String(value));
+  }
+
+  // map CF to typed column
+  function cfToTypedPair(cf, raw) {
+    const t = String(cf.type || "").toLowerCase();
+    if (raw === undefined || raw === null || raw === "") return null;
+
+    switch (t) {
+      case "number": {
+        const n = Number(raw);
+        if (Number.isNaN(n)) return null;
+        return { key: "value_number", val: n };
+      }
+      case "date": {
+        const d = String(raw).slice(0, 10);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) return null;
+        return { key: "value_date", val: d };
+      }
+      case "checkbox":
+        return { key: "value_json", val: !!raw };
+      case "multiselect": {
+        const arr = Array.isArray(raw) ? raw : [raw].filter(Boolean);
+        return { key: "value_json", val: arr };
+      }
+      case "select":
+      case "textarea":
+      case "text":
+      default:
+        return { key: "value_text", val: String(raw) };
     }
   }
 
-  // payload builder — normalized for server compatibility
   function buildFormData(extra = {}) {
-    const custom_field_values = [];
-    const files = {};
+    const fd = new FormData();
 
-    for (const cf of cfList) {
-      const v = custom[cf.key];
-
-      if (cf.type === "file") {
-        if (v instanceof File) files[`cf_files[${cf.id}]`] = v; // key by field_id
-        continue;
-      }
-
-      const isEmpty = v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
-      if (!isEmpty || cf.required) {
-        custom_field_values.push({ field_id: cf.id, value: v });
-      }
-    }
-
-    // Normalize phone and date
-    const code   = String(form.mobile_code || "").replace(/\s+/g, "");
-    const local  = String(form.mobile || "").replace(/\D+/g, "");
+    // normalize phone/date/revenue
+    const code = String(form.mobile_code || "").replace(/\s+/g, "");
+    const local = String(form.mobile || "").replace(/\D+/g, "");
     const mobile = `${code}${local}`;
     const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : undefined;
     const revenue =
@@ -472,22 +489,34 @@ export default function AddLeadDrawer({
       source: form.source,
       ...extra,
     };
-
-    // Always use multipart/form-data for consistent server parsing
-    const fd = new FormData();
     Object.entries(base).forEach(([k, v]) => fdAppend(fd, k, v));
 
-    // 1) JSON string version
-    fdAppend(fd, "custom_field_values", custom_field_values);
+    // typed custom_field_values
+    let i = 0;
+    for (const cf of cfList) {
+      const raw = custom[cf.key];
 
-    // 2) Flattened bracket notation (best-effort for parsers that don’t read JSON field)
-    custom_field_values.forEach((row, i) => {
-      fdAppend(fd, `custom_field_values[${i}][field_id]`, row.field_id);
-      fdAppend(fd, `custom_field_values[${i}][value]`, row.value);
-    });
+      // File type
+      if (cf.type === "file") {
+        if (raw instanceof File) {
+          fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
+          fdAppend(fd, `custom_field_values[${i}][file]`, raw);
+          i++;
+        } else if (cf.required) {
+          // Send row with only field_id so backend can validate required
+          fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
+          i++;
+        }
+        continue;
+      }
 
-    // Files
-    Object.entries(files).forEach(([k, f]) => fdAppend(fd, k, f));
+      const typed = cfToTypedPair(cf, raw);
+      if (typed || cf.required) {
+        fdAppend(fd, `custom_field_values[${i}][field_id]`, cf.id);
+        if (typed) fdAppend(fd, `custom_field_values[${i}][${typed.key}]`, typed.val);
+        i++;
+      }
+    }
 
     return fd;
   }
@@ -501,6 +530,7 @@ export default function AddLeadDrawer({
       try {
         created = await api.createLeadMultipart(fd, { params: { allow_duplicate: 1, force: 1 } });
       } catch {
+        // fallback signature variants
         created = await api.createLeadMultipart(fd);
       }
       const btn = document.getElementById("addlead-save");
@@ -510,9 +540,14 @@ export default function AddLeadDrawer({
       } else onSuccess?.(created);
     } catch (err) {
       console.error(err);
+      const data = err?.response?.data;
       const status = err?.response?.status;
-      const msg = err?.response?.data?.message || "Duplicate is blocked by server policy.";
-      setError(status === 409 ? msg : (err?.response?.data?.message || "Failed to create lead. Please try again."));
+      const msg =
+        (typeof data === "string" && data) ||
+        data?.message ||
+        data?.error ||
+        `Server error${status ? ` (${status})` : ""} while creating lead.`;
+      setError(msg);
     } finally {
       setSaving(false);
     }
@@ -533,7 +568,15 @@ export default function AddLeadDrawer({
     submittingRef.current = true;
     try {
       const fd = buildFormData();
-      const created = await api.createLeadMultipart(fd);
+      let created;
+      if (api.createLeadMultipart) {
+        created = await api.createLeadMultipart(fd);
+      } else if (api.createLead) {
+        // try JSON fallback (backend must support reading bracket array)
+        created = await api.createLead(fd);
+      } else {
+        throw new Error("Leads API not available");
+      }
 
       const btn = document.getElementById("addlead-save");
       if (btn) {
@@ -544,7 +587,11 @@ export default function AddLeadDrawer({
       console.error(err);
       const status = err?.response?.status;
       const data = err?.response?.data || {};
-      const msg = data?.message || data?.error || "This lead conflicts with an existing record (likely same mobile/email).";
+      const msg =
+        (typeof data === "string" && data) ||
+        data?.message ||
+        data?.error ||
+        "This lead conflicts with an existing record (likely same mobile/email).";
       if (status === 409) {
         const field = (data?.field || "").toString().toLowerCase();
         if (field === "mobile" || /mobile|phone/i.test(msg)) setDupMobile(true);
@@ -555,10 +602,8 @@ export default function AddLeadDrawer({
           existing_name: data?.existing_name || data?.name || null,
         });
         setError("");
-      } else if (status === 400) {
-        setError(msg);
       } else {
-        setError(typeof data === "string" ? data : (data?.message || "Server error while creating lead."));
+        setError(msg);
       }
     } finally {
       setSaving(false);
@@ -566,7 +611,8 @@ export default function AddLeadDrawer({
     }
   };
 
-  // custom field renderer
+  /* --------------------------- render CF controls -------------------------- */
+
   const renderCF = (cf) => {
     const key = cf.key;
     const val = custom[key] ?? (cf.type === "checkbox" ? false : "");
@@ -582,64 +628,36 @@ export default function AddLeadDrawer({
           </label>
         )}
         {control}
-        {problems[`cf:${key}`] && (
-          <div className="text-rose-400 text-xs mt-0.5">
-            {problems[`cf:${key}`]}
-          </div>
-        )}
+        {problems[`cf:${key}`] && <div className="text-rose-400 text-xs mt-0.5">{problems[`cf:${key}`]}</div>}
       </div>
     );
 
     switch (cf.type) {
       case "textarea":
         return wrap(
-          <textarea
-            className={`${base} h-24`}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <textarea className={`${base} h-24`} value={val} onChange={(e) => set(e.target.value)} />
         );
       case "number":
         return wrap(
-          <input
-            type="number"
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <input type="number" className={base} value={val} onChange={(e) => set(e.target.value)} />
         );
       case "date":
         return wrap(
-          <input
-            type="date"
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <input type="date" className={base} value={val} onChange={(e) => set(e.target.value)} />
         );
       case "select":
         return wrap(
-          <select
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          >
+          <select className={base} value={val} onChange={(e) => set(e.target.value)}>
             <option value="">Select…</option>
             {(cf.options || []).map((opt) => (
-              <option key={String(opt)} value={opt}>
-                {opt}
-              </option>
+              <option key={String(opt)} value={opt}>{opt}</option>
             ))}
           </select>
         );
       case "checkbox":
         return (
           <label key={cf.id || key} className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={!!val}
-              onChange={(e) => set(e.target.checked)}
-            />
+            <input type="checkbox" checked={!!val} onChange={(e) => set(e.target.checked)} />
             <span className="text-sm">
               {cf.label} {reqMark}
             </span>
@@ -647,25 +665,17 @@ export default function AddLeadDrawer({
         );
       case "file":
         return wrap(
-          <input
-            type="file"
-            className={base}
-            accept={cf.accept || "*/*"}
-            onChange={updateFileCF(key)}
-          />
+          <input type="file" className={base} accept={cf.accept || "*/*"} onChange={updateFileCF(key)} />
         );
       default:
         return wrap(
-          <input
-            className={base}
-            value={val}
-            onChange={(e) => set(e.target.value)}
-          />
+          <input className={base} value={val} onChange={(e) => set(e.target.value)} />
         );
     }
   };
 
-  /* ============================== Layout ============================== */
+  /* -------------------------------- render -------------------------------- */
+
   const el = (
     <div className="fixed inset-0 z-[9999]">
       <div className="absolute inset-0 bg-black/45 backdrop-blur-[1px] animate-fadeIn" onClick={onClose} aria-hidden />
@@ -685,19 +695,12 @@ export default function AddLeadDrawer({
               <div className="gg-muted text-xs">Fill in the details below</div>
             </div>
           </div>
-          {/* Top-right Close button */}
-          <button
-            type="button"
-            className="gg-btn gg-btn-ghost"
-            onClick={onClose}
-            aria-label="Close"
-            title="Close"
-          >
+          <button type="button" className="gg-btn gg-btn-ghost" onClick={onClose} aria-label="Close" title="Close">
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* IMPORTANT: form has an id so footer submit works even outside the form container */}
+        {/* Form has an id so footer submit works even outside the form container */}
         <form id="addlead-form" onSubmit={submit} className="flex-1 overflow-auto">
           <div className="p-4 md:p-5 pt-6 space-y-5">
             <Section title="General" subtitle="Core information to create the lead.">
@@ -796,9 +799,7 @@ export default function AddLeadDrawer({
               {advanceCF.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{advanceCF.map(renderCF)}</div>
               ) : (
-                <div className="gg-card p-3 text-sm text-[color:var(--muted)]">
-                  No custom fields yet.
-                </div>
+                <div className="gg-card p-3 text-sm text-[color:var(--muted)]">No custom fields yet.</div>
               )}
             </Section>
 
@@ -809,25 +810,18 @@ export default function AddLeadDrawer({
                 <div className="text-sm">{conflict.message}</div>
                 <div className="flex items-center gap-2">
                   {conflict.existing_id && (
-                    <a
-                      href={`/crm/leads/${conflict.existing_id}`}
-                      className="gg-btn gg-btn-ghost gg-btn-sm"
-                    >
+                    <a href={`/crm/leads/${conflict.existing_id}`} className="gg-btn gg-btn-ghost gg-btn-sm">
                       View existing
                     </a>
                   )}
-                  <button
-                    type="button"
-                    className="gg-btn gg-btn-primary gg-btn-sm"
-                    onClick={createAnyway}
-                  >
+                  <button type="button" className="gg-btn gg-btn-primary gg-btn-sm" onClick={createAnyway}>
                     Create anyway (request approval)
                   </button>
                 </div>
               </div>
             )}
 
-            {/* Hidden submit to ensure Enter works anywhere in the form */}
+            {/* Hidden submit so Enter works anywhere */}
             <button type="submit" className="hidden" />
 
             {error && (
@@ -841,7 +835,9 @@ export default function AddLeadDrawer({
         <div className="px-4 md:px-5 py-3 border-t border-[color:var(--border)] flex items-center justify-between gap-3 sticky bottom-0 bg-[var(--surface)]">
           <div className="flex items-center gap-2 text-xs md:text-sm gg-muted">
             <CheckCircle2 className="w-4 h-4" />
-            <span>Required fields marked with <span className="text-rose-400">*</span></span>
+            <span>
+              Required fields marked with <span className="text-rose-400">*</span>
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <button className="gg-btn gg-btn-ghost" type="button" onClick={onClose}>Cancel</button>
@@ -896,8 +892,4 @@ export default function AddLeadDrawer({
   );
 
   return createPortal(el, document.body);
-}
-
-function cap(s) {
-  return String(s || "").charAt(0).toUpperCase() + String(s || "").slice(1);
 }
