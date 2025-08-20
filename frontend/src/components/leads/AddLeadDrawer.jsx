@@ -377,9 +377,9 @@ export default function AddLeadDrawer({
   }, [form.mobile, form.mobile_code, api]);
 
   // group all CFs under advance
-  const { generalCF, advanceCF } = useMemo(() => {
+  const { advanceCF } = useMemo(() => {
     const a = [...cfList];
-    return { generalCF: [], advanceCF: a };
+    return { advanceCF: a };
   }, [cfList]);
 
   // validation
@@ -709,7 +709,8 @@ export default function AddLeadDrawer({
           </button>
         </div>
 
-        <form onSubmit={submit} className="flex-1 overflow-auto">
+        {/* IMPORTANT: form has an id so footer submit works even outside the form container */}
+        <form id="addlead-form" onSubmit={submit} className="flex-1 overflow-auto">
           <div className="p-4 md:p-5 pt-6 space-y-5">
             <Section title="General" subtitle="Core information to create the lead.">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -807,7 +808,7 @@ export default function AddLeadDrawer({
               {advanceCF.length > 0 ? (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">{advanceCF.map(renderCF)}</div>
               ) : (
-                <div className="gg-card p-3 text-sm text-[color:var(--muted)]">
+                <div className="gg-card p-3 text-sm text:[color:var(--muted)]">
                   No custom fields yet.
                 </div>
               )}
@@ -838,6 +839,9 @@ export default function AddLeadDrawer({
               </div>
             )}
 
+            {/* Hidden submit to ensure Enter works anywhere in the form */}
+            <button type="submit" className="hidden" />
+            
             {error && (
               <div className="rounded-xl border border-rose-400/40 bg-rose-500/10 text-rose-300 text-sm px-3 py-2">
                 {error}
@@ -857,6 +861,7 @@ export default function AddLeadDrawer({
               id="addlead-save"
               className="gg-btn gg-btn-primary"
               type="submit"
+              form="addlead-form"
               disabled={saving || !isValid}
               aria-disabled={saving || !isValid}
             >
