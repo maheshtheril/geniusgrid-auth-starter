@@ -339,7 +339,7 @@ export default function AddLeadDrawer({
     setForm((f) => ({ ...f, mobile_country: CC, mobile_code: codeByCc[CC] || "" }));
   };
 
-  // duplicate mobile check (debounced)
+  // duplicate mobile check (debounced) — send E.164 for better backend matching
   useEffect(() => {
     let alive = true;
     if (!String(form.mobile || "").trim()) {
@@ -350,9 +350,10 @@ export default function AddLeadDrawer({
     const timer = setTimeout(async () => {
       if (!api?.checkMobile) return;
       try {
-        const res = await api.checkMobile({
-          mobile: `${form.mobile_code} ${String(form.mobile).trim()}`,
-        });
+        const code  = String(form.mobile_code || "").replace(/\s+/g, "");
+        const local = String(form.mobile || "").replace(/\D+/g, "");
+        const mobile = `${code}${local}`;
+        const res = await api.checkMobile({ mobile });
         if (!alive) return;
         const exists = !!res?.exists;
         setDupMobile(exists);
@@ -416,7 +417,7 @@ export default function AddLeadDrawer({
 
   const isValid = Object.keys(problems).length === 0;
 
-  // payload builder
+  // payload builder — normalize for server compatibility
   function buildPayload(extra = {}) {
     const customForJson = {};
     const files = {};
@@ -431,20 +432,28 @@ export default function AddLeadDrawer({
       }
     }
 
+    // Normalize phone to E.164 and date to YYYY-MM-DD or null
+    const code   = String(form.mobile_code || "").replace(/\s+/g, "");
+    const local  = String(form.mobile || "").replace(/\D+/g, "");
+    const mobile = `${code}${local}`;
+    const follow = form.follow_up_date ? String(form.follow_up_date).slice(0, 10) : null;
+    const revenue =
+      form.expected_revenue !== "" && form.expected_revenue !== null && !Number.isNaN(+form.expected_revenue)
+        ? +form.expected_revenue
+        : null;
+
     const base = {
       name: String(form.name || "").trim(),
-      mobile: `${form.mobile_code} ${String(form.mobile || "").trim()}`,
+      mobile,
       email: form.email?.trim() || null,
-      expected_revenue:
-        form.expected_revenue !== "" && form.expected_revenue !== null
-          ? Number(form.expected_revenue)
-          : null,
-      follow_up_date: form.follow_up_date,
+      expected_revenue: revenue,
+      follow_up_date: follow,
       profession: form.profession || null,
       stage: form.stage,
       status: form.status || "new",
       source: form.source,
-      custom_fields: customForJson,
+      // send as JSON string to avoid backend parsing issues
+      custom_fields: JSON.stringify(customForJson),
       ...extra,
     };
 
@@ -465,12 +474,16 @@ export default function AddLeadDrawer({
       if (hasFiles && api.createLeadMultipart) {
         const fd = new FormData();
         for (const [k, v] of Object.entries(base)) {
-          fd.append(k, typeof v === "object" ? JSON.stringify(v) : v ?? "");
+          const isBlob = v instanceof Blob || v instanceof File;
+          if (typeof v === "object" && v !== null && !isBlob) {
+            fd.append(k, JSON.stringify(v));
+          } else {
+            fd.append(k, v == null ? "" : String(v));
+          }
         }
         for (const [k, f] of Object.entries(files)) {
           if (f) fd.append(k, f);
         }
-        // try signature with config; if hook doesn't accept it, fall back
         try {
           created = await api.createLeadMultipart(fd, params);
         } catch {
@@ -519,7 +532,12 @@ export default function AddLeadDrawer({
       if (hasFiles && api.createLeadMultipart) {
         const fd = new FormData();
         for (const [k, v] of Object.entries(base)) {
-          fd.append(k, typeof v === "object" ? JSON.stringify(v) : v ?? "");
+          const isBlob = v instanceof Blob || v instanceof File;
+          if (typeof v === "object" && v !== null && !isBlob) {
+            fd.append(k, JSON.stringify(v));
+          } else {
+            fd.append(k, v == null ? "" : String(v));
+          }
         }
         for (const [k, f] of Object.entries(files)) {
           if (f) fd.append(k, f);
@@ -552,7 +570,7 @@ export default function AddLeadDrawer({
       } else if (status === 400) {
         setError(msg);
       } else {
-        setError("Failed to create lead. Please try again.");
+        setError(err?.response?.data?.message || "Server error while creating lead.");
       }
     } finally {
       setSaving(false);
@@ -839,7 +857,6 @@ export default function AddLeadDrawer({
               id="addlead-save"
               className="gg-btn gg-btn-primary"
               type="submit"
-              onClick={submit}
               disabled={saving || !isValid}
               aria-disabled={saving || !isValid}
             >
