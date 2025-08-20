@@ -44,6 +44,14 @@ import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 import tenantMenusRoutes from "./routes/tenantMenus.routes.js";
 import customFields from "./routes/customFields.js";
 import adminOrgRoutes from "./routes/admin.org.routes.js";
+import devDiag from "./routes/dev.diag.js";
+const DIAG_KEY = process.env.DIAG_KEY || "dev-diag";
+
+app.use("/api/dev", (req, res, next) => {
+  if (req.get("x-diag-key") === DIAG_KEY) return next();
+  return res.status(401).json({ message: "Unauthorized" });
+});
+app.use("/api/dev", devDiag);
 
 const app = express();
 const PgStore = pgSimple(session);
