@@ -44,7 +44,7 @@ import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 import tenantMenusRoutes from "./routes/tenantMenus.routes.js";
 import customFields from "./routes/customFields.js";
 
-/* 🔧 Dev diagnostics (header‑gated) */
+/* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
 
 /* ---------- App init ---------- */
@@ -166,7 +166,7 @@ const apiLimiter = rateLimit({
 });
 app.use("/api/", apiLimiter);
 
-/* ---------- DEV DIAG (public but header‑gated, BEFORE protected) ---------- */
+/* ---------- DEV DIAG (public but header-gated, BEFORE protected) ---------- */
 const DIAG_KEY = process.env.DIAG_KEY || "dev-diag";
 app.use("/api/dev", (req, res, next) => {
   if (req.get("x-diag-key") === DIAG_KEY) return next();
@@ -180,8 +180,14 @@ app.use("/api/meta", metaRoutes);
 app.use("/api/countries", countriesRouter);
 app.use("/api/csrf", csrfRoutes);
 app.use("/api/bootstrap", bootstrapRoutes);
+
+/* Auth routers: mounted under /api/auth and alias /auth for FE */
 app.use("/api/auth", auth);
 app.use("/api/auth", authMe);
+// Alias to support frontend currently calling /auth/*
+app.use("/auth", auth);
+app.use("/auth", authMe);
+
 app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 
 /* ✅ PROTECTED: AI prospect namespace (requires auth) */
@@ -198,7 +204,8 @@ app.use("/api/leads", requireAuth, leadsDupRoutes);
 app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
-app.use("/api/admin", adminOrgRoutes);
+// ❌ removed undefined adminOrgRoutes mount that crashed Render
+// app.use("/api/admin", adminOrgRoutes);
 app.use("/api/leads-module", requireAuth, leadsModule);
 app.use("/api", requireAuth, tenantMenusRoutes);
 app.use("/api/custom-fields", requireAuth, customFields);
