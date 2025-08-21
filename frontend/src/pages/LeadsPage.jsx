@@ -7,7 +7,8 @@ import LeadsTable from "@/components/leads/LeadsTable";
 import LeadsKanban from "@/components/leads/LeadsKanban";
 import LeadsCards from "@/components/leads/LeadsCards";
 import LeadDrawer from "@/components/leads/LeadDrawer";
-import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
+// TEST: temporarily not using the AddLeadDrawer; keeping it here for quick revert
+// import AddLeadDrawer from "@/components/leads/AddLeadDrawer";
 import { useEnv } from "@/store/useEnv";
 import {
   Table2,
@@ -20,6 +21,7 @@ import {
   X,
   Download,
 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 /* ------------------------ Tiny UI helpers ------------------------ */
 
@@ -102,6 +104,7 @@ function currentFYRange(tz = "Asia/Kolkata") {
 export default function LeadsPage() {
   const api = useLeadsApi();
   const { leadCustomFields = [], setLeadCustomFields } = useEnv();
+  const navigate = useNavigate?.();
 
   // View, filters, pagination
   const [view, setView]         = useState("table");
@@ -346,7 +349,18 @@ export default function LeadsPage() {
     }
   };
 
-  const openAddDrawer = () => { setAddKey(k => k + 1); setOpenAdd(true); };
+  // TEST: open the CFV form page instead of the Add Lead drawer
+  const openAddDrawer = () => {
+    // keep old behavior commented for easy revert:
+    // setAddKey(k => k + 1);
+    // setOpenAdd(true);
+    try {
+      if (navigate) navigate("/cfv/new");
+      else window.location.assign("/cfv/new");
+    } catch {
+      window.location.assign("/cfv/new");
+    }
+  };
 
   const toggleColumn = (key) => {
     setColumns(prev => {
@@ -809,6 +823,8 @@ export default function LeadsPage() {
           />
         )}
 
+        {/* TEST: routing to /cfv/new on Add Lead click. Keeping the drawer code below for quick revert. */}
+        {/*
         {openAdd && (
           <AddLeadDrawer
             key={addKey}
@@ -819,6 +835,7 @@ export default function LeadsPage() {
             onSuccess={onAddSuccess}
           />
         )}
+        */}
       </div>
     </div>
   );

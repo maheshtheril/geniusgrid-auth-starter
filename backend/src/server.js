@@ -49,6 +49,8 @@ import customFields from "./routes/customFields.js";
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
 
+import cfvRouter from "./src/routes/cfv.routes.js";
+
 /* ---------- App init ---------- */
 const app = express();
 const PgStore = pgSimple(session);
@@ -75,6 +77,9 @@ const logger = pino({
   level: process.env.LOG_LEVEL || (isProd ? "info" : "debug"),
   base: { service: "geniusgrid-api", env: process.env.NODE_ENV || "dev" },
 });
+
+app.use("/api/cfv", cfvRouter);
+
 app.use(
   pinoHttp({
     logger,
