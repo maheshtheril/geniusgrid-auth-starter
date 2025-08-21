@@ -289,7 +289,7 @@ export default function AddLeadDrawer({
           params: {  record_type: "lead" },
         });
         const items = normalizeToArray(resp?.data);
-
+console.info("CF load:", resp.status, "items:", items.length);
         // Map both raw schema (field_type/options_json) and mapped schema (type/options)
         const mapped = items
           .filter((f) => f?.is_active !== false)
