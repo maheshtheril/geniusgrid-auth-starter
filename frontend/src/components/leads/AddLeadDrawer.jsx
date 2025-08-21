@@ -1,7 +1,7 @@
 // src/components/leads/AddLeadDrawer.jsx — full, updated, production-ready
 // - Phone input is max width; country dropdown is compact.
 // - Clean sections. Title "Advance". No "Add custom field" button.
-// - Custom fields are loaded from /api/custom-fields?entity=lead (also sends record_type=lead for compatibility).
+// - Custom fields are loaded from /api/custom-fields?entity=lead (also sends record_type=lead).
 // - Posts multipart/form-data with cfv[...] entries (no JSON map).
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -284,16 +284,15 @@ export default function AddLeadDrawer({
     setCustom({});
     (async () => {
       try {
-        // Send both shapes so either server variant works.
-      const resp = await http.get("/api/custom-fields", {
-   params: { entity: "lead" }, // or record_type: "lead"
-   headers: { "x-tenant-id": localStorage.getItem("tenant_id") }
- });
+        // Send both shapes so either server variant works (entity+record_type)
+        const resp = await http.get("/api/custom-fields", {
+          params: { entity: "lead", record_type: "lead" },
+        });
         const items = normalizeToArray(resp?.data);
 
-        // Map supporting both raw schema (field_type/options_json) and mapped schema (type/options)
+        // Map both raw schema (field_type/options_json) and mapped schema (type/options)
         const mapped = items
-          .filter((f) => f?.is_active !== false) // tolerate absence of is_active
+          .filter((f) => f?.is_active !== false)
           .map((f) => {
             const type = f.field_type || f.type || "text";
             const options =
@@ -307,7 +306,7 @@ export default function AddLeadDrawer({
             const order = f.order_index ?? f.order ?? 0;
             return {
               id: f.id,
-              key: f.code || f.key,            // accept both "code" and "key"
+              key: f.code || f.key,
               label: f.label,
               type,
               required: !!(f.is_required ?? f.required),
@@ -527,7 +526,8 @@ export default function AddLeadDrawer({
       try { return await api.createLeadMultipart(fd, config); } catch {}
       return await api.createLeadMultipart(fd);
     }
-    return http.post("leads", fd, config);
+    // Fallback must hit /api since http baseURL is origin-only
+    return http.post("/api/leads", fd, config);
   }
 
   /* ------------------------------- Submit -------------------------------- */
