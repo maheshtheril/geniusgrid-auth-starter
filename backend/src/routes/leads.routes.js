@@ -337,8 +337,11 @@ function parseCfvItems(body = {}, files = []) {
   const collected = [];
 
   const pushItem = (raw = {}) => {
-    if (!raw || !raw.field_id) return;
-    const field_id = String(raw.field_id);
+    if (!raw) return;
+    // accept field_id (uuid) or code (string)
+    const field_id = raw.field_id != null ? String(raw.field_id) : null;
+    const code     = raw.code     != null ? String(raw.code)     : null;
+    if (!field_id && !code) return;
 
     const value_number =
       raw.value_number !== undefined && raw.value_number !== "" ? Number(raw.value_number) : null;
@@ -348,17 +351,15 @@ function parseCfvItems(body = {}, files = []) {
     let value_json = null;
     if (raw.value_json !== undefined && raw.value_json !== null && raw.value_json !== "") {
       try {
-        value_json = typeof raw.value_json === "string"
-          ? JSON.parse(raw.value_json)
-          : raw.value_json;
+        value_json = typeof raw.value_json === "string" ? JSON.parse(raw.value_json) : raw.value_json;
       } catch {
-        // tolerate bad JSON; keep as string fallback
         value_json = String(raw.value_json);
       }
     }
 
     collected.push({
-      field_id,
+      field_id, // may be non-UUID; we’ll resolve via code below
+      code,
       value_text,
       value_number: Number.isFinite(value_number) ? value_number : null,
       value_date,
@@ -370,11 +371,20 @@ function parseCfvItems(body = {}, files = []) {
   // JSON body: cfv: [] or {}
   const j = body?.cfv;
   if (Array.isArray(j)) j.forEach(pushItem);
-  else if (j && typeof j === "object") Object.values(j).forEach(pushItem);
+  else if (j && typeof j === "object") {
+    // also support { "<id|code>": "<primitive or object>" }
+    for (const [k, v] of Object.entries(j)) {
+      if (v && typeof v === "object" && !Array.isArray(v)) {
+        pushItem({ ...v, field_id: v.field_id ?? (UUID_RE.test(k) ? k : undefined), code: v.code ?? (!UUID_RE.test(k) ? k : undefined) });
+      } else {
+        pushItem({ field_id: UUID_RE.test(k) ? k : undefined, code: !UUID_RE.test(k) ? k : undefined, value_text: v });
+      }
+    }
+  }
 
   if (collected.length) return collected;
 
-  // Multipart body: cfv[i][...]
+  // Multipart body: cfv[i][...], also cfv[i][code]
   const byIdx = {};
   const re = /^cfv\[(\d+)\]\[(\w+)\]$/;
   for (const [k, v] of Object.entries(body)) {
@@ -388,8 +398,10 @@ function parseCfvItems(body = {}, files = []) {
     if (key === "file") (byIdx[idx] ||= {}).file = f;
   }
   Object.values(byIdx).forEach(pushItem);
+
   return collected;
 }
+
 
 // Map incoming body (JSON or multipart) to canonical fields
 function normalizeLeadBody(req) {
