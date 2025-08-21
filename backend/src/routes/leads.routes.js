@@ -19,6 +19,9 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024, files: 20 },
 });
 
+/* ---------------- hard-coded company for CREATE ---------------- */
+const FORCED_COMPANY_ID = "af3b367a-d61c-4748-9536-3fe94fe2d247";
+
 /* ---------------- helpers ---------------- */
 function getTenantId(req) {
   return (
@@ -585,10 +588,8 @@ router.post("/", upload.any(), async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
+  // 🔒 Force company for creation (ignores header/query company)
+  const companyId = FORCED_COMPANY_ID;
 
   const lead = normalizeLeadBody(req);
   const name = lead.name;
@@ -658,8 +659,8 @@ router.post("/", upload.any(), async (req, res) => {
     switch (err?.code) {
       case "23514": return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
       case "23505": return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
-      case "22P02": return res.status(400).json({ error: "Invalid UUID in x-company-id or cfv.field_id" });
-      case "23503": return res.status(400).json({ error: "Invalid reference: company_id or custom_field_id not found for tenant" });
+      case "22P02": return res.status(400).json({ error: "Invalid UUID in cfv.field_id" });
+      case "23503": return res.status(400).json({ error: "Invalid reference: custom_field_id not found for tenant" });
       case "23502": return res.status(400).json({ error: `Missing required column: ${err.column}` });
       case "42703": return res.status(500).json({ error: `Column not found in current schema (check logs for position)` });
       default:      return res.status(500).json({ error: "Failed to create lead" });
