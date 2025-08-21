@@ -208,8 +208,46 @@ router.get("/check-mobile", async (req, res) => {
 
 /* ------------ helpers for POST (multipart + CFV insert) ------------ */
 
-// Parse cfv[i][field_id], cfv[i][value_text|value_number|value_date], cfv[i][file]
+// type guards
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function looksLikeUuid(x = "") {
+  return typeof x === "string" && UUID_RE.test(x);
+}
+
+// Parse cfv JSON or cfv[i][field_id] style multipart
 function parseCfvItems(body = {}, files = []) {
+  const collected = [];
+
+  const pushItem = (raw = {}) => {
+    if (!raw || !raw.field_id) return;
+    const field_id = String(raw.field_id);
+    const value_number =
+      raw.value_number !== undefined && raw.value_number !== "" ? Number(raw.value_number) : null;
+    const value_date = raw.value_date ? String(raw.value_date).slice(0, 10) : null;
+    const value_text = raw.value_text !== undefined ? String(raw.value_text) : null;
+
+    collected.push({
+      field_id,
+      value_text,
+      value_number: Number.isFinite(value_number) ? value_number : null,
+      value_date,
+      file: raw.file || null,
+    });
+  };
+
+  // 1) JSON form: body.cfv as Array or Object
+  const asJson = body?.cfv;
+  if (Array.isArray(asJson)) {
+    for (const it of asJson) pushItem(it);
+  } else if (asJson && typeof asJson === "object") {
+    for (const it of Object.values(asJson)) pushItem(it);
+  }
+
+  if (collected.length > 0) return collected;
+
+  // 2) Multipart: cfv[0][field_id], cfv[0][value_text], cfv[0][file]
   const byIdx = {};
   const re = /^cfv\[(\d+)\]\[(\w+)\]$/;
   for (const [k, v] of Object.entries(body)) {
@@ -224,23 +262,9 @@ function parseCfvItems(body = {}, files = []) {
     const idx = +m[1], key = m[2];
     if (key === "file") (byIdx[idx] ||= {}).file = f; // keep multer file object
   }
-  const items = [];
-  for (const v of Object.values(byIdx)) {
-    if (!v.field_id) continue;
-    const value_number = v.value_number !== undefined && v.value_number !== ""
-      ? Number(v.value_number) : null;
-    const value_date = v.value_date ? String(v.value_date).slice(0, 10) : null;
-    const value_text = v.value_text !== undefined ? String(v.value_text) : null;
-    items.push({
-      field_id: v.field_id,
-      value_text,
-      value_number: Number.isFinite(value_number) ? value_number : null,
-      value_date,
-      // file handling is optional; leave file_id = null unless you wire storage
-      file: v.file || null,
-    });
-  }
-  return items;
+  for (const v of Object.values(byIdx)) pushItem(v);
+
+  return collected;
 }
 
 // Map incoming body (JSON or multipart) to canonical fields
@@ -260,26 +284,83 @@ function normalizeLeadBody(req) {
   };
 }
 
-// Insert custom_field_values rows. Fetch form_version_id for each field_id.
-async function insertCustomFieldValues(client, tenantId, recordType, recordId, items) {
-  if (!items?.length) return;
+/**
+ * Fetches meta for provided field_ids and returns a map.
+ * Skips invalid UUIDs to avoid ANY(uuid[]) casting issues.
+ */
+async function loadFieldMetaMap(client, fieldIds) {
+  const valid = [...new Set(fieldIds.map(String))].filter(looksLikeUuid);
+  if (!valid.length) return new Map();
 
-  const fieldIds = [...new Set(items.map(i => i.field_id))];
-
-  const metaRes = await client.query(
-    `SELECT id, form_version_id, record_type
+  const { rows } = await client.query(
+    `SELECT id, form_version_id, record_type, data_type
        FROM public.custom_fields
       WHERE tenant_id = ensure_tenant_scope()
-        AND id = ANY($1::uuid[])`,
-    [fieldIds]
+        AND id = ANY($1)`,
+    [valid]
   );
-  const metaMap = new Map(metaRes.rows.map(r => [String(r.id), r]));
+  return new Map(rows.map(r => [String(r.id), r]));
+}
 
+/**
+ * Deletes existing CFVs for the given (record_type, record_id) limited to the provided field_ids,
+ * then inserts the new set. This “merge” behavior avoids ON CONFLICT requirements and keeps rows clean.
+ */
+async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
+  if (!items?.length) return;
+
+  const fieldIds = [...new Set(items.map(i => i.field_id))].filter(looksLikeUuid);
+  if (!fieldIds.length) {
+    console.warn("[CFV] No valid field_ids after validation. Skipping CFV upsert.");
+    return;
+  }
+
+  const metaMap = await loadFieldMetaMap(client, fieldIds);
+
+  // Remove any existing values for these fields on this record (scoped to tenant & record)
+  await client.query(
+    `DELETE FROM public.custom_field_values
+      WHERE tenant_id = ensure_tenant_scope()
+        AND record_type = $1
+        AND record_id = $2
+        AND field_id = ANY($3)`,
+    [recordType, recordId, fieldIds]
+  );
+
+  // Insert fresh rows
   for (const it of items) {
-    const meta = metaMap.get(String(it.field_id));
-    if (!meta?.form_version_id) continue; // skip unknown field_id safely
+    const fid = String(it.field_id);
+    const meta = metaMap.get(fid);
+    if (!meta) {
+      console.warn(`[CFV] Unknown custom_field id=${fid}; skipped.`);
+      continue;
+    }
+    if (!meta.form_version_id) {
+      console.warn(`[CFV] Field id=${fid} has no form_version_id; skipped.`);
+      continue;
+    }
 
-    // TODO: if you have a files table, save it.file.buffer there and set file_id.
+    // Optionally coerce by data_type if your table uses it (text/number/date/json)
+    let value_text = it.value_text ?? null;
+    let value_number = it.value_number ?? null;
+    let value_date = it.value_date ?? null;
+
+    if (meta.data_type === "number") {
+      value_number = Number.isFinite(Number(value_number)) ? Number(value_number) : null;
+      value_text = null;
+      value_date = null;
+    } else if (meta.data_type === "date") {
+      value_date = value_date ? String(value_date).slice(0, 10) : null;
+      value_text = null;
+      value_number = null;
+    } else if (meta.data_type === "text" || !meta.data_type) {
+      // default: text
+      value_text = value_text != null ? String(value_text) : null;
+      value_number = null;
+      // keep date null
+    }
+
+    // TODO: if you have a files table, persist it.file.buffer and set file_id.
     const file_id = null;
 
     await client.query(
@@ -290,13 +371,13 @@ async function insertCustomFieldValues(client, tenantId, recordType, recordId, i
       [
         tenantId,
         meta.form_version_id,
-        it.field_id,
+        fid,
         meta.record_type || recordType,
         recordId,
-        it.value_text ?? null,
-        it.value_number ?? null,
-        it.value_date ?? null,
-        null, // value_json unused here
+        value_text,
+        value_number,
+        value_date,
+        null, // value_json (unused here)
         file_id,
       ]
     );
@@ -339,8 +420,8 @@ router.post("/", upload.any(), async (req, res) => {
     const { rows } = await client.query(sql, params);
     const created = rows[0];
 
-    // Insert CFV rows (record_type 'lead')
-    await insertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
+    // Upsert CFV rows (record_type 'lead') for the sent field_ids
+    await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
 
     await client.query("COMMIT");
     return res.status(201).json(created);
