@@ -365,55 +365,65 @@ router.get("/check-mobile", async (req, res) => {
 /* ------------ helpers for POST (multipart + CFV insert) ------------ */
 
 // Parse cfv JSON or cfv[i][field_id] style multipart
+// REPLACE parseCfvItems with this
 function parseCfvItems(body = {}, files = []) {
   const collected = [];
 
   const pushItem = (raw = {}) => {
     if (!raw || !raw.field_id) return;
     const field_id = String(raw.field_id);
+
     const value_number =
       raw.value_number !== undefined && raw.value_number !== "" ? Number(raw.value_number) : null;
     const value_date = raw.value_date ? String(raw.value_date).slice(0, 10) : null;
     const value_text = raw.value_text !== undefined ? String(raw.value_text) : null;
+
+    let value_json = null;
+    if (raw.value_json !== undefined && raw.value_json !== null && raw.value_json !== "") {
+      try {
+        value_json = typeof raw.value_json === "string"
+          ? JSON.parse(raw.value_json)
+          : raw.value_json;
+      } catch {
+        // tolerate bad JSON; keep as string fallback
+        value_json = String(raw.value_json);
+      }
+    }
 
     collected.push({
       field_id,
       value_text,
       value_number: Number.isFinite(value_number) ? value_number : null,
       value_date,
+      value_json,
       file: raw.file || null,
     });
   };
 
-  // 1) JSON form: body.cfv as Array or Object
-  const asJson = body?.cfv;
-  if (Array.isArray(asJson)) {
-    for (const it of asJson) pushItem(it);
-  } else if (asJson && typeof asJson === "object") {
-    for (const it of Object.values(asJson)) pushItem(it);
-  }
+  // JSON body: cfv: [] or {}
+  const j = body?.cfv;
+  if (Array.isArray(j)) j.forEach(pushItem);
+  else if (j && typeof j === "object") Object.values(j).forEach(pushItem);
 
-  if (collected.length > 0) return collected;
+  if (collected.length) return collected;
 
-  // 2) Multipart: cfv[0][field_id], cfv[0][value_text], cfv[0][file]
+  // Multipart body: cfv[i][...]
   const byIdx = {};
   const re = /^cfv\[(\d+)\]\[(\w+)\]$/;
   for (const [k, v] of Object.entries(body)) {
-    const m = re.exec(k);
-    if (!m) continue;
+    const m = re.exec(k); if (!m) continue;
     const idx = +m[1], key = m[2];
     (byIdx[idx] ||= {})[key] = v;
   }
   for (const f of files) {
-    const m = re.exec(f.fieldname);
-    if (!m) continue;
+    const m = re.exec(f.fieldname); if (!m) continue;
     const idx = +m[1], key = m[2];
-    if (key === "file") (byIdx[idx] ||= {}).file = f; // keep multer file object
+    if (key === "file") (byIdx[idx] ||= {}).file = f;
   }
-  for (const v of Object.values(byIdx)) pushItem(v);
-
+  Object.values(byIdx).forEach(pushItem);
   return collected;
 }
+
 
 // Map incoming body (JSON or multipart) to canonical fields
 function normalizeLeadBody(req) {
