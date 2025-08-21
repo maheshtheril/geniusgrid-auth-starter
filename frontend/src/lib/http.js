@@ -10,8 +10,9 @@ import axios from "axios";
  *   http.get("/api/leads")  // explicit
  *   http.get("leads")       // implicit; interceptor will prefix "/api/"
  */
-const ORIGIN = (import.meta.env.VITE_API_ORIGIN || "").replace(/\/+$/, "");
 
+//const ORIGIN = (import.meta.env.VITE_API_ORIGIN || "").replace(/\/+$/, "");
+const ORIGIN = ('https://geniusgrid-auth-starter-ddv5.onrender.com/' || "").replace(/\/+$/, "");
 export const http = axios.create({
   baseURL: ORIGIN,                // origin only, never include "/api" here
   withCredentials: true,          // send session cookie (__erp_sid)
