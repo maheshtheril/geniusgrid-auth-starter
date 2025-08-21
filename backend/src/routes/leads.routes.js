@@ -480,6 +480,9 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
   const rawCodes = [...new Set(items.map(i => String(i.code || "").trim().toLowerCase()))].filter(Boolean);
 
   const metas = await loadFieldsByIdsOrCodes(client, rawIds, rawCodes, recordType);
+  if (process.env.NODE_ENV !== "production") {
+    console.log("CFV metas:", metas);
+  }
   const metaById = new Map(metas.map(m => [m.id, m]));
   const metaByCode = new Map(metas.map(m => [m.code, m]));
 
@@ -614,6 +617,9 @@ router.post("/", upload.any(), async (req, res) => {
   const stage  = lead.stage  ?? null;
   const followup_at = lead.followup_at || null;
   const cfvItems = parseCfvItems(req.body, req.files || []);
+  if (process.env.NODE_ENV !== "production") {
+    console.log("CFV incoming items:", JSON.stringify(cfvItems, null, 2));
+  }
 
   const client = await pool.connect();
   try {
@@ -648,16 +654,7 @@ router.post("/", upload.any(), async (req, res) => {
     const created = rows[0];
 
     // Upsert CFV rows (record_type 'lead') for the sent field_ids/codes
-    let cfvStats = { deleted: 0, inserted: 0 };
-    try {
-      cfvStats = await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
-    } catch (cfvErr) {
-      // If CFV is mandatory for you, ROLLBACK the whole txn:
-      // throw cfvErr;
-
-      // Prefer explicit error so client knows what's wrong
-      throw cfvErr; // we treat as atomic with lead create
-    }
+    const cfvStats = await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
 
     await client.query("COMMIT");
 
@@ -673,13 +670,19 @@ router.post("/", upload.any(), async (req, res) => {
     }
     return res.status(201).json(created);
   } catch (err) {
-    try { await pool.query("ROLLBACK"); } catch {}
+    // Rollback on the SAME client we began with
+    try { await client.query("ROLLBACK"); } catch (e) {
+      console.error("ROLLBACK failed:", e?.message);
+    }
+
     console.error("POST /leads error:", {
       message: err?.message,
       code: err?.code,
       detail: err?.detail,
       table: err?.table, column: err?.column, constraint: err?.constraint, position: err?.position,
+      stack: err?.stack,
     });
+
     // Map CFV-specific errors first
     if (err?.code === "CFV_NO_MATCH") {
       return res.status(err.status || 400).json({ error: "No matching custom_fields for provided field_id/code", code: err.code });
@@ -698,9 +701,8 @@ router.post("/", upload.any(), async (req, res) => {
       default:      return res.status(500).json({ error: "Failed to create lead" });
     }
   } finally {
-    // if we used client.query("ROLLBACK") above, ensure we release the same client
-    // but here we used pool.query in catch; still release client we began with:
-    try { (await Promise.resolve()); } catch {}
+    // ALWAYS release the client you acquired at the top
+    try { client.release(); } catch {}
   }
 });
 
