@@ -285,9 +285,10 @@ export default function AddLeadDrawer({
     (async () => {
       try {
         // Send both shapes so either server variant works.
-        const resp = await http.get("custom-fields", {
-          params: { entity: "lead", record_type: "lead" },
-        });
+      const resp = await http.get("/api/custom-fields", {
+   params: { entity: "lead" }, // or record_type: "lead"
+   headers: { "x-tenant-id": localStorage.getItem("tenant_id") }
+ });
         const items = normalizeToArray(resp?.data);
 
         // Map supporting both raw schema (field_type/options_json) and mapped schema (type/options)
