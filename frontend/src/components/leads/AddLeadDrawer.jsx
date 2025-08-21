@@ -286,7 +286,7 @@ export default function AddLeadDrawer({
       try {
         // Send both shapes so either server variant works (entity+record_type)
         const resp = await http.get("/api/custom-fields", {
-          params: { entity: "lead", record_type: "lead" },
+          params: {  record_type: "lead" },
         });
         const items = normalizeToArray(resp?.data);
 

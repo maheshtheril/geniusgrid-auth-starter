@@ -212,14 +212,17 @@ router.post("/login", loginLimiter, async (req, res) => {
     return res.status(400).json({ message: "tenantCode, email, password are required" });
   }
 
-  const client = await pool.connect();
+  let client; // <-- declare up here
   try {
+    client = await pool.connect(); // <-- inside try so connection errors are caught
+
     const t = await client.query(`SELECT id, is_active FROM public.tenants WHERE code=$1`, [tenantCode]);
     if (!t.rows.length) return res.status(400).json({ message: "Invalid tenant" });
     const tenantId = t.rows[0].id;
     if (t.rows[0].is_active === false) return res.status(403).json({ message: "Tenant inactive" });
 
-    await setTenant(client, tenantId);
+    // non-local to persist on this connection (RLS scope)
+    await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 
     const { rows } = await client.query(
       `SELECT id, email, is_active, failed_attempts, locked_until,
@@ -241,8 +244,6 @@ router.post("/login", loginLimiter, async (req, res) => {
            WHERE id = $1`,
           [user.id]
         );
-        user.failed_attempts = 0;
-        user.locked_until = null;
       }
     }
 
@@ -274,11 +275,11 @@ router.post("/login", loginLimiter, async (req, res) => {
       [user.id]
     );
 
-    // Regenerate, seed session (both shapes), and save
+    // Regenerate & seed session (store BOTH shapes)
     await sessionRegenerate(req);
-    req.session.userId = user.id;
+    req.session.userId  = user.id;
     req.session.user_id = user.id;
-    req.session.tenantId = tenantId;
+    req.session.tenantId  = tenantId;
     req.session.tenant_id = tenantId;
     req.session.user = { id: user.id, tenantId };
     await sessionSave(req);
@@ -286,16 +287,18 @@ router.post("/login", loginLimiter, async (req, res) => {
     return res.json({ ok: true });
   } catch (e) {
     console.error("LOGIN ERROR:", e);
-    res.status(500).json({ message: "Login error",  name: e?.name || null,
+    return res.status(500).json({
+      message: "Login error",
+      name: e?.name || null,
       code: e?.code || null,
       detail: e?.detail || null,
       hint: e?.hint || null,
-      stack: e?.stack || null });
-    
+    });
   } finally {
-    client.release();
+    if (client) client.release(); // <-- always release
   }
 });
+
 
 /* =========================
    Auth: Me (contextful)
