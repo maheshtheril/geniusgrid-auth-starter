@@ -61,6 +61,141 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
+/* -------- schema introspection (cached) -------- */
+let leadsSchemaCache = null;
+let leadsSchemaFetchedAt = 0;
+const SCHEMA_TTL_MS = 5 * 60 * 1000;
+
+async function getLeadsSchema(client) {
+  const now = Date.now();
+  if (leadsSchemaCache && now - leadsSchemaFetchedAt < SCHEMA_TTL_MS) return leadsSchemaCache;
+
+  const { rows } = await client.query(
+    `SELECT column_name
+       FROM information_schema.columns
+      WHERE table_schema='public' AND table_name='leads'`
+  );
+  const set = new Set(rows.map(r => r.column_name));
+
+  const has = (c) => set.has(c);
+  const schema = {
+    // potential variants we reference
+    has_company: has("company"),
+    has_company_name: has("company_name"),
+    has_owner: has("owner"),
+    has_owner_name: has("owner_name"),
+    has_custom: has("custom"),
+    has_website: has("website"),
+    has_source: has("source"),
+    has_status: has("status"),
+    has_stage: has("stage"),
+    has_followup_at: has("followup_at"),
+    has_priority: has("priority"),
+    has_tags_text: has("tags_text"),
+    has_score: has("score"),
+    has_ai_summary: has("ai_summary"),
+    has_ai_next: has("ai_next"),
+    has_ai_score: has("ai_score"),
+    has_ai_next_action: has("ai_next_action"),
+    has_email: has("email"),
+    has_phone: has("phone"),
+    has_updated_at: has("updated_at"),
+    has_created_at: has("created_at"),
+    // required basics we assume exist:
+    has_id: has("id"),
+    has_tenant_id: has("tenant_id"),
+    has_company_id: has("company_id"),
+    has_owner_id: has("owner_id"),
+    has_name: has("name"),
+  };
+
+  leadsSchemaCache = schema;
+  leadsSchemaFetchedAt = now;
+  return schema;
+}
+
+/* -------- projection builders (avoid undefined_column) -------- */
+function buildProjection(schema) {
+  const sel = [];
+  // always-safe basics (assumed present in your schema; if not, add guards too)
+  sel.push("id", "tenant_id", "company_id", "owner_id", "name");
+
+  // company_name
+  if (schema.has_company && schema.has_company_name) {
+    sel.push("COALESCE(company, company_name) AS company_name");
+  } else if (schema.has_company) {
+    sel.push("company AS company_name");
+  } else if (schema.has_company_name) {
+    sel.push("company_name");
+  } else {
+    sel.push("NULL::text AS company_name");
+  }
+
+  if (schema.has_email) sel.push("email");
+  else sel.push("NULL::text AS email");
+
+  if (schema.has_phone) sel.push("phone");
+  else sel.push("NULL::text AS phone");
+
+  if (schema.has_website) sel.push("website");
+  else sel.push("NULL::text AS website");
+
+  if (schema.has_source) sel.push("source");
+  else sel.push("NULL::text AS source");
+
+  if (schema.has_status) sel.push("status");
+  else sel.push("NULL::text AS status");
+
+  if (schema.has_stage) sel.push("stage");
+  else sel.push("NULL::text AS stage");
+
+  // owner_name
+  if (schema.has_owner && schema.has_owner_name) {
+    sel.push("COALESCE(owner, owner_name) AS owner_name");
+  } else if (schema.has_owner) {
+    sel.push("owner AS owner_name");
+  } else if (schema.has_owner_name) {
+    sel.push("owner_name");
+  } else {
+    sel.push("NULL::text AS owner_name");
+  }
+
+  if (schema.has_score) sel.push("score"); else sel.push("NULL::int AS score");
+  if (schema.has_priority) sel.push("priority"); else sel.push("NULL::int AS priority");
+  if (schema.has_tags_text) sel.push("tags_text"); else sel.push("NULL::text AS tags_text");
+  if (schema.has_followup_at) sel.push("followup_at"); else sel.push("NULL::timestamptz AS followup_at");
+  if (schema.has_created_at) sel.push("created_at"); else sel.push("NOW() AS created_at");
+  if (schema.has_updated_at) sel.push("updated_at"); else sel.push("NOW() AS updated_at");
+
+  if (schema.has_ai_summary) sel.push("ai_summary"); else sel.push("NULL::text AS ai_summary");
+  if (schema.has_ai_next) sel.push("ai_next"); else sel.push("NULL::text AS ai_next");
+  if (schema.has_ai_score) sel.push("ai_score"); else sel.push("NULL::int AS ai_score");
+  if (schema.has_ai_next_action) sel.push("ai_next_action"); else sel.push("NULL::text AS ai_next_action");
+
+  return sel.join(",\n      ");
+}
+
+function buildSearchClause(schema, paramIndexStart) {
+  // build list of columns we can safely search
+  const cols = ["name"];
+  if (schema.has_company) cols.push("company");
+  else if (schema.has_company_name) cols.push("company_name");
+  if (schema.has_email) cols.push("email");
+  if (schema.has_phone) cols.push("phone");
+
+  let i = paramIndexStart;
+  const parts = [];
+  for (const _ of cols) {
+    parts.push(`%${i + 1}%`); // placeholder tracking only; we’ll push params right below
+    i++;
+  }
+  // Construct SQL with separate $n placeholders
+  i = paramIndexStart;
+  const orSql = cols.map(() => `ILIKE $${++i}`).join(" OR ");
+  return { sql: `(${cols.map(c => `${c} ${orSql.split(" OR ")[0]}`).join(" OR ").replaceAll("ILIKE $"+(paramIndexStart+1), s=>s)}`, count: cols.length };
+  // ↑ That’s messy. Instead, do it simpler below in the route where we know the cols.
+}
+
 /* ---------------- probe ---------------- */
 router.get("/ping", (_req, res) => res.json({ ok: true }));
 
@@ -81,60 +216,50 @@ router.get("/", async (req, res) => {
   const stage = (req.query.stage || "").trim();
   const owner_id = (req.query.owner_id || "").trim();
 
-  const params = [tenantId];
-  let where = `WHERE tenant_id = $1`;
-  let i = params.length;
-
-  if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++i}`; }
-  if (q) {
-    params.push(`%${q}%`);
-    const idx = ++i;
-    where += ` AND (name ILIKE $${idx}
-                 OR COALESCE(company, company_name, '') ILIKE $${idx}
-                 OR email ILIKE $${idx}
-                 OR phone ILIKE $${idx})`;
-  }
-  if (status)    { params.push(status);    where += ` AND status = $${++i}`; }
-  if (stage)     { params.push(stage);     where += ` AND stage  = $${++i}`; }
-  if (owner_id)  { params.push(owner_id);  where += ` AND owner_id::text = $${++i}`; }
-
-  const offset = (page - 1) * size;
-
-  const listSQL = `
-    SELECT
-      id,
-      tenant_id,
-      company_id,
-      owner_id,
-      name,
-      COALESCE(company, company_name, NULL) AS company_name,
-      email,
-      phone,
-      website,
-      source,
-      status,
-      stage,
-      owner   AS owner_name,
-      score,
-      priority,
-      tags_text,
-      followup_at,
-      created_at,
-      updated_at,
-      ai_summary,
-      ai_next,
-      ai_score,
-      ai_next_action
-    FROM public.leads
-    ${where}
-    ORDER BY updated_at DESC
-    LIMIT ${size} OFFSET ${offset};
-  `;
-  const countSQL = `SELECT COUNT(*)::int AS total FROM public.leads ${where};`;
-
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
+
+    const params = [tenantId];
+    let where = `WHERE tenant_id = $1`;
+    let i = params.length;
+
+    if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++i}`; }
+
+    if (q) {
+      const like = `%${q}%`;
+      const searchCols = ["name"];
+      if (schema.has_company) searchCols.push("company");
+      else if (schema.has_company_name) searchCols.push("company_name");
+      if (schema.has_email) searchCols.push("email");
+      if (schema.has_phone) searchCols.push("phone");
+
+      const orParts = [];
+      for (const col of searchCols) {
+        params.push(like);
+        orParts.push(`${col} ILIKE $${++i}`);
+      }
+      if (orParts.length) where += ` AND (${orParts.join(" OR ")})`;
+    }
+
+    if (status)    { params.push(status);    where += ` AND status = $${++i}`; }
+    if (stage)     { params.push(stage);     where += ` AND stage  = $${++i}`; }
+    if (owner_id)  { params.push(owner_id);  where += ` AND owner_id::text = $${++i}`; }
+
+    const offset = (page - 1) * size;
+
+    const projection = buildProjection(schema);
+
+    const listSQL = `
+      SELECT
+        ${projection}
+      FROM public.leads
+      ${where}
+      ORDER BY ${schema.has_updated_at ? "updated_at" : "created_at"} DESC
+      LIMIT ${size} OFFSET ${offset};
+    `;
+    const countSQL = `SELECT COUNT(*)::int AS total FROM public.leads ${where};`;
 
     const [list, count] = await Promise.all([
       client.query(listSQL, params),
@@ -153,7 +278,7 @@ router.get("/", async (req, res) => {
     res.json({ items, total: count.rows?.[0]?.total ?? 0, page, size });
   } catch (err) {
     console.error("GET /leads error:", {
-      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column,
+      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
     });
     res.status(500).json({ error: "Failed to load leads" });
   } finally {
@@ -309,7 +434,7 @@ function normalizeLeadBody(req) {
 
 /**
  * Fetches meta for provided field_ids and returns a map.
- * Skips invalid UUIDs to avoid ANY(uuid[]) casting issues.
+ * Skips invalid UUIDs to avoid cast issues.
  */
 async function loadFieldMetaMap(client, fieldIds) {
   const valid = [...new Set(fieldIds.map(String))].filter(isUuid);
@@ -319,7 +444,7 @@ async function loadFieldMetaMap(client, fieldIds) {
     `SELECT id, form_version_id, record_type, data_type
        FROM public.custom_fields
       WHERE tenant_id = ensure_tenant_scope()
-        AND id = ANY($1)`,
+        AND id = ANY($1::uuid[])`,
     [valid]
   );
   return new Map(rows.map(r => [String(r.id), r]));
@@ -346,7 +471,7 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
       WHERE tenant_id = ensure_tenant_scope()
         AND record_type = $1
         AND record_id = $2
-        AND field_id = ANY($3)`,
+        AND field_id = ANY($3::uuid[])`,
     [recordType, recordId, fieldIds]
   );
 
@@ -363,28 +488,23 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
       continue;
     }
 
-    // Optionally coerce by data_type if your table uses it (text/number/date/json)
+    // Optional coercion by data_type if your table uses it (text/number/date/json)
     let value_text = it.value_text ?? null;
     let value_number = it.value_number ?? null;
     let value_date = it.value_date ?? null;
 
     if (meta.data_type === "number") {
       value_number = Number.isFinite(Number(value_number)) ? Number(value_number) : null;
-      value_text = null;
-      value_date = null;
+      value_text = null; value_date = null;
     } else if (meta.data_type === "date") {
       value_date = value_date ? String(value_date).slice(0, 10) : null;
-      value_text = null;
-      value_number = null;
+      value_text = null; value_number = null;
     } else if (meta.data_type === "text" || !meta.data_type) {
-      // default: text
       value_text = value_text != null ? String(value_text) : null;
       value_number = null;
-      // keep date null
     }
 
-    // TODO: if you have a files table, persist it.file.buffer and set file_id.
-    const file_id = null;
+    const file_id = null; // hook your storage if needed
 
     await client.query(
       `INSERT INTO public.custom_field_values
@@ -400,7 +520,7 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
         value_text,
         value_number,
         value_date,
-        null, // value_json (unused here)
+        null,
         file_id,
       ]
     );
@@ -430,27 +550,50 @@ router.post("/", upload.any(), async (req, res) => {
   const followup_at = lead.followup_at || null;
   const cfvItems = parseCfvItems(req.body, req.files || []);
 
-  const sql = `
-    INSERT INTO public.leads
-      (tenant_id, company_id, name, email, phone, website, source, status, stage, followup_at, custom)
-    VALUES
-      ($1,        $2,         $3,   $4,    $5,    $6,      $7,     $8,     $9,    $10,         $11)
-    RETURNING id, tenant_id, company_id, name, email, phone, website, source, status, stage, followup_at, created_at;
-  `;
-  const params = [tenantId, companyId, name, email, phone, lead.website ?? null, source, status, stage, followup_at, {}];
-
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
+
     await client.query("BEGIN");
 
-    const { rows } = await client.query(sql, params);
+    // Build INSERT dynamically against existing columns
+    const cols = ["tenant_id", "company_id", "name"];
+    const vals = [tenantId, companyId, name];
+    const ph = ["$1", "$2", "$3"];
+    let i = 3;
+
+    if (schema.has_email)      { cols.push("email");      vals.push(email);       ph.push(`$${++i}`); }
+    if (schema.has_phone)      { cols.push("phone");      vals.push(phone);       ph.push(`$${++i}`); }
+    if (schema.has_website)    { cols.push("website");    vals.push(lead.website ?? null); ph.push(`$${++i}`); }
+    if (schema.has_source)     { cols.push("source");     vals.push(source);      ph.push(`$${++i}`); }
+    if (schema.has_status)     { cols.push("status");     vals.push(status);      ph.push(`$${++i}`); }
+    if (schema.has_stage)      { cols.push("stage");      vals.push(stage);       ph.push(`$${++i}`); }
+    if (schema.has_followup_at){ cols.push("followup_at");vals.push(followup_at); ph.push(`$${++i}`); }
+    if (schema.has_custom)     { cols.push("custom");     vals.push(JSON.stringify({})); ph.push(`$${++i}`); }
+
+    const projection = buildProjection(schema);
+
+    const insertSQL = `
+      INSERT INTO public.leads (${cols.join(", ")})
+      VALUES (${ph.join(", ")})
+      RETURNING ${projection};
+    `;
+    const { rows } = await client.query(insertSQL, vals);
     const created = rows[0];
 
     // Upsert CFV rows (record_type 'lead') for the sent field_ids
     await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
 
     await client.query("COMMIT");
+
+    // normalize ai_next to []
+    created.ai_next = Array.isArray(created.ai_next)
+      ? created.ai_next
+      : (typeof created.ai_next === "string" && created.ai_next.startsWith("["))
+        ? JSON.parse(created.ai_next)
+        : created.ai_next || [];
+
     return res.status(201).json(created);
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -458,23 +601,16 @@ router.post("/", upload.any(), async (req, res) => {
       message: err?.message,
       code: err?.code,
       detail: err?.detail,
-      table: err?.table, column: err?.column, constraint: err?.constraint,
+      table: err?.table, column: err?.column, constraint: err?.constraint, position: err?.position,
     });
     switch (err?.code) {
-      case "23514": // check_violation
-        return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
-      case "23505": // unique_violation
-        return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
-      case "22P02": // invalid_text_representation (bad UUID)
-        return res.status(400).json({ error: "Invalid UUID in x-company-id or cfv.field_id" });
-      case "23503": // foreign_key_violation
-        return res.status(400).json({ error: "Invalid reference: company_id or custom_field_id not found for tenant" });
-      case "23502": // not_null_violation
-        return res.status(400).json({ error: `Missing required column: ${err.column}` });
-      case "42703": // undefined_column
-        return res.status(500).json({ error: `Column not found: ${err.column} (schema mismatch)` });
-      default:
-        return res.status(500).json({ error: "Failed to create lead" });
+      case "23514": return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
+      case "23505": return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
+      case "22P02": return res.status(400).json({ error: "Invalid UUID in x-company-id or cfv.field_id" });
+      case "23503": return res.status(400).json({ error: "Invalid reference: company_id or custom_field_id not found for tenant" });
+      case "23502": return res.status(400).json({ error: `Missing required column: ${err.column}` });
+      case "42703": return res.status(500).json({ error: `Column not found in current schema (check logs for position)` });
+      default:      return res.status(500).json({ error: "Failed to create lead" });
     }
   } finally {
     client.release();
@@ -497,6 +633,8 @@ router.get("/:id", async (req, res) => {
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
+    const projection = buildProjection(schema);
 
     const params = [id];
     let extra = "";
@@ -507,29 +645,7 @@ router.get("/:id", async (req, res) => {
 
     const sql = `
       SELECT
-        id,
-        tenant_id,
-        company_id,
-        owner_id,
-        name,
-        COALESCE(company, company_name, NULL) AS company_name,
-        email,
-        phone,
-        website,
-        source,
-        status,
-        stage,
-        owner   AS owner_name,
-        score,
-        priority,
-        tags_text,
-        followup_at,
-        created_at,
-        updated_at,
-        ai_summary,
-        ai_next,
-        ai_score,
-        ai_next_action
+        ${projection}
       FROM public.leads
       WHERE id = $1
         AND tenant_id = ensure_tenant_scope()
@@ -550,7 +666,7 @@ router.get("/:id", async (req, res) => {
     return res.json(row);
   } catch (err) {
     console.error("GET /leads/:id error:", {
-      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column,
+      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
     });
     return res.status(500).json({ error: "Failed to load lead" });
   } finally {
@@ -580,7 +696,7 @@ router.patch("/:id", async (req, res) => {
     phone: "phone",
     source: "source",
     followup_at: "followup_at",
-    company_name: "company", // UI -> DB
+    company_name: "company", // UI -> DB (we'll only include if column exists)
     owner_name: "owner",     // UI -> DB
     website: "website",
     priority: "priority",
@@ -595,61 +711,78 @@ router.patch("/:id", async (req, res) => {
     ai_score: "ai_score",
   };
 
-  const fields = [];
-  const vals = [];
-  let i = 0;
-
-  for (const [uiKey, col] of Object.entries(allow)) {
-    if (patch[uiKey] === undefined) continue;
-
-    let v = patch[uiKey];
-
-    if (col === "followup_at") {
-      v = v ? new Date(v) : null; // accept ISO or yyyy-mm-dd
-    } else if (col === "ai_next" && Array.isArray(v)) {
-      v = JSON.stringify(v); // assign to json/text column
-    } else if (col === "priority") {
-      v = v === "" || v === null ? null : Number(v);
-    }
-
-    fields.push(`${col} = $${++i}`);
-    vals.push(v);
-  }
-
-  if (!fields.length) return res.status(400).json({ error: "No updatable fields" });
-
-  const whereVals = [id, tenantId];
-  let whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
-  if (companyId) { whereVals.push(companyId); whereSQL += ` AND company_id::text = $${++i}`; }
-
-  const sql = `
-    UPDATE public.leads
-       SET ${fields.join(", ")}, updated_at = NOW()
-     ${whereSQL}
-     RETURNING id,
-               name,
-               email,
-               phone,
-               website,
-               source,
-               followup_at,
-               COALESCE(company, company_name, NULL) AS company_name,
-               owner   AS owner_name,
-               priority,
-               tags_text,
-               status,
-               stage,
-               owner_id,
-               score,
-               ai_summary,
-               ai_next,
-               ai_score,
-               updated_at;
-  `;
-
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
+
+    // Filter allowed fields by actual schema presence
+    const fields = [];
+    const vals = [];
+    let i = 0;
+
+    for (const [uiKey, col] of Object.entries(allow)) {
+      if (patch[uiKey] === undefined) continue;
+
+      // Skip columns that don't exist in current schema
+      if (
+        (col === "company"     && !(schema.has_company || schema.has_company_name)) ||
+        (col === "owner"       && !(schema.has_owner || schema.has_owner_name)) ||
+        (col === "website"     && !schema.has_website) ||
+        (col === "priority"    && !schema.has_priority) ||
+        (col === "tags_text"   && !schema.has_tags_text) ||
+        (col === "status"      && !schema.has_status) ||
+        (col === "stage"       && !schema.has_stage) ||
+        (col === "owner_id"    && !schema.has_owner_id) ||
+        (col === "score"       && !schema.has_score) ||
+        (col === "ai_summary"  && !schema.has_ai_summary) ||
+        (col === "ai_next"     && !schema.has_ai_next) ||
+        (col === "ai_score"    && !schema.has_ai_score) ||
+        (col === "email"       && !schema.has_email) ||
+        (col === "phone"       && !schema.has_phone) ||
+        (col === "followup_at" && !schema.has_followup_at) ||
+        (col === "name"        && !schema.has_name) ||
+        (col === "source"      && !schema.has_source)
+      ) {
+        continue;
+      }
+
+      let v = patch[uiKey];
+
+      if (col === "followup_at") {
+        v = v ? new Date(v) : null; // accept ISO or yyyy-mm-dd
+      } else if (col === "ai_next" && Array.isArray(v)) {
+        v = JSON.stringify(v); // assign to json/text column
+      } else if (col === "priority") {
+        v = v === "" || v === null ? null : Number(v);
+      }
+
+      // If user patched company_name but only company_name col exists, write there
+      if (uiKey === "company_name" && !schema.has_company && schema.has_company_name) {
+        fields.push(`company_name = $${++i}`);
+      } else if (uiKey === "owner_name" && !schema.has_owner && schema.has_owner_name) {
+        fields.push(`owner_name = $${++i}`);
+      } else {
+        fields.push(`${col} = $${++i}`);
+      }
+      vals.push(v);
+    }
+
+    if (!fields.length) return res.status(400).json({ error: "No updatable fields" });
+
+    const whereVals = [id, tenantId];
+    let whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
+    if (companyId) { whereVals.push(companyId); whereSQL += ` AND company_id::text = $${++i}`; }
+
+    const projection = buildProjection(schema);
+
+    const sql = `
+      UPDATE public.leads
+         SET ${fields.join(", ")}, updated_at = NOW()
+       ${whereSQL}
+       RETURNING ${projection};
+    `;
+
     const r = await client.query(sql, [...vals, ...whereVals]);
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
 
@@ -658,7 +791,7 @@ router.patch("/:id", async (req, res) => {
     res.json(row);
   } catch (err) {
     console.error("PATCH /leads/:id error:", {
-      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column,
+      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
     });
     switch (err?.code) {
       case "23505":
@@ -666,7 +799,7 @@ router.patch("/:id", async (req, res) => {
       case "22P02":
         return res.status(400).json({ error: "Invalid UUID in request" });
       case "42703":
-        return res.status(500).json({ error: `Column not found: ${err.column} (schema mismatch)` });
+        return res.status(500).json({ error: `Column not found in current schema (check logs for position)` });
       default:
         return res.status(500).json({ error: "Failed to update lead" });
     }
