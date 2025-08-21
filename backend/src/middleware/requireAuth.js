@@ -7,6 +7,7 @@
  * - Optional bypass via env (BYPASS_AUTH=1) for local/testing
  * - Optional debug logs via env (DEBUG_AUTH=1)
  */
+
 export function requireAuth(req, res, next) {
   const s = req.session || {};
 

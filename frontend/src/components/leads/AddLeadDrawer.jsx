@@ -1,4 +1,4 @@
-// src/components/leads/AddLeadDrawer.jsx — production-ready
+// src/components/leads/AddLeadDrawer.jsx
 // - Phone input is max width; country dropdown is compact.
 // - Clean sections. Title "Advance". No "Add custom field" button.
 // - Custom fields are loaded from /api/custom-fields?entity=lead&record_type=lead.
@@ -286,6 +286,7 @@ export default function AddLeadDrawer({
       try {
         const resp = await http.get("/api/custom-fields", {
           params: { entity: "lead", record_type: "lead" },
+          withCredentials: true,
         });
         const items = normalizeToArray(resp?.data);
 
@@ -464,7 +465,7 @@ export default function AddLeadDrawer({
       mobile,
       email: form.email?.trim() || "",
       expected_revenue: revenue,
-      follow_up_date: follow,
+      follow_up_date: follow,           // backend accepts follow_up_date OR followup_at
       profession: form.profession || "",
       stage: form.stage,
       status: form.status || "new",
@@ -505,6 +506,8 @@ export default function AddLeadDrawer({
           fd.append(`cfv[${idx}][value_text]`, v ? "true" : "false");
           break;
         }
+        // If you later add multiselect UI, send `value_json` as a JSON array.
+        // Backend also tolerates comma-separated string in value_text.
         case "select":
         case "textarea":
         case "text":
@@ -518,13 +521,27 @@ export default function AddLeadDrawer({
     return fd;
   }
 
+  // Always send cookies; optionally pass x-tenant-id if your app exposes it
+  function tenantAwareConfig(extraCfg) {
+    const tid =
+      (window.__ctx && (window.__ctx.tenant_id || window.__ctx.tenantId)) ||
+      localStorage.getItem("tenant_id") ||
+      undefined;
+    return {
+      withCredentials: true,
+      headers: tid ? { "x-tenant-id": tid } : undefined,
+      ...(extraCfg || {}),
+    };
+  }
+
   async function postFormData(fd, config) {
+    // Prefer the API hook if it exists (it may already set creds/headers)
     if (api?.createLeadMultipart) {
-      try { return await api.createLeadMultipart(fd, config); } catch {}
-      return await api.createLeadMultipart(fd);
+      try { return await api.createLeadMultipart(fd, tenantAwareConfig(config)); } catch {}
+      return await api.createLeadMultipart(fd, tenantAwareConfig());
     }
     // Fallback must hit /api since http baseURL is origin-only
-    return http.post("/api/leads", fd, config);
+    return http.post("/api/leads", fd, tenantAwareConfig(config));
   }
 
   /* ------------------------------- Submit -------------------------------- */
@@ -561,7 +578,9 @@ export default function AddLeadDrawer({
         data?.error ||
         "Server error while creating lead.";
 
-      if (status === 409) {
+      if (status === 401) {
+        setError("You’re not signed in. Please log in and try again.");
+      } else if (status === 409) {
         const field = (data?.field || "").toString().toLowerCase();
         if (field === "mobile" || /mobile|phone/i.test(msg)) setDupMobile(true);
         setConflict({
