@@ -473,44 +473,91 @@ async function loadFieldMetaMap(client, fieldIds) {
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
   if (!items?.length) return;
 
+  // 1) Resolve field_id from code (batch)
+  const codeKeys = [...new Set(
+    items.filter(i => !isUuid(i.field_id) && i.code)
+         .map(i => String(i.code).toLowerCase())
+  )];
+
+  const idToFv = new Map();        // field_id -> form_version_id
+  if (codeKeys.length) {
+    const r = await client.query(
+      `SELECT LOWER(code) AS code, id, form_version_id
+         FROM public.custom_fields
+        WHERE tenant_id = ensure_tenant_scope()
+          AND LOWER(code) = ANY($1::text[])`,
+      [codeKeys]
+    );
+    const codeToField = new Map(r.rows.map(row => [row.code, row.id]));
+    for (const row of r.rows) idToFv.set(String(row.id), row.form_version_id);
+
+    for (const it of items) {
+      if (!isUuid(it.field_id) && it.code) {
+        const id = codeToField.get(String(it.code).toLowerCase());
+        if (id) it.field_id = String(id);
+      }
+    }
+  }
+
+  // 2) Collect valid field ids
   const fieldIds = [...new Set(items.map(i => i.field_id))].filter(isUuid);
   if (!fieldIds.length) {
-    console.warn("[CFV] No valid field_ids after validation. Skipping CFV upsert.");
+    console.warn("[CFV] No valid field_ids (after code resolution). Nothing to insert.");
     return;
   }
 
+  // 3) Load metadata (field_type + form_version_id) for those IDs
   const metaMap = await loadFieldMetaMap(client, fieldIds);
+  // merge any form_version_id we already learned via code lookups
+  for (const [fid, fv] of idToFv.entries()) {
+    if (!metaMap.has(fid)) metaMap.set(fid, { id: fid, form_version_id: fv, field_type: "text" });
+    else if (!metaMap.get(fid).form_version_id) metaMap.get(fid).form_version_id = fv;
+  }
 
-  // Remove any existing values for these fields on this record (scoped to tenant & record)
+  // 4) Fallback: latest form_version_id for this tenant
+  let fallbackFv = null;
+  if ([...metaMap.values()].some(m => !m.form_version_id)) {
+    const fr = await client.query(
+      `SELECT form_version_id
+         FROM public.custom_fields
+        WHERE tenant_id = ensure_tenant_scope()
+          AND form_version_id IS NOT NULL
+        ORDER BY created_at DESC NULLS LAST
+        LIMIT 1`
+    );
+    fallbackFv = fr.rows?.[0]?.form_version_id || null;
+  }
+
+  // 5) Delete existing values for this set (merge behavior)
   await client.query(
     `DELETE FROM public.custom_field_values
       WHERE tenant_id = ensure_tenant_scope()
         AND record_type = $1
-        AND record_id = $2
-        AND field_id = ANY($3::uuid[])`,
+        AND record_id   = $2
+        AND field_id    = ANY($3::uuid[])`,
     [recordType, recordId, fieldIds]
   );
 
-  // Insert fresh rows
+  // 6) Insert resolved values
+  let inserted = 0;
   for (const it of items) {
     const fid = String(it.field_id);
-    const meta = metaMap.get(fid);
-    if (!meta) {
-      console.warn(`[CFV] Unknown custom_field id=${fid}; skipped.`);
-      continue;
-    }
-    if (!meta.form_version_id) {
-      console.warn(`[CFV] Field id=${fid} has no form_version_id; skipped.`);
+    if (!isUuid(fid)) continue;
+
+    const meta = metaMap.get(fid) || { field_type: "text", form_version_id: fallbackFv };
+    const form_version_id = meta.form_version_id || fallbackFv;
+    if (!form_version_id) {
+      console.warn(`[CFV] Skipping field ${fid} — no form_version_id (and no fallback).`);
       continue;
     }
 
-    // Coerce by custom_fields.field_type
     let vText  = it.value_text ?? null;
     let vNum   = it.value_number ?? null;
     let vDate  = it.value_date ?? null;
     let vJson  = it.value_json ?? null;
 
-    switch (meta.field_type) {
+    const ft = String(meta.field_type || "").toLowerCase();
+    switch (ft) {
       case "number":
       case "int":
       case "integer":
@@ -518,25 +565,19 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
       case "decimal":
       case "currency":
         vNum = Number.isFinite(Number(vNum)) ? Number(vNum) : null;
-        vText = null; vDate = null; vJson = null;
-        break;
+        vText = null; vDate = null; vJson = null; break;
 
       case "date":
       case "dob":
       case "birthday":
         vDate = vDate ? String(vDate).slice(0, 10) : null;
-        vText = null; vNum = null; vJson = null;
-        break;
+        vText = null; vNum = null; vJson = null; break;
 
       case "json":
       case "object":
       case "array":
-        if (vJson == null && vText) {
-          try { vJson = JSON.parse(vText); } catch { vJson = vText; }
-          vText = null;
-        }
-        vNum = null; vDate = null;
-        break;
+        if (vJson == null && vText) { try { vJson = JSON.parse(vText); } catch { vJson = vText; } }
+        vText = null; vNum = null; vDate = null; break;
 
       case "multiselect":
       case "multi_select":
@@ -544,43 +585,33 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
       case "tags":
         if (!Array.isArray(vJson)) {
           if (Array.isArray(vText)) vJson = vText;
-          else if (typeof vText === "string") {
+          else if (typeof vText === "string")
             vJson = vText.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
-          } else {
-            vJson = vJson ?? [];
-          }
+          else vJson = vJson ?? [];
         }
-        vText = null; vNum = null; vDate = null;
-        break;
+        vText = null; vNum = null; vDate = null; break;
 
-      default: // text / select / radio / email / phone etc. -> value_text
+      case "checkbox":
+        if (typeof vText === "string") vText = /^(true|1|yes|on)$/i.test(vText) ? "true" : "false";
+        vNum = null; vDate = null; vJson = null; break;
+
+      default:
         if (vText != null) vText = String(vText);
         vNum = null; vDate = null; // keep vJson only if explicitly provided
-        break;
     }
-
-    const file_id = null; // hook your storage if needed
 
     await client.query(
       `INSERT INTO public.custom_field_values
          (tenant_id, form_version_id, field_id, record_type, record_id,
           value_text, value_number, value_date, value_json, file_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [
-        tenantId,
-        meta.form_version_id,
-        fid,
-        recordType, // << use the route-provided recordType (e.g., "lead")
-        recordId,
-        vText,
-        vNum,
-        vDate,
-        vJson,
-        file_id,
-      ]
+      [tenantId, form_version_id, fid, recordType, recordId, vText, vNum, vDate, vJson, null]
     );
+    inserted++;
   }
+  console.log(`[CFV] inserted ${inserted} rows for record ${recordId}`);
 }
+
 
 /* ---------------- POST /api/leads (create) ---------------- */
 // Accept both JSON and multipart; multipart carries cfv[...] entries (and optional files).
