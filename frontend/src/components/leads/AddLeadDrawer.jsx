@@ -1,7 +1,7 @@
 // src/components/leads/AddLeadDrawer.jsx — full, updated, production-ready
 // - Phone input is max width; country dropdown is compact.
 // - Clean sections. Title "Advance". No "Add custom field" button.
-// - Custom fields are loaded from /api/crm/custom-fields?entity=lead&module=crm (falls back to /api/custom-fields?record_type=lead).
+// - Custom fields are loaded from /api/custom-fields?entity=lead (also sends record_type=lead for compatibility).
 // - Posts multipart/form-data with cfv[...] entries (no JSON map).
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -38,29 +38,6 @@ const INIT = {
   status: "new",
   source: "",
 };
-
-/* ---------------- map server fields -> UI fields (tolerant) --------------- */
-// Accepts both /api/crm/custom-fields (type/options) and legacy /api/custom-fields (field_type/options_json)
-function mapServerFieldToUI(f) {
-  const key = f.key || f.code;
-  const type = String(f.type || f.field_type || "text").toLowerCase();
-  const options = Array.isArray(f.options)
-    ? f.options
-    : Array.isArray(f.options_json)
-      ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
-      : [];
-  const accept = f.accept || f.validation_json?.accept;
-  return {
-    id: f.id,
-    key,
-    label: f.label,
-    type, // "text" | "textarea" | "number" | "date" | "select" | "checkbox" | "file"
-    required: !!(f.required ?? f.is_required),
-    options,
-    accept: type === "file" ? (accept || "*/*") : undefined,
-    order_index: f.order_index ?? f.order ?? 0,
-  };
-}
 
 /* --------------------------------- UI atoms -------------------------------- */
 function Section({ title, subtitle, children, right }) {
@@ -136,7 +113,7 @@ const Select = React.forwardRef(function Select(
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  ￼const [hi, setHi] = useState(0);
+  const [hi, setHi] = useState(0);
   const boxRef = useRef(null);
   const btnRef = useRef(null);
 
@@ -307,36 +284,43 @@ export default function AddLeadDrawer({
     setCustom({});
     (async () => {
       try {
-        // Prefer new CRM route
-        let data;
-        try {
-          const r1 = await http.get("/api/crm/custom-fields", {
-            params: { entity: "lead", module: "crm", active_only: 1 },
-          });
-          data = r1?.data;
-        } catch {
-          // Fallback to legacy route/shape
-          const r2 = await http.get("/api/custom-fields", {
-            params: { record_type: "lead" },
-          });
-          data = r2?.data;
-        }
+        // Send both shapes so either server variant works.
+        const resp = await http.get("custom-fields", {
+          params: { entity: "lead", record_type: "lead" },
+        });
+        const items = normalizeToArray(resp?.data);
 
-        const items = normalizeToArray(data);
+        // Map supporting both raw schema (field_type/options_json) and mapped schema (type/options)
         const mapped = items
-          .filter((f) => f?.is_active !== false)
-          .map(mapServerFieldToUI)
+          .filter((f) => f?.is_active !== false) // tolerate absence of is_active
+          .map((f) => {
+            const type = f.field_type || f.type || "text";
+            const options =
+              Array.isArray(f.options_json)
+                ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
+                : Array.isArray(f.options)
+                  ? f.options
+                  : [];
+            const accept =
+              (f.validation_json && f.validation_json.accept) || f.accept || undefined;
+            const order = f.order_index ?? f.order ?? 0;
+            return {
+              id: f.id,
+              key: f.code || f.key,            // accept both "code" and "key"
+              label: f.label,
+              type,
+              required: !!(f.is_required ?? f.required),
+              options,
+              accept,
+              order_index: order,
+            };
+          })
+          .filter((f) => !!f.id && !!f.key && !!f.label)
           .sort(
             (a, b) =>
               (a.order_index ?? 0) - (b.order_index ?? 0) ||
               String(a.label).localeCompare(String(b.label))
           );
-
-        if (process?.env?.NODE_ENV !== "production") {
-          // one-time helpful logs
-          console.log("[AddLeadDrawer] custom-fields raw:", data);
-          console.log("[AddLeadDrawer] custom-fields mapped:", mapped);
-        }
 
         setCfList(mapped);
       } catch (e) {
@@ -573,7 +557,11 @@ export default function AddLeadDrawer({
       console.error("POST /leads failed:", err?.response || err);
       const status = err?.response?.status;
       const data = err?.response?.data || {};
-      const msg = (typeof data === "string" && data) || data?.message || data?.error || "Server error while creating lead.";
+      const msg =
+        (typeof data === "string" && data) ||
+        data?.message ||
+        data?.error ||
+        "Server error while creating lead.";
 
       if (status === 409) {
         const field = (data?.field || "").toString().toLowerCase();
@@ -612,7 +600,11 @@ export default function AddLeadDrawer({
       console.error("POST /leads (force) failed:", err?.response || err);
       const data = err?.response?.data;
       const status = err?.response?.status;
-      const msg = (typeof data === "string" && data) || data?.message || data?.error || `Server error${status ? ` (${status})` : ""}.`;
+      const msg =
+        (typeof data === "string" && data) ||
+        data?.message ||
+        data?.error ||
+        `Server error${status ? ` (${status})` : ""}.`;
       setError(msg);
       setServerErrors(data?.errors || null);
     } finally {
