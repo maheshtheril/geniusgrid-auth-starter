@@ -1,7 +1,7 @@
-// src/components/leads/AddLeadDrawer.jsx — full, updated, production-ready
+// src/components/leads/AddLeadDrawer.jsx — production-ready
 // - Phone input is max width; country dropdown is compact.
 // - Clean sections. Title "Advance". No "Add custom field" button.
-// - Custom fields are loaded from /api/custom-fields?entity=lead (also sends record_type=lead).
+// - Custom fields are loaded from /api/custom-fields?entity=lead&record_type=lead.
 // - Posts multipart/form-data with cfv[...] entries (no JSON map).
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -234,7 +234,7 @@ export default function AddLeadDrawer({
   prefill,
   stages = ["new", "prospect", "proposal", "negotiation", "closed"],
   sources = ["Website", "Referral", "Ads", "Outbound", "Event"],
-  customFields = [],   // no longer used (kept for compatibility)
+  customFields = [],   // kept for compatibility, not used
   variant = "full",
 }) {
   const api = useLeadsApi();
@@ -284,13 +284,11 @@ export default function AddLeadDrawer({
     setCustom({});
     (async () => {
       try {
-        // Send both shapes so either server variant works (entity+record_type)
         const resp = await http.get("/api/custom-fields", {
-          params: {  record_type: "lead" },
+          params: { entity: "lead", record_type: "lead" },
         });
         const items = normalizeToArray(resp?.data);
-console.info("CF load:", resp.status, "items:", items.length);
-        // Map both raw schema (field_type/options_json) and mapped schema (type/options)
+
         const mapped = items
           .filter((f) => f?.is_active !== false)
           .map((f) => {
@@ -474,7 +472,6 @@ console.info("CF load:", resp.status, "items:", items.length);
       ...extra,
     };
 
-    // append base fields
     Object.entries(base).forEach(([k, v]) => fd.append(k, v ?? ""));
 
     // encode custom fields into cfv[i][field_id] + value_*
@@ -732,7 +729,6 @@ console.info("CF load:", resp.status, "items:", items.length);
               <div className="gg-muted text-xs">Fill in the details below</div>
             </div>
           </div>
-          {/* Top-right Close button */}
           <button
             type="button"
             className="gg-btn gg-btn-ghost"
