@@ -19,6 +19,10 @@ const upload = multer({
   limits: { fileSize: 20 * 1024 * 1024, files: 20 },
 });
 
+// --- toggles ---
+const DEV_ERRORS = process.env.NODE_ENV !== "production" && process.env.DEV_ERRORS === "1";
+const SAFE_MODE  = process.env.SAFE_MODE === "1"; // when on: skip CFV + DB helper funcs
+
 /* ---------------- helpers ---------------- */
 function getTenantId(req) {
   return (
@@ -47,7 +51,6 @@ async function setTenant(client, tenantId) {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
-const DEV_ERRORS = process.env.NODE_ENV !== "production" && process.env.DEV_ERRORS === "1";
 
 if (process.env.NODE_ENV !== "production") {
   router.use((req, _res, next) => {
@@ -57,6 +60,8 @@ if (process.env.NODE_ENV !== "production") {
       tenant: getTenantId(req),
       company: getCompanyId(req),
       hasFiles: !!(req.files?.length),
+      SAFE_MODE,
+      DEV_ERRORS,
     });
     next();
   });
@@ -163,7 +168,7 @@ function buildProjection(schema) {
 }
 
 /* ---------------- probe ---------------- */
-router.get("/ping", (_req, res) => res.json({ ok: true }));
+router.get("/ping", (_req, res) => res.json({ ok: true, SAFE_MODE, DEV_ERRORS }));
 
 /* ---------------- GET /api/leads (list) ---------------- */
 router.get("/", async (req, res) => {
@@ -317,18 +322,29 @@ router.get("/check-mobile", async (req, res) => {
   try {
     await setTenant(client, tenantId);
 
-    const normRes = await client.query("SELECT public.phone_to_norm($1) AS pn", [raw]);
-    const pn = normRes.rows?.[0]?.pn || null;
+    const pn = SAFE_MODE
+      ? String(raw).replace(/[^\d+]/g, "").replace(/^00/, "+").trim()
+      : (await client.query("SELECT public.phone_to_norm($1) AS pn", [raw])).rows?.[0]?.pn || null;
 
     if (!pn) return res.json({ exists: false, reason: "invalid" });
     if (pn.length < 6) return res.json({ exists: false, reason: "too_short", phone_norm: pn });
 
-    const { rows } = await client.query(
-      `SELECT id, name FROM public.leads
-       WHERE tenant_id = ensure_tenant_scope() AND phone_norm = $1
-       LIMIT 1`,
-      [pn]
-    );
+    let rows;
+    if (SAFE_MODE) {
+      ({ rows } = await client.query(
+        `SELECT id, name FROM public.leads
+         WHERE tenant_id = $1 AND phone_norm = $2
+         LIMIT 1`,
+        [tenantId, pn]
+      ));
+    } else {
+      ({ rows } = await client.query(
+        `SELECT id, name FROM public.leads
+         WHERE tenant_id = ensure_tenant_scope() AND phone_norm = $1
+         LIMIT 1`,
+        [pn]
+      ));
+    }
 
     return res.json({ exists: rows.length > 0, lead: rows[0] || null, phone_norm: pn });
   } catch (err) {
@@ -452,14 +468,22 @@ function normalizeLeadBody(req) {
 
 /* ---------- CFV meta loaders + upsert (supports code or field_id) ---------- */
 
-async function loadFieldsByIdsOrCodes(client, ids = [], codes = [], recordType = null) {
+async function loadFieldsByIdsOrCodes(client, ids = [], codes = [], recordType = null, tenantId = null) {
   const hasIds = ids.length > 0;
   const hasCodes = codes.length > 0;
   if (!hasIds && !hasCodes) return [];
 
-  const conds = [`tenant_id = ensure_tenant_scope()`];
+  const conds = [];
   const params = [];
   let i = 0;
+
+  // tenant scope
+  if (SAFE_MODE) {
+    conds.push(`tenant_id = $${++i}`);
+    params.push(tenantId);
+  } else {
+    conds.push(`tenant_id = ensure_tenant_scope()`);
+  }
 
   if (hasIds) {
     params.push(ids);
@@ -500,7 +524,7 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
   const rawIds = [...new Set(items.map(i => String(i.field_id || "").trim()))].filter(x => x && UUID_RE.test(x));
   const rawCodes = [...new Set(items.map(i => String(i.code || "").trim().toLowerCase()))].filter(Boolean);
 
-  const metas = await loadFieldsByIdsOrCodes(client, rawIds, rawCodes, recordType);
+  const metas = await loadFieldsByIdsOrCodes(client, rawIds, rawCodes, recordType, tenantId);
   if (process.env.NODE_ENV !== "production") {
     console.log("CFV metas:", metas);
   }
@@ -532,14 +556,24 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
   }
 
   const fieldIds = [...new Set(good.map(r => r.meta.id))];
-  const delRes = await client.query(
-    `DELETE FROM public.custom_field_values
-      WHERE tenant_id = ensure_tenant_scope()
-        AND record_type = $1
-        AND record_id = $2
-        AND field_id = ANY($3::uuid[])`,
-    [recordType, recordId, fieldIds]
-  );
+
+  const delSql = SAFE_MODE
+    ? `DELETE FROM public.custom_field_values
+         WHERE tenant_id = $1
+           AND record_type = $2
+           AND record_id = $3
+           AND field_id = ANY($4::uuid[])`
+    : `DELETE FROM public.custom_field_values
+         WHERE tenant_id = ensure_tenant_scope()
+           AND record_type = $1
+           AND record_id = $2
+           AND field_id = ANY($3::uuid[])`;
+
+  const delParams = SAFE_MODE
+    ? [tenantId, recordType, recordId, fieldIds]
+    : [recordType, recordId, fieldIds];
+
+  const delRes = await client.query(delSql, delParams);
 
   let inserted = 0;
   for (const { it, meta } of good) {
@@ -675,7 +709,10 @@ router.post("/", upload.any(), async (req, res) => {
     const created = rows[0];
 
     // Upsert CFV rows (record_type 'lead') for the sent field_ids/codes
-    const cfvStats = await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
+    let cfvStats = { deleted: 0, inserted: 0, reason: SAFE_MODE ? "skipped_safe_mode" : undefined };
+    if (!SAFE_MODE) {
+      cfvStats = await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
+    }
 
     await client.query("COMMIT");
 
@@ -687,7 +724,7 @@ router.post("/", upload.any(), async (req, res) => {
         : created.ai_next || [];
 
     if (process.env.NODE_ENV !== "production") {
-      return res.status(201).json({ ...created, _cfv: cfvStats });
+      return res.status(201).json({ ...created, _cfv: cfvStats, SAFE_MODE, DEV_ERRORS });
     }
     return res.status(201).json(created);
   } catch (err) {
@@ -704,7 +741,6 @@ router.post("/", upload.any(), async (req, res) => {
       stack: err?.stack,
     });
 
-    // Dev-mode: echo exact error back so the frontend sees it
     if (DEV_ERRORS) {
       return res.status(500).json({
         error: "debug",
@@ -768,17 +804,26 @@ router.get("/:id", async (req, res) => {
       extra = ` AND company_id::text = $${params.length}`;
     }
 
-    const sql = `
-      SELECT
-        ${projection}
-      FROM public.leads
-      WHERE id = $1
-        AND tenant_id = ensure_tenant_scope()
-        ${extra}
-      LIMIT 1;
-    `;
+    // SAFE_MODE: match tenant_id via parameter; otherwise rely on ensure_tenant_scope()
+    const sql = SAFE_MODE
+      ? `
+        SELECT ${projection}
+          FROM public.leads
+         WHERE id = $1
+           AND tenant_id = $2
+           ${extra}
+         LIMIT 1;
+        `
+      : `
+        SELECT ${projection}
+          FROM public.leads
+         WHERE id = $1
+           AND tenant_id = ensure_tenant_scope()
+           ${extra}
+         LIMIT 1;
+        `;
 
-    const r = await client.query(sql, params);
+    const r = await client.query(sql, SAFE_MODE ? [id, tenantId, ...(companyId ? [companyId] : [])] : [id, ...(companyId ? [companyId] : [])]);
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
 
     const row = r.rows[0];
@@ -904,7 +949,14 @@ router.patch("/:id", async (req, res) => {
     if (!fields.length) return res.status(400).json({ error: "No updatable fields" });
 
     const whereVals = [id, tenantId];
-    let whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
+    let whereSQL;
+    if (SAFE_MODE) {
+      whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
+    } else {
+      // still pass tenant_id to keep parameter order same
+      whereSQL = `WHERE id = $${++i} AND tenant_id = ensure_tenant_scope()`;
+      whereVals.pop(); // remove tenantId since we don't use it in SQL when not SAFE_MODE
+    }
     if (companyId) { whereVals.push(companyId); whereSQL += ` AND company_id::text = $${++i}`; }
 
     const projection = buildProjection(schema);
