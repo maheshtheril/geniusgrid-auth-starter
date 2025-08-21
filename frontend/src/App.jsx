@@ -92,7 +92,7 @@ const BillingSubscription= React.lazy(() => import("@/pages/BillingSubscription.
 const UsageLimits        = React.lazy(() => import("@/pages/UsageLimits.jsx"));
 const SystemLogs         = React.lazy(() => import("@/pages/SystemLogs.jsx"));
 
-import CfvCreatePage from "./pages/CfvCreatePage.jsx";
+
 
 
 /* ---------- Error boundary ---------- */
@@ -478,7 +478,7 @@ export default function App() {
                 <Route path="approvals"   element={<React.Suspense fallback={<Fallback label="Loading Approvals…" />}><ApprovalsPage /></React.Suspense>} />
                 <Route path="reports"     element={<React.Suspense fallback={<Fallback label="Loading Reports…" />}><ReportsPage /></React.Suspense>} />
                 <Route path="audit"       element={<React.Suspense fallback={<Fallback label="Loading Audit…" />}><AuditPage /></React.Suspense>} />
-               <Route path="/cfv/new" element={<CfvCreatePage />} />
+               
               </Route>
 
               {/* Keep your extra CRM route injections */}
