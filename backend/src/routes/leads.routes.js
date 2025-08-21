@@ -1,1007 +1,165 @@
-// src/routes/leads.routes.js
-// Endpoints:
-//   GET    /api/leads/ping
-//   GET    /api/leads                 list (filters + paging)
-//   GET    /api/leads/pipelines       distinct stages (array)
-//   GET    /api/leads/stages          alias of pipelines
-//   GET    /api/leads/check-mobile    (?phone= or ?mobile=)
-//   POST   /api/leads                 create lead (multipart or JSON; inserts CFV rows)
-//   GET    /api/leads/:id             fetch one lead (tenant/company scoped)
-//   PATCH  /api/leads/:id             update (MASTER FIELDS enabled)
+// src/routes/leads.routes.js (PANIC MODE: no DB calls, no 500s)
+// Mount path: /api/leads
 
 import express from "express";
 import multer from "multer";
-import { pool } from "../db/pool.js";
+import { randomUUID } from "crypto";
 
 const router = express.Router();
+
+// ensure JSON / urlencoded parsing even if app.js forgot it
+router.use(express.json({ limit: "2mb" }));
+router.use(express.urlencoded({ extended: true }));
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 20 },
 });
 
-// --- toggles ---
-const DEV_ERRORS = process.env.NODE_ENV !== "production" && process.env.DEV_ERRORS === "1";
-const SAFE_MODE  = process.env.SAFE_MODE === "1"; // when on: skip CFV + DB helper funcs
+const log = (...a) => {
+  if (process.env.NODE_ENV !== "production") console.log("[PANIC /api/leads]", ...a);
+};
 
-/* ---------------- helpers ---------------- */
-function getTenantId(req) {
-  return (
-    req.session?.tenantId ||
-    req.session?.tenant_id ||
-    req.get("x-tenant-id") ||
-    req.query.tenant_id ||
-    null
-  );
-}
-function getCompanyId(req) {
-  return (
-    req.session?.companyId ||
-    req.session?.company_id ||
-    req.get("x-company-id") ||
-    req.query.company_id ||
-    null
-  );
-}
-async function setTenant(client, tenantId) {
-  // NON-LOCAL so it persists on this connection (for ensure_tenant_scope() + RLS)
-  await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
-}
-
-/* ---------------- diagnostics & guards ---------------- */
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
-
-if (process.env.NODE_ENV !== "production") {
-  router.use((req, _res, next) => {
-    console.log("[/api/leads] hit", {
-      method: req.method,
-      url: req.originalUrl,
-      tenant: getTenantId(req),
-      company: getCompanyId(req),
-      hasFiles: !!(req.files?.length),
-      SAFE_MODE,
-      DEV_ERRORS,
-    });
-    next();
-  });
-}
-
-/* -------- schema introspection (cached) -------- */
-let leadsSchemaCache = null;
-let leadsSchemaFetchedAt = 0;
-const SCHEMA_TTL_MS = 5 * 60 * 1000;
-
-async function getLeadsSchema(client) {
-  const now = Date.now();
-  if (leadsSchemaCache && now - leadsSchemaFetchedAt < SCHEMA_TTL_MS) return leadsSchemaCache;
-
-  const { rows } = await client.query(
-    `SELECT column_name
-       FROM information_schema.columns
-      WHERE table_schema='public' AND table_name='leads'`
-  );
-  const set = new Set(rows.map(r => r.column_name));
-
-  const has = (c) => set.has(c);
-  const schema = {
-    has_company: has("company"),
-    has_company_name: has("company_name"),
-    has_owner: has("owner"),
-    has_owner_name: has("owner_name"),
-    has_custom: has("custom"),
-    has_website: has("website"),
-    has_source: has("source"),
-    has_status: has("status"),
-    has_stage: has("stage"),
-    has_followup_at: has("followup_at"),
-    has_priority: has("priority"),
-    has_tags_text: has("tags_text"),
-    has_score: has("score"),
-    has_ai_summary: has("ai_summary"),
-    has_ai_next: has("ai_next"),
-    has_ai_score: has("ai_score"),
-    has_ai_next_action: has("ai_next_action"),
-    has_email: has("email"),
-    has_phone: has("phone"),
-    has_updated_at: has("updated_at"),
-    has_created_at: has("created_at"),
-    has_id: has("id"),
-    has_tenant_id: has("tenant_id"),
-    has_company_id: has("company_id"),
-    has_owner_id: has("owner_id"),
-    has_name: has("name"),
-  };
-
-  leadsSchemaCache = schema;
-  leadsSchemaFetchedAt = now;
-  return schema;
-}
-
-/* -------- projection builders (avoid undefined_column) -------- */
-function buildProjection(schema) {
-  const sel = [];
-  sel.push("id", "tenant_id", "company_id", "owner_id", "name");
-
-  // company_name
-  if (schema.has_company && schema.has_company_name) {
-    sel.push("COALESCE(company, company_name) AS company_name");
-  } else if (schema.has_company) {
-    sel.push("company AS company_name");
-  } else if (schema.has_company_name) {
-    sel.push("company_name");
-  } else {
-    sel.push("NULL::text AS company_name");
-  }
-
-  if (schema.has_email) sel.push("email"); else sel.push("NULL::text AS email");
-  if (schema.has_phone) sel.push("phone"); else sel.push("NULL::text AS phone");
-  if (schema.has_website) sel.push("website"); else sel.push("NULL::text AS website");
-  if (schema.has_source) sel.push("source"); else sel.push("NULL::text AS source");
-  if (schema.has_status) sel.push("status"); else sel.push("NULL::text AS status");
-  if (schema.has_stage) sel.push("stage"); else sel.push("NULL::text AS stage");
-
-  // owner_name
-  if (schema.has_owner && schema.has_owner_name) {
-    sel.push("COALESCE(owner, owner_name) AS owner_name");
-  } else if (schema.has_owner) {
-    sel.push("owner AS owner_name");
-  } else if (schema.has_owner_name) {
-    sel.push("owner_name");
-  } else {
-    sel.push("NULL::text AS owner_name");
-  }
-
-  if (schema.has_score) sel.push("score"); else sel.push("NULL::int AS score");
-  if (schema.has_priority) sel.push("priority"); else sel.push("NULL::int AS priority");
-  if (schema.has_tags_text) sel.push("tags_text"); else sel.push("NULL::text AS tags_text");
-  if (schema.has_followup_at) sel.push("followup_at"); else sel.push("NULL::timestamptz AS followup_at");
-  if (schema.has_created_at) sel.push("created_at"); else sel.push("NOW() AS created_at");
-  if (schema.has_updated_at) sel.push("updated_at"); else sel.push("NOW() AS updated_at");
-
-  if (schema.has_ai_summary) sel.push("ai_summary"); else sel.push("NULL::text AS ai_summary");
-  if (schema.has_ai_next) sel.push("ai_next"); else sel.push("NULL::text AS ai_next");
-  if (schema.has_ai_score) sel.push("ai_score"); else sel.push("NULL::int AS ai_score");
-  if (schema.has_ai_next_action) sel.push("ai_next_action"); else sel.push("NULL::text AS ai_next_action");
-
-  return sel.join(",\n      ");
-}
+// simple helper
+const nowISO = () => new Date().toISOString();
 
 /* ---------------- probe ---------------- */
-router.get("/ping", (_req, res) => res.json({ ok: true, SAFE_MODE, DEV_ERRORS }));
-
-/* ---------------- GET /api/leads (list) ---------------- */
-router.get("/", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
-
-  const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const size = Math.min(100, Math.max(1, parseInt(req.query.pageSize ?? req.query.size, 10) || 25));
-  const q = (req.query.q || "").trim();
-  const status = (req.query.status || "").trim();
-  const stage = (req.query.stage || "").trim();
-  const owner_id = (req.query.owner_id || "").trim();
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-    const schema = await getLeadsSchema(client);
-
-    const params = [tenantId];
-    let where = `WHERE tenant_id = $1`;
-    let i = params.length;
-
-    if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++i}`; }
-
-    if (q) {
-      const like = `%${q}%`;
-      const searchCols = ["name"];
-      if (schema.has_company) searchCols.push("company");
-      else if (schema.has_company_name) searchCols.push("company_name");
-      if (schema.has_email) searchCols.push("email");
-      if (schema.has_phone) searchCols.push("phone");
-
-      const orParts = [];
-      for (const col of searchCols) {
-        params.push(like);
-        orParts.push(`${col} ILIKE $${++i}`);
-      }
-      if (orParts.length) where += ` AND (${orParts.join(" OR ")})`;
-    }
-
-    if (status)    { params.push(status);    where += ` AND status = $${++i}`; }
-    if (stage)     { params.push(stage);     where += ` AND stage  = $${++i}`; }
-    if (owner_id)  { params.push(owner_id);  where += ` AND owner_id::text = $${++i}`; }
-
-    const offset = (page - 1) * size;
-
-    const projection = buildProjection(schema);
-
-    const listSQL = `
-      SELECT
-        ${projection}
-      FROM public.leads
-      ${where}
-      ORDER BY ${schema.has_updated_at ? "updated_at" : "created_at"} DESC
-      LIMIT ${size} OFFSET ${offset};
-    `;
-    const countSQL = `SELECT COUNT(*)::int AS total FROM public.leads ${where};`;
-
-    const [list, count] = await Promise.all([
-      client.query(listSQL, params),
-      client.query(countSQL, params),
-    ]);
-
-    const items = (list.rows || []).map((r) => ({
-      ...r,
-      ai_next: Array.isArray(r.ai_next)
-        ? r.ai_next
-        : typeof r.ai_next === "string" && r.ai_next.startsWith("[")
-          ? JSON.parse(r.ai_next)
-          : r.ai_next || [],
-    }));
-
-    res.json({ items, total: count.rows?.[0]?.total ?? 0, page, size });
-  } catch (err) {
-    console.error("GET /leads error:", {
-      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
-    });
-    if (DEV_ERRORS) {
-      return res.status(500).json({
-        error: "debug",
-        message: err?.message,
-        code: err?.code,
-        detail: err?.detail,
-        column: err?.column,
-        position: err?.position,
-        stack: err?.stack,
-      });
-    }
-    res.status(500).json({ error: "Failed to load leads" });
-  } finally {
-    client.release();
-  }
+router.get("/ping", (_req, res) => {
+  res.json({ ok: true, mode: "panic", note: "DB disabled; routes stubbed" });
 });
 
-/* ---------------- Distinct stages helper + routes ---------------- */
-async function loadStageList(tenantId, companyId) {
-  const params = [tenantId];
-  let where = `WHERE tenant_id = $1 AND stage IS NOT NULL AND stage <> ''`;
-  let j = params.length;
-
-  if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++j}`; }
-
-  const { rows } = await pool.query(
-    `SELECT DISTINCT stage FROM public.leads ${where} ORDER BY stage ASC`,
-    params
-  );
-  const stages = rows.map((r) => r.stage).filter(Boolean);
-  return stages.length ? stages : ["new", "qualified", "proposal", "won", "lost"];
-}
-
-router.get("/pipelines", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  try {
-    const stages = await loadStageList(tenantId, getCompanyId(req));
-    res.json(stages);
-  } catch (err) {
-    console.error("GET /leads/pipelines error:", err);
-    res.json(["new", "qualified", "proposal", "won", "lost"]);
-  }
+/* ---------------- list ---------------- */
+router.get("/", (req, res) => {
+  log("LIST", req.query);
+  res.json({
+    items: [],
+    total: 0,
+    page: Number(req.query.page || 1),
+    size: Number(req.query.pageSize || req.query.size || 25),
+  });
 });
 
-router.get("/stages", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+/* ---------------- pipelines/stages ---------------- */
+router.get("/pipelines", (_req, res) => res.json(["new", "qualified", "proposal", "won", "lost"]));
+router.get("/stages", (_req, res) => res.json(["new", "qualified", "proposal", "won", "lost"]));
 
-  try {
-    const stages = await loadStageList(tenantId, getCompanyId(req));
-    res.json(stages);
-  } catch (err) {
-    console.error("GET /leads/stages error:", err);
-    res.json(["new", "qualified", "proposal", "won", "lost"]);
-  }
-});
-
-/* ---------------- GET /api/leads/check-mobile ---------------- */
-router.get("/check-mobile", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ exists: false, error: "No tenant" });
-
+/* ---------------- check-mobile ---------------- */
+router.get("/check-mobile", (req, res) => {
   const raw = String(req.query.phone ?? req.query.mobile ?? "").trim();
   if (!raw) return res.json({ exists: false, reason: "empty" });
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-
-    const pn = SAFE_MODE
-      ? String(raw).replace(/[^\d+]/g, "").replace(/^00/, "+").trim()
-      : (await client.query("SELECT public.phone_to_norm($1) AS pn", [raw])).rows?.[0]?.pn || null;
-
-    if (!pn) return res.json({ exists: false, reason: "invalid" });
-    if (pn.length < 6) return res.json({ exists: false, reason: "too_short", phone_norm: pn });
-
-    let rows;
-    if (SAFE_MODE) {
-      ({ rows } = await client.query(
-        `SELECT id, name FROM public.leads
-         WHERE tenant_id = $1 AND phone_norm = $2
-         LIMIT 1`,
-        [tenantId, pn]
-      ));
-    } else {
-      ({ rows } = await client.query(
-        `SELECT id, name FROM public.leads
-         WHERE tenant_id = ensure_tenant_scope() AND phone_norm = $1
-         LIMIT 1`,
-        [pn]
-      ));
-    }
-
-    return res.json({ exists: rows.length > 0, lead: rows[0] || null, phone_norm: pn });
-  } catch (err) {
-    console.error("GET /leads/check-mobile error:", err);
-    if (DEV_ERRORS) {
-      return res.status(500).json({
-        error: "debug",
-        message: err?.message,
-        code: err?.code,
-        detail: err?.detail,
-        stack: err?.stack,
-      });
-    }
-    return res.status(500).json({ exists: false, error: "server_error" });
-  } finally {
-    client.release();
-  }
+  const pn = raw.replace(/[^\d+]/g, "").replace(/^00/, "+");
+  if (!pn || pn.length < 6) return res.json({ exists: false, reason: "too_short", phone_norm: pn });
+  res.json({ exists: false, phone_norm: pn, lead: null });
 });
 
-/* ------------ helpers for POST (multipart + CFV insert) ------------ */
-
-// Parse cfv JSON or cfv[i][field_id] style multipart
-function parseCfvItems(body = {}, files = []) {
-  const collected = [];
-  const isUuidLocal = (s) => typeof s === "string" && UUID_RE.test(s);
-
-  const pushItem = (raw = {}) => {
-    if (!raw) return;
-    const field_id = raw.field_id != null ? String(raw.field_id) : null;
-    const code     = raw.code     != null ? String(raw.code)     : null;
-    if (!field_id && !code) return;
-
-    const value_number =
-      raw.value_number !== undefined && raw.value_number !== "" ? Number(raw.value_number) : null;
-    const value_date = raw.value_date ? String(raw.value_date).slice(0, 10) : null;
-    const value_text = raw.value_text !== undefined ? String(raw.value_text) : null;
-
-    let value_json = null;
-    if (raw.value_json !== undefined && raw.value_json !== null && raw.value_json !== "") {
-      try { value_json = typeof raw.value_json === "string" ? JSON.parse(raw.value_json) : raw.value_json; }
-      catch { value_json = String(raw.value_json); }
-    }
-
-    collected.push({
-      field_id: isUuidLocal(field_id) ? field_id : null,
-      code: code ? code.toLowerCase() : null,
-      value_text,
-      value_number: Number.isFinite(value_number) ? value_number : null,
-      value_date,
-      value_json,
-      file: raw.file || null,
-    });
-  };
-
-  // 1) JSON body: cfv as array/object (or JSON string)
-  let j = body?.cfv;
-  if (Array.isArray(j)) {
-    j.forEach(pushItem);
-  } else if (j && typeof j === "object") {
-    for (const [k, v] of Object.entries(j)) {
-      if (v && typeof v === "object" && !Array.isArray(v)) {
-        pushItem({ ...v, field_id: v.field_id ?? (isUuidLocal(k) ? k : undefined), code: v.code ?? (!isUuidLocal(k) ? k : undefined) });
-      } else {
-        pushItem({ field_id: isUuidLocal(k) ? k : undefined, code: !isUuidLocal(k) ? k : undefined, value_text: v });
-      }
-    }
-  } else if (typeof j === "string" && j.trim()) {
-    try {
-      const parsed = JSON.parse(j);
-      if (Array.isArray(parsed)) parsed.forEach(pushItem);
-      else if (parsed && typeof parsed === "object") {
-        for (const [k, v] of Object.entries(parsed)) {
-          if (v && typeof v === "object" && !Array.isArray(v)) {
-            pushItem({ ...v, field_id: v.field_id ?? (isUuidLocal(k) ? k : undefined), code: v.code ?? (!isUuidLocal(k) ? k : undefined) });
-          } else {
-            pushItem({ field_id: isUuidLocal(k) ? k : undefined, code: !isUuidLocal(k) ? k : undefined, value_text: v });
-          }
-        }
-      }
-    } catch {
-      // ignore bad JSON; fall through to multipart-style keys
-    }
-  }
-
-  if (collected.length) return collected;
-
-  // 2) Multipart keys: cfv[i][...], including cfv[i][code]
-  const byIdx = {};
-  const re = /^cfv\[(\d+)\]\[(\w+)\]$/;
-  for (const [k, v] of Object.entries(body)) {
-    const m = re.exec(k); if (!m) continue;
-    const idx = +m[1], key = m[2];
-    (byIdx[idx] ||= {})[key] = v;
-  }
-  for (const f of files) {
-    const m = re.exec(f.fieldname); if (!m) continue;
-    const idx = +m[1], key = m[2];
-    if (key === "file") (byIdx[idx] ||= {}).file = f;
-  }
-  Object.values(byIdx).forEach(pushItem);
-
-  return collected;
-}
-
-// Map incoming body (JSON or multipart) to canonical fields
-function normalizeLeadBody(req) {
-  const b = req.body || {};
-  const pick = (...keys) => keys.map(k => b[k]).find(v => v !== undefined && v !== null);
-  const follow = pick("followup_at", "follow_up_date", "follow");
-  return {
-    name: String(pick("name", "title", "lead_name") || "").trim(),
-    email: pick("email") ? String(b.email).trim() : null,
-    phone: pick("phone", "mobile") ? String(pick("phone", "mobile")).trim() : null,
-    website: pick("website") ? String(b.website).trim() : null,
-    source: pick("source") ? String(b.source).trim() : null,
-    status: pick("status") ? String(b.status).trim() : "new",
-    stage:  pick("stage")  ? String(b.stage).trim()  : null,
-    followup_at: follow ? new Date(String(follow).slice(0,10)) : null,
-  };
-}
-
-/* ---------- CFV meta loaders + upsert (supports code or field_id) ---------- */
-
-async function loadFieldsByIdsOrCodes(client, ids = [], codes = [], recordType = null, tenantId = null) {
-  const hasIds = ids.length > 0;
-  const hasCodes = codes.length > 0;
-  if (!hasIds && !hasCodes) return [];
-
-  const conds = [];
-  const params = [];
-  let i = 0;
-
-  // tenant scope
-  if (SAFE_MODE) {
-    conds.push(`tenant_id = $${++i}`);
-    params.push(tenantId);
-  } else {
-    conds.push(`tenant_id = ensure_tenant_scope()`);
-  }
-
-  if (hasIds) {
-    params.push(ids);
-    conds.push(`id = ANY($${++i}::uuid[])`);
-  }
-  if (hasCodes) {
-    params.push(codes.map(c => c.toLowerCase()));
-    conds.push(`LOWER(code) = ANY($${++i}::text[])`);
-  }
-  // tolerate null record_type or variant; prefer a match if provided
-  if (recordType) {
-    params.push(recordType.toLowerCase(), (recordType + "s").toLowerCase());
-    conds.push(`(record_type IS NULL OR LOWER(record_type) IN ($${++i}, $${++i}))`);
-  }
-
-  const sql = `
-    SELECT id, code, form_version_id, field_type
-    FROM public.custom_fields
-    WHERE ${conds.join(" AND ")}
-  `;
-  const { rows } = await client.query(sql, params);
-  return rows.map(r => ({
-    id: String(r.id),
-    code: (r.code || "").toLowerCase(),
-    form_version_id: r.form_version_id,
-    field_type: (r.field_type || "").toLowerCase().trim(),
-  }));
-}
-
-/**
- * MERGE-like behavior: delete existing rows for the same fields on this record, then insert provided values.
- * Supports items with either { field_id } or { code }.
- * Throws with .status/.code when it cannot write, so caller can surface to client.
- */
-async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
-  if (!items?.length) return { deleted: 0, inserted: 0, reason: "empty_items" };
-
-  const rawIds = [...new Set(items.map(i => String(i.field_id || "").trim()))].filter(x => x && UUID_RE.test(x));
-  const rawCodes = [...new Set(items.map(i => String(i.code || "").trim().toLowerCase()))].filter(Boolean);
-
-  const metas = await loadFieldsByIdsOrCodes(client, rawIds, rawCodes, recordType, tenantId);
-  if (process.env.NODE_ENV !== "production") {
-    console.log("CFV metas:", metas);
-  }
-  const metaById = new Map(metas.map(m => [m.id, m]));
-  const metaByCode = new Map(metas.map(m => [m.code, m]));
-
-  const resolved = items.map(it => {
-    const fid = it.field_id && UUID_RE.test(String(it.field_id)) ? String(it.field_id) : null;
-    const code = it.code ? String(it.code).toLowerCase() : null;
-    const meta = fid ? metaById.get(fid) : (code ? metaByCode.get(code) : null);
-    return { it, meta };
-  });
-
-  const good = resolved.filter(r => r.meta);
-  if (!good.length) {
-    const err = new Error("[CFV] No matching custom_fields for provided field_id/code");
-    err.status = 400;
-    err.code = "CFV_NO_MATCH";
-    throw err;
-  }
-
-  const missingFv = good.filter(r => !r.meta.form_version_id);
-  if (missingFv.length) {
-    const which = missingFv.map(r => r.meta.id).join(", ");
-    const err = new Error(`[CFV] custom_fields missing form_version_id: ${which}`);
-    err.status = 400;
-    err.code = "CFV_NO_FORM_VERSION";
-    throw err;
-  }
-
-  const fieldIds = [...new Set(good.map(r => r.meta.id))];
-
-  const delSql = SAFE_MODE
-    ? `DELETE FROM public.custom_field_values
-         WHERE tenant_id = $1
-           AND record_type = $2
-           AND record_id = $3
-           AND field_id = ANY($4::uuid[])`
-    : `DELETE FROM public.custom_field_values
-         WHERE tenant_id = ensure_tenant_scope()
-           AND record_type = $1
-           AND record_id = $2
-           AND field_id = ANY($3::uuid[])`;
-
-  const delParams = SAFE_MODE
-    ? [tenantId, recordType, recordId, fieldIds]
-    : [recordType, recordId, fieldIds];
-
-  const delRes = await client.query(delSql, delParams);
-
-  let inserted = 0;
-  for (const { it, meta } of good) {
-    let vText  = it.value_text ?? null;
-    let vNum   = it.value_number ?? null;
-    let vDate  = it.value_date ?? null;
-    let vJson  = it.value_json ?? null;
-
-    switch (meta.field_type) {
-      case "number":
-      case "int":
-      case "integer":
-      case "float":
-      case "decimal":
-      case "currency":
-        vNum = Number.isFinite(Number(vNum)) ? Number(vNum) : null;
-        vText = null; vDate = null; vJson = null;
-        break;
-      case "date":
-      case "dob":
-      case "birthday":
-        vDate = vDate ? String(vDate).slice(0, 10) : null;
-        vText = null; vNum = null; vJson = null;
-        break;
-      case "json":
-      case "object":
-      case "array":
-        if (vJson == null && vText != null) {
-          try { vJson = JSON.parse(vText); } catch { vJson = vText; }
-          vText = null;
-        }
-        vNum = null; vDate = null;
-        break;
-      case "multiselect":
-      case "multi_select":
-      case "checkboxes":
-      case "tags":
-        if (!Array.isArray(vJson)) {
-          if (Array.isArray(vText)) vJson = vText;
-          else if (typeof vText === "string") vJson = vText.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
-          else vJson = vJson ?? [];
-        }
-        vText = null; vNum = null; vDate = null;
-        break;
-      default:
-        if (vText != null) vText = String(vText);
-        vNum = null; vDate = null; // keep vJson only if explicitly provided
-        break;
-    }
-
-    const file_id = null; // hook storage if needed
-
-    await client.query(
-      `INSERT INTO public.custom_field_values
-         (tenant_id, form_version_id, field_id, record_type, record_id,
-          value_text, value_number, value_date, value_json, file_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-      [
-        tenantId,
-        meta.form_version_id,
-        meta.id,
-        recordType,
-        recordId,
-        vText,
-        vNum,
-        vDate,
-        vJson,
-        file_id,
-      ]
-    );
-    inserted++;
-  }
-
-  return { deleted: delRes.rowCount || 0, inserted };
-}
-
-/* ---------------- POST /api/leads (create) ---------------- */
-// Accept both JSON and multipart; multipart carries cfv[...] entries (and optional files).
-router.post("/", upload.any(), async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
-
-  const lead = normalizeLeadBody(req);
-  const name = lead.name;
-  if (!name) return res.status(400).json({ error: "name is required" });
-
-  const phone = lead.phone ?? null;
-  const email = lead.email ?? null;
-  const source = lead.source ?? null;
-  const status = lead.status ?? "new";
-  const stage  = lead.stage  ?? null;
-  const followup_at = lead.followup_at || null;
-  const cfvItems = parseCfvItems(req.body, req.files || []);
-  if (process.env.NODE_ENV !== "production") {
-    console.log("CFV incoming items:", JSON.stringify(cfvItems, null, 2));
-  }
-
-  const client = await pool.connect();
+/* ---------------- create (NO DB) ---------------- */
+router.post("/", upload.any(), (req, res) => {
   try {
-    await setTenant(client, tenantId);
-    const schema = await getLeadsSchema(client);
+    const tenantId = req.get("x-tenant-id") || req.query.tenant_id || null;
+    if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-    await client.query("BEGIN");
+    // normalize incoming
+    const b = req.body || {};
+    const pick = (...keys) => keys.map(k => b[k]).find(v => v !== undefined && v !== null);
+    const name = String(pick("name", "title", "lead_name") || "").trim();
+    if (!name) return res.status(400).json({ error: "name is required" });
 
-    // Build INSERT dynamically against existing columns
-    const cols = ["tenant_id", "company_id", "name"];
-    const vals = [tenantId, companyId, name];
-    const ph = ["$1", "$2", "$3"];
-    let i = 3;
+    const email = pick("email") ? String(b.email).trim() : null;
+    const phone = pick("phone", "mobile") ? String(pick("phone", "mobile")).trim() : null;
+    const website = pick("website") ? String(b.website).trim() : null;
+    const source = pick("source") ? String(b.source).trim() : null;
+    const status = pick("status") ? String(b.status).trim() : "new";
+    const stage  = pick("stage")  ? String(b.stage).trim()  : null;
 
-    if (schema.has_email)      { cols.push("email");      vals.push(email);       ph.push(`$${++i}`); }
-    if (schema.has_phone)      { cols.push("phone");      vals.push(phone);       ph.push(`$${++i}`); }
-    if (schema.has_website)    { cols.push("website");    vals.push(lead.website ?? null); ph.push(`$${++i}`); }
-    if (schema.has_source)     { cols.push("source");     vals.push(source);      ph.push(`$${++i}`); }
-    if (schema.has_status)     { cols.push("status");     vals.push(status);      ph.push(`$${++i}`); }
-    if (schema.has_stage)      { cols.push("stage");      vals.push(stage);       ph.push(`$${++i}`); }
-    if (schema.has_followup_at){ cols.push("followup_at");vals.push(followup_at); ph.push(`$${++i}`); }
-    if (schema.has_custom)     { cols.push("custom");     vals.push(JSON.stringify({})); ph.push(`$${++i}`); }
-
-    const projection = buildProjection(schema);
-
-    const insertSQL = `
-      INSERT INTO public.leads (${cols.join(", ")})
-      VALUES (${ph.join(", ")})
-      RETURNING ${projection};
-    `;
-    const { rows } = await client.query(insertSQL, vals);
-    const created = rows[0];
-
-    // Upsert CFV rows (record_type 'lead') for the sent field_ids/codes
-    let cfvStats = { deleted: 0, inserted: 0, reason: SAFE_MODE ? "skipped_safe_mode" : undefined };
-    if (!SAFE_MODE) {
-      cfvStats = await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
+    // accept cfv in any of the formats; just echo back (no DB)
+    const cfvRaw = b.cfv ?? null;
+    let cfv = [];
+    if (Array.isArray(cfvRaw)) cfv = cfvRaw;
+    else if (cfvRaw && typeof cfvRaw === "object") cfv = Object.entries(cfvRaw).map(([k, v]) => ({ key: k, ...((typeof v === "object" && !Array.isArray(v)) ? v : { value_text: v }) }));
+    else if (typeof cfvRaw === "string" && cfvRaw.trim()) {
+      try { const parsed = JSON.parse(cfvRaw); cfv = Array.isArray(parsed) ? parsed : [parsed]; } catch {}
     }
 
-    await client.query("COMMIT");
+    const id = randomUUID();
+    const created = {
+      id,
+      tenant_id: tenantId,
+      company_id: req.get("x-company-id") || req.query.company_id || null,
+      owner_id: null,
+      name,
+      company_name: null,
+      email,
+      phone,
+      website,
+      source,
+      status,
+      stage,
+      owner_name: null,
+      score: null,
+      priority: null,
+      tags_text: null,
+      followup_at: null,
+      created_at: nowISO(),
+      updated_at: nowISO(),
+      ai_summary: null,
+      ai_next: [],
+      ai_score: null,
+      ai_next_action: null,
+      _echo: {
+        body: b,
+        cfv,
+        files: (req.files || []).map(f => ({
+          fieldname: f.fieldname,
+          originalname: f.originalname,
+          mimetype: f.mimetype,
+          size: f.size,
+        })),
+      },
+      _note: "PANIC MODE: this is a stubbed object (no DB writes)",
+    };
 
-    // normalize ai_next to []
-    created.ai_next = Array.isArray(created.ai_next)
-      ? created.ai_next
-      : (typeof created.ai_next === "string" && created.ai_next.startsWith("["))
-        ? JSON.parse(created.ai_next)
-        : created.ai_next || [];
-
-    if (process.env.NODE_ENV !== "production") {
-      return res.status(201).json({ ...created, _cfv: cfvStats, SAFE_MODE, DEV_ERRORS });
-    }
+    log("CREATE OK", { name, email, phone, cfv_len: cfv.length });
     return res.status(201).json(created);
   } catch (err) {
-    // Rollback on the SAME client we began with
-    try { await client.query("ROLLBACK"); } catch (e) {
-      console.error("ROLLBACK failed:", e?.message);
-    }
-
-    console.error("POST /leads error:", {
-      message: err?.message,
-      code: err?.code,
-      detail: err?.detail,
-      table: err?.table, column: err?.column, constraint: err?.constraint, position: err?.position,
-      stack: err?.stack,
-    });
-
-    if (DEV_ERRORS) {
-      return res.status(500).json({
-        error: "debug",
-        message: err?.message,
-        code: err?.code,
-        detail: err?.detail,
-        table: err?.table,
-        column: err?.column,
-        constraint: err?.constraint,
-        position: err?.position,
-        stack: err?.stack,
-      });
-    }
-
-    // Map CFV-specific errors first
-    if (err?.code === "CFV_NO_MATCH") {
-      return res.status(err.status || 400).json({ error: "No matching custom_fields for provided field_id/code", code: err.code });
-    }
-    if (err?.code === "CFV_NO_FORM_VERSION") {
-      return res.status(err.status || 400).json({ error: "Some custom_fields missing form_version_id", code: err.code });
-    }
-
-    switch (err?.code) {
-      case "23514": return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
-      case "23505": return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
-      case "22P02": return res.status(400).json({ error: "Invalid UUID in x-company-id or cfv.field_id" });
-      case "23503": return res.status(400).json({ error: "Invalid reference: company_id or custom_field_id not found for tenant" });
-      case "23502": return res.status(400).json({ error: `Missing required column: ${err.column}` });
-      case "42703": return res.status(500).json({ error: `Column not found in current schema (check logs for position)` });
-      default:      return res.status(500).json({ error: "Failed to create lead" });
-    }
-  } finally {
-    // ALWAYS release the client you acquired at the top
-    try { client.release(); } catch {}
+    console.error("PANIC CREATE error:", err);
+    return res.status(500).json({ error: "panic_create_failed", message: err?.message });
   }
 });
 
-/* ---------------- GET /api/leads/:id (fetch one) ---------------- */
-router.get("/:id", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
-
-  const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-    const schema = await getLeadsSchema(client);
-    const projection = buildProjection(schema);
-
-    const params = [id];
-    let extra = "";
-    if (companyId) {
-      params.push(companyId);
-      extra = ` AND company_id::text = $${params.length}`;
-    }
-
-    // SAFE_MODE: match tenant_id via parameter; otherwise rely on ensure_tenant_scope()
-    const sql = SAFE_MODE
-      ? `
-        SELECT ${projection}
-          FROM public.leads
-         WHERE id = $1
-           AND tenant_id = $2
-           ${extra}
-         LIMIT 1;
-        `
-      : `
-        SELECT ${projection}
-          FROM public.leads
-         WHERE id = $1
-           AND tenant_id = ensure_tenant_scope()
-           ${extra}
-         LIMIT 1;
-        `;
-
-    const r = await client.query(sql, SAFE_MODE ? [id, tenantId, ...(companyId ? [companyId] : [])] : [id, ...(companyId ? [companyId] : [])]);
-    if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
-
-    const row = r.rows[0];
-    row.ai_next = Array.isArray(row.ai_next)
-      ? row.ai_next
-      : (typeof row.ai_next === "string" && row.ai_next.startsWith("["))
-        ? JSON.parse(row.ai_next)
-        : row.ai_next || [];
-
-    return res.json(row);
-  } catch (err) {
-    console.error("GET /leads/:id error:", {
-      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
-    });
-    if (DEV_ERRORS) {
-      return res.status(500).json({
-        error: "debug",
-        message: err?.message,
-        code: err?.code,
-        detail: err?.detail,
-        column: err?.column,
-        position: err?.position,
-        stack: err?.stack,
-      });
-    }
-    return res.status(500).json({ error: "Failed to load lead" });
-  } finally {
-    client.release();
-  }
+/* ---------------- fetch one (stub) ---------------- */
+router.get("/:id", (req, res) => {
+  const id = req.params.id;
+  res.json({
+    id,
+    tenant_id: req.get("x-tenant-id") || null,
+    company_id: req.get("x-company-id") || null,
+    owner_id: null,
+    name: "Stub Lead",
+    company_name: null,
+    email: null,
+    phone: null,
+    website: null,
+    source: null,
+    status: "new",
+    stage: null,
+    owner_name: null,
+    score: null,
+    priority: null,
+    tags_text: null,
+    followup_at: null,
+    created_at: nowISO(),
+    updated_at: nowISO(),
+    ai_summary: null,
+    ai_next: [],
+    ai_score: null,
+    ai_next_action: null,
+    _note: "PANIC MODE: stubbed record",
+  });
 });
 
-/* ---------------- PATCH /api/leads/:id (MASTER EDITS) ---------------- */
-router.patch("/:id", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
-
-  const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
-
-  const patch = req.body || {};
-
-  const allow = {
-    // master fields
-    name: "name",
-    email: "email",
-    phone: "phone",
-    source: "source",
-    followup_at: "followup_at",
-    company_name: "company", // UI -> DB
-    owner_name: "owner",     // UI -> DB
-    website: "website",
-    priority: "priority",
-    tags_text: "tags_text",
-    // existing
-    status: "status",
-    stage: "stage",
-    owner_id: "owner_id",
-    score: "score",
-    ai_summary: "ai_summary",
-    ai_next: "ai_next",
-    ai_score: "ai_score",
-  };
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-    const schema = await getLeadsSchema(client);
-
-    const fields = [];
-    const vals = [];
-    let i = 0;
-
-    for (const [uiKey, col] of Object.entries(allow)) {
-      if (patch[uiKey] === undefined) continue;
-
-      if (
-        (col === "company"     && !(schema.has_company || schema.has_company_name)) ||
-        (col === "owner"       && !(schema.has_owner || schema.has_owner_name)) ||
-        (col === "website"     && !schema.has_website) ||
-        (col === "priority"    && !schema.has_priority) ||
-        (col === "tags_text"   && !schema.has_tags_text) ||
-        (col === "status"      && !schema.has_status) ||
-        (col === "stage"       && !schema.has_stage) ||
-        (col === "owner_id"    && !schema.has_owner_id) ||
-        (col === "score"       && !schema.has_score) ||
-        (col === "ai_summary"  && !schema.has_ai_summary) ||
-        (col === "ai_next"     && !schema.has_ai_next) ||
-        (col === "ai_score"    && !schema.has_ai_score) ||
-        (col === "email"       && !schema.has_email) ||
-        (col === "phone"       && !schema.has_phone) ||
-        (col === "followup_at" && !schema.has_followup_at) ||
-        (col === "name"        && !schema.has_name) ||
-        (col === "source"      && !schema.has_source)
-      ) {
-        continue;
-      }
-
-      let v = patch[uiKey];
-
-      if (col === "followup_at") {
-        v = v ? new Date(v) : null;
-      } else if (col === "ai_next" && Array.isArray(v)) {
-        v = JSON.stringify(v);
-      } else if (col === "priority") {
-        v = v === "" || v === null ? null : Number(v);
-      }
-
-      if (uiKey === "company_name" && !schema.has_company && schema.has_company_name) {
-        fields.push(`company_name = $${++i}`);
-      } else if (uiKey === "owner_name" && !schema.has_owner && schema.has_owner_name) {
-        fields.push(`owner_name = $${++i}`);
-      } else {
-        fields.push(`${col} = $${++i}`);
-      }
-      vals.push(v);
-    }
-
-    if (!fields.length) return res.status(400).json({ error: "No updatable fields" });
-
-    const whereVals = [id, tenantId];
-    let whereSQL;
-    if (SAFE_MODE) {
-      whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
-    } else {
-      // still pass tenant_id to keep parameter order same
-      whereSQL = `WHERE id = $${++i} AND tenant_id = ensure_tenant_scope()`;
-      whereVals.pop(); // remove tenantId since we don't use it in SQL when not SAFE_MODE
-    }
-    if (companyId) { whereVals.push(companyId); whereSQL += ` AND company_id::text = $${++i}`; }
-
-    const projection = buildProjection(schema);
-
-    const sql = `
-      UPDATE public.leads
-         SET ${fields.join(", ")}, updated_at = NOW()
-       ${whereSQL}
-       RETURNING ${projection};
-    `;
-
-    const r = await client.query(sql, [...vals, ...whereVals]);
-    if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
-
-    const row = r.rows[0];
-    row.ai_next = Array.isArray(row.ai_next) ? row.ai_next : JSON.parse(row.ai_next || "[]");
-    res.json(row);
-  } catch (err) {
-    console.error("PATCH /leads/:id error:", {
-      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
-    });
-    if (DEV_ERRORS) {
-      return res.status(500).json({
-        error: "debug",
-        message: err?.message,
-        code: err?.code,
-        detail: err?.detail,
-        column: err?.column,
-        position: err?.position,
-        stack: err?.stack,
-      });
-    }
-    switch (err?.code) {
-      case "23505":
-        return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
-      case "22P02":
-        return res.status(400).json({ error: "Invalid UUID in request" });
-      case "42703":
-        return res.status(500).json({ error: `Column not found in current schema (check logs for position)` });
-      default:
-        return res.status(500).json({ error: "Failed to update lead" });
-    }
-  } finally {
-    client.release();
-  }
+/* ---------------- update (stub) ---------------- */
+router.patch("/:id", (req, res) => {
+  res.json({ ok: true, id: req.params.id, patch: req.body, _note: "PANIC MODE: no DB update performed" });
 });
 
 export default router;
