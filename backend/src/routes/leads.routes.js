@@ -24,6 +24,11 @@ const upload = multer({
 const CFV_SOFTFAIL = process.env.CFV_SOFTFAIL === "1"; // if 1: CFV errors don't block lead create
 const DEV_ERRORS   = process.env.DEV_ERRORS === "1";
 
+/* ---------------- helpers ---------------- */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
+
 function getTenantId(req) {
   return (
     req.session?.tenantId ||
@@ -33,37 +38,51 @@ function getTenantId(req) {
     null
   );
 }
-function getCompanyId(req) {
-  return (
+function getSafeCompanyId(req) {
+  const raw =
     req.session?.companyId ||
     req.session?.company_id ||
     req.get("x-company-id") ||
     req.query.company_id ||
-    null
-  );
+    null;
+  return isUuid(String(raw || "")) ? String(raw) : null; // ignore bad company ids (no 400)
 }
 async function setTenant(client, tenantId) {
   // NON-LOCAL so it persists on this connection (for ensure_tenant_scope() + RLS)
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
-/* ---------------- diagnostics & guards ---------------- */
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
-
+/* ---------------- diagnostics & error surfacing ---------------- */
 if (process.env.NODE_ENV !== "production") {
   router.use((req, _res, next) => {
     console.log("[/api/leads] hit", {
       method: req.method,
       url: req.originalUrl,
       tenant: getTenantId(req),
-      company: getCompanyId(req),
+      company: getSafeCompanyId(req),
       hasFiles: !!(req.files?.length),
     });
     next();
   });
 }
+// Add x-error on 4xx/5xx so the browser Network tab shows the exact reason
+router.use((req, res, next) => {
+  const _json = res.json.bind(res);
+  res.json = (body) => {
+    if (res.statusCode >= 400) {
+      const reason = body?.error ? String(body.error) : "";
+      if (reason) res.set("x-error", reason);
+      console.error("[/api/leads ERROR]", {
+        status: res.statusCode,
+        url: req.originalUrl,
+        method: req.method,
+        error: reason,
+      });
+    }
+    return _json(body);
+  };
+  next();
+});
 
 /* -------- schema introspection (cached) -------- */
 let leadsSchemaCache = null;
@@ -171,10 +190,7 @@ router.get("/", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
+  const companyId = getSafeCompanyId(req); // ignore bad values
 
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const size = Math.min(100, Math.max(1, parseInt(req.query.pageSize ?? req.query.size, 10) || 25));
@@ -274,7 +290,7 @@ router.get("/pipelines", async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   try {
-    const stages = await loadStageList(tenantId, getCompanyId(req));
+    const stages = await loadStageList(tenantId, getSafeCompanyId(req));
     res.json(stages);
   } catch (err) {
     console.error("GET /leads/pipelines error:", err);
@@ -287,7 +303,7 @@ router.get("/stages", async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   try {
-    const stages = await loadStageList(tenantId, getCompanyId(req));
+    const stages = await loadStageList(tenantId, getSafeCompanyId(req));
     res.json(stages);
   } catch (err) {
     console.error("GET /leads/stages error:", err);
@@ -329,7 +345,7 @@ router.get("/check-mobile", async (req, res) => {
   }
 });
 
-/* ------------ helpers for CFV ------------ */
+/* ------------ CFV helpers ------------ */
 
 // Parse cfv JSON or cfv[i][field_id]/[code] style multipart
 function parseCfvItems(body = {}, files = []) {
@@ -551,10 +567,7 @@ router.post("/", upload.any(), async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
+  const companyId = getSafeCompanyId(req); // ignore bad company-id
 
   const lead = normalizeLeadBody(req);
   const name = lead.name;
@@ -694,10 +707,7 @@ router.get("/:id", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
+  const companyId = getSafeCompanyId(req);
 
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
@@ -751,10 +761,7 @@ router.patch("/:id", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
-  const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) {
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  }
+  const companyId = getSafeCompanyId(req);
 
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
@@ -899,7 +906,7 @@ router.get("/debug/custom-fields", async (req, res) => {
 
 export default router;
 
-/* ------------ body mappers (kept at end for readability) ------------ */
+/* ------------ body mapper (keep at end) ------------ */
 function normalizeLeadBody(req) {
   const b = req.body || {};
   const pick = (...keys) => keys.map(k => b[k]).find(v => v !== undefined && v !== null);
