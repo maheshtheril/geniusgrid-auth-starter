@@ -49,9 +49,6 @@ import customFields from "./routes/customFields.js";
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
 
-/* ✅ CFV test endpoint (public) */
-import cfvRouter from "./routes/cfv.routes.js";
-
 /* ---------- App init ---------- */
 const app = express();
 const PgStore = pgSimple(session);
@@ -78,7 +75,6 @@ const logger = pino({
   level: process.env.LOG_LEVEL || (isProd ? "info" : "debug"),
   base: { service: "geniusgrid-api", env: process.env.NODE_ENV || "dev" },
 });
-
 app.use(
   pinoHttp({
     logger,
@@ -196,9 +192,6 @@ app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 
 // ✅ PUBLIC custom-fields for the drawer (requires tenant via session/header/query)
 app.use("/api/custom-fields", customFields);
-
-// ✅ PUBLIC CFV insert/test endpoint (expects x-tenant-id or session)
-app.use("/api/cfv", cfvRouter);
 
 /* ---------- AUTH routes ---------- */
 app.use("/api/auth", auth);
