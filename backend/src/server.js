@@ -42,13 +42,15 @@ import leadsImportsRoutes from "./store/leads.imports.routes.js";
 /* ✅ Custom fields (leads) */
 import leadsCustomFieldsRoutes from "./routes/leadsCustomFields.routes.js";
 import tenantMenusRoutes from "./routes/tenantMenus.routes.js";
+
+/* ✅ Public custom-fields endpoint for the drawer */
 import customFields from "./routes/customFields.js";
 
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
 
 /* ---------- App init ---------- */
-const app = express(); // <-- define app BEFORE any app.use
+const app = express();
 const PgStore = pgSimple(session);
 const isProd = process.env.NODE_ENV === "production";
 
@@ -108,6 +110,10 @@ app.use(
       "X-Company-ID",
       "X-Company-Id",
       "x-company-id",
+      // ✅ allow tenant header variants
+      "X-Tenant-ID",
+      "X-Tenant-Id",
+      "x-tenant-id",
     ],
     exposedHeaders: ["X-Request-Id", "X-Version"],
   })
@@ -147,7 +153,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd, // HTTPS only in prod
+      secure: isProd,
       sameSite: isProd ? "none" : "lax",
       maxAge: Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60 * 1000,
     },
@@ -181,14 +187,18 @@ app.use("/api/countries", countriesRouter);
 app.use("/api/csrf", csrfRoutes);
 app.use("/api/bootstrap", bootstrapRoutes);
 
-/* Auth routers: mounted under /api/auth and alias /auth for FE */
+// Public pings
+app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
+
+// ✅ PUBLIC custom-fields for the drawer (requires tenant via session/header/query)
+app.use("/api/custom-fields", customFields);
+
+/* ---------- AUTH routes ---------- */
 app.use("/api/auth", auth);
 app.use("/api/auth", authMe);
-// Alias to support frontend currently calling /auth/*
+// Alias to support frontend calling /auth/*
 app.use("/auth", auth);
 app.use("/auth", authMe);
-
-app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 
 /* ✅ PROTECTED: AI prospect namespace (requires auth) */
 app.use("/api/ai/prospect", requireAuth, aiProspectRoutes);
@@ -196,7 +206,11 @@ app.use("/api/ai/prospect", requireAuth, aiProspectRoutes);
 /* ---------- PROTECTED routes ---------- */
 app.use("/api/admin", requireAuth, adminUsers);
 app.use("/api/dashboard", requireAuth, dashboardRoutes);
+
+// This is the CRM custom-fields admin surface; keep protected
 app.use("/api/crm", requireAuth, customFieldsRoutes);
+
+// Leads-related (protected)
 app.use("/api", requireAuth, leadsCustomFieldsRoutes);
 app.use("/api/leads", requireAuth, leadsRoutes);
 app.use("/api/leads", requireAuth, leadsAiRoutes);
@@ -204,11 +218,13 @@ app.use("/api/leads", requireAuth, leadsDupRoutes);
 app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
-// ❌ removed undefined adminOrgRoutes mount that crashed Render
-// app.use("/api/admin", adminOrgRoutes);
 app.use("/api/leads-module", requireAuth, leadsModule);
+
+// Tenant menus (protected)
 app.use("/api", requireAuth, tenantMenusRoutes);
-app.use("/api/custom-fields", requireAuth, customFields);
+
+// ❌ removed old protected mount of /api/custom-fields
+// app.use("/api/custom-fields", requireAuth, customFields);
 
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
