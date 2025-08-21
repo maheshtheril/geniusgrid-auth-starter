@@ -332,13 +332,14 @@ router.get("/check-mobile", async (req, res) => {
 
 /* ------------ helpers for POST (multipart + CFV insert) ------------ */
 
-// Parse cfv JSON or cfv[i][field_id] style multipart
+// Parse cfv JSON, cfv as JSON-string (multipart), or cfv[i][...] style multipart
 function parseCfvItems(body = {}, files = []) {
   const collected = [];
+  const isUuidLocal = (s) => typeof s === "string" && UUID_RE.test(s);
 
   const pushItem = (raw = {}) => {
     if (!raw) return;
-    // accept field_id (uuid) or code (string)
+    // allow either field_id (uuid) or code (string key)
     const field_id = raw.field_id != null ? String(raw.field_id) : null;
     const code     = raw.code     != null ? String(raw.code)     : null;
     if (!field_id && !code) return;
@@ -350,15 +351,12 @@ function parseCfvItems(body = {}, files = []) {
 
     let value_json = null;
     if (raw.value_json !== undefined && raw.value_json !== null && raw.value_json !== "") {
-      try {
-        value_json = typeof raw.value_json === "string" ? JSON.parse(raw.value_json) : raw.value_json;
-      } catch {
-        value_json = String(raw.value_json);
-      }
+      try { value_json = typeof raw.value_json === "string" ? JSON.parse(raw.value_json) : raw.value_json; }
+      catch { value_json = String(raw.value_json); }
     }
 
     collected.push({
-      field_id, // may be non-UUID; we’ll resolve via code below
+      field_id,
       code,
       value_text,
       value_number: Number.isFinite(value_number) ? value_number : null,
@@ -368,23 +366,40 @@ function parseCfvItems(body = {}, files = []) {
     });
   };
 
-  // JSON body: cfv: [] or {}
-  const j = body?.cfv;
-  if (Array.isArray(j)) j.forEach(pushItem);
-  else if (j && typeof j === "object") {
-    // also support { "<id|code>": "<primitive or object>" }
+  // 1) JSON body: cfv as array/object
+  let j = body?.cfv;
+  if (Array.isArray(j)) {
+    j.forEach(pushItem);
+  } else if (j && typeof j === "object") {
     for (const [k, v] of Object.entries(j)) {
       if (v && typeof v === "object" && !Array.isArray(v)) {
-        pushItem({ ...v, field_id: v.field_id ?? (UUID_RE.test(k) ? k : undefined), code: v.code ?? (!UUID_RE.test(k) ? k : undefined) });
+        pushItem({ ...v, field_id: v.field_id ?? (isUuidLocal(k) ? k : undefined), code: v.code ?? (!isUuidLocal(k) ? k : undefined) });
       } else {
-        pushItem({ field_id: UUID_RE.test(k) ? k : undefined, code: !UUID_RE.test(k) ? k : undefined, value_text: v });
+        pushItem({ field_id: isUuidLocal(k) ? k : undefined, code: !isUuidLocal(k) ? k : undefined, value_text: v });
       }
+    }
+  } else if (typeof j === "string" && j.trim()) {
+    // cfv provided as JSON string (typical in multipart)
+    try {
+      const parsed = JSON.parse(j);
+      if (Array.isArray(parsed)) parsed.forEach(pushItem);
+      else if (parsed && typeof parsed === "object") {
+        for (const [k, v] of Object.entries(parsed)) {
+          if (v && typeof v === "object" && !Array.isArray(v)) {
+            pushItem({ ...v, field_id: v.field_id ?? (isUuidLocal(k) ? k : undefined), code: v.code ?? (!isUuidLocal(k) ? k : undefined) });
+          } else {
+            pushItem({ field_id: isUuidLocal(k) ? k : undefined, code: !isUuidLocal(k) ? k : undefined, value_text: v });
+          }
+        }
+      }
+    } catch {
+      // ignore bad JSON; fall through to multipart-style keys
     }
   }
 
   if (collected.length) return collected;
 
-  // Multipart body: cfv[i][...], also cfv[i][code]
+  // 2) Multipart keys: cfv[i][...], including cfv[i][code]
   const byIdx = {};
   const re = /^cfv\[(\d+)\]\[(\w+)\]$/;
   for (const [k, v] of Object.entries(body)) {
@@ -402,88 +417,87 @@ function parseCfvItems(body = {}, files = []) {
   return collected;
 }
 
-
-// Map incoming body (JSON or multipart) to canonical fields
-function normalizeLeadBody(req) {
-  const b = req.body || {};
-  const pick = (...keys) => keys.map(k => b[k]).find(v => v !== undefined && v !== null);
-  const follow = pick("followup_at", "follow_up_date", "follow");
-  return {
-    name: String(pick("name", "title", "lead_name") || "").trim(),
-    email: pick("email") ? String(b.email).trim() : null,
-    phone: pick("phone", "mobile") ? String(pick("phone", "mobile")).trim() : null,
-    website: pick("website") ? String(b.website).trim() : null,
-    source: pick("source") ? String(b.source).trim() : null,
-    status: pick("status") ? String(b.status).trim() : "new",
-    stage:  pick("stage")  ? String(b.stage).trim()  : null,
-    followup_at: follow ? new Date(String(follow).slice(0,10)) : null,
-  };
-}
-
 /**
- * Fetches meta for provided field_ids and returns a map.
- * Uses custom_fields.field_type to drive coercion; no record_type/data_type here.
+ * Resolve custom_fields by id or code for the current tenant.
  */
-async function loadFieldMetaMap(client, fieldIds) {
-  const valid = [...new Set(fieldIds.map(String))].filter(isUuid);
-  if (!valid.length) return new Map();
+async function resolveFieldMetaForItems(client, items) {
+  const ids = new Set();
+  const codes = new Set();
 
-  const { rows } = await client.query(
-    `SELECT id, form_version_id, field_type
-       FROM public.custom_fields
-      WHERE tenant_id = ensure_tenant_scope()
-        AND id = ANY($1::uuid[])`,
-    [valid]
-  );
-
-  const map = new Map();
-  for (const r of rows) {
-    map.set(String(r.id), {
-      id: r.id,
-      form_version_id: r.form_version_id,
-      field_type: (r.field_type || "").toLowerCase().trim(),
-    });
+  for (const it of items) {
+    if (it.field_id && isUuid(String(it.field_id))) {
+      ids.add(String(it.field_id));
+    } else if (it.field_id) {
+      // non-uuid field_id -> treat as code
+      codes.add(String(it.field_id));
+    }
+    if (it.code) codes.add(String(it.code));
   }
-  return map;
+
+  const idArr = [...ids];
+  const codeArr = [...codes];
+
+  if (!idArr.length && !codeArr.length) return { byId: new Map(), byCode: new Map() };
+
+  const clauses = [];
+  const params = [];
+  let i = 0;
+  if (idArr.length)   { clauses.push(`id   = ANY($${++i}::uuid[])`);    params.push(idArr); }
+  if (codeArr.length) { clauses.push(`code = ANY($${++i}::varchar[])`); params.push(codeArr); }
+
+  const sql = `
+    SELECT id, code, form_version_id, field_type
+      FROM public.custom_fields
+     WHERE tenant_id = ensure_tenant_scope()
+       AND (${clauses.join(" OR ")})
+  `;
+  const { rows } = await client.query(sql, params);
+
+  const byId = new Map();
+  const byCode = new Map();
+  for (const r of rows) {
+    byId.set(String(r.id), r);
+    if (r.code) byCode.set(String(r.code), r);
+  }
+
+  // Fill missing field_id from code
+  for (const it of items) {
+    const rawId = it.field_id ? String(it.field_id) : null;
+    const okUuid = rawId && isUuid(rawId);
+    if (okUuid) continue;
+
+    const key = !okUuid && rawId ? rawId : (it.code ? String(it.code) : null);
+    if (!key) continue;
+
+    const hit = byCode.get(key);
+    if (hit) it.field_id = String(hit.id);
+  }
+
+  return { byId, byCode };
 }
 
 /**
- * Deletes existing CFVs for the given (record_type, record_id) limited to the provided field_ids,
- * then inserts the new set. This “merge” behavior avoids ON CONFLICT requirements and keeps rows clean.
+ * Deletes existing CFVs for (record_type, record_id) for the provided field_ids,
+ * then inserts the new set.
  */
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
-  if (!items?.length) return;
-
-  const fieldIds = [...new Set(items.map(i => i.field_id))].filter(isUuid);
-  if (!fieldIds.length) {
-    console.warn("[CFV] No valid field_ids after validation. Skipping CFV upsert.");
+  if (!items?.length) {
+    console.warn("[CFV] No items in payload");
     return;
   }
 
-  const metaMap = await loadFieldMetaMap(client, fieldIds);
+  const { byId } = await resolveFieldMetaForItems(client, items);
 
-  // Remove any existing values for these fields on this record (scoped to tenant & record)
-  await client.query(
-    `DELETE FROM public.custom_field_values
-      WHERE tenant_id = ensure_tenant_scope()
-        AND record_type = $1
-        AND record_id = $2
-        AND field_id = ANY($3::uuid[])`,
-    [recordType, recordId, fieldIds]
-  );
+  const validItems = [];
+  const skipped = { no_meta: 0, no_form_version: 0, no_field_id: 0 };
 
-  // Insert fresh rows
   for (const it of items) {
-    const fid = String(it.field_id);
-    const meta = metaMap.get(fid);
-    if (!meta) {
-      console.warn(`[CFV] Unknown custom_field id=${fid}; skipped.`);
-      continue;
-    }
-    if (!meta.form_version_id) {
-      console.warn(`[CFV] Field id=${fid} has no form_version_id; skipped.`);
-      continue;
-    }
+    const fid = it.field_id && isUuid(String(it.field_id)) ? String(it.field_id) : null;
+    if (!fid) { skipped.no_field_id++; continue; }
+
+    const meta = byId.get(fid);
+    if (!meta) { skipped.no_meta++; continue; }
+    if (!meta.form_version_id) { skipped.no_form_version++; continue; }
 
     // Coerce by custom_fields.field_type
     let vText  = it.value_text ?? null;
@@ -491,7 +505,8 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
     let vDate  = it.value_date ?? null;
     let vJson  = it.value_json ?? null;
 
-    switch (meta.field_type) {
+    const t = (meta.field_type || "").toLowerCase();
+    switch (t) {
       case "number":
       case "int":
       case "integer":
@@ -534,14 +549,37 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
         vText = null; vNum = null; vDate = null;
         break;
 
-      default: // text / select / radio / email / phone etc. -> value_text
+      default: // text/select/radio/email/phone -> value_text
         if (vText != null) vText = String(vText);
         vNum = null; vDate = null; // keep vJson only if explicitly provided
         break;
     }
 
-    const file_id = null; // hook your storage if needed
+    validItems.push({
+      fid,
+      form_version_id: meta.form_version_id,
+      vText, vNum, vDate, vJson,
+    });
+  }
 
+  if (!validItems.length) {
+    console.warn("[CFV] Nothing to save", { skipped, items_count: items.length });
+    return;
+  }
+
+  // Delete existing rows for these fields on this record
+  const fids = validItems.map(v => v.fid);
+  await client.query(
+    `DELETE FROM public.custom_field_values
+      WHERE tenant_id = ensure_tenant_scope()
+        AND record_type = $1
+        AND record_id = $2
+        AND field_id = ANY($3::uuid[])`,
+    [recordType, recordId, fids]
+  );
+
+  // Insert fresh rows
+  for (const v of validItems) {
     await client.query(
       `INSERT INTO public.custom_field_values
          (tenant_id, form_version_id, field_id, record_type, record_id,
@@ -549,18 +587,20 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [
         tenantId,
-        meta.form_version_id,
-        fid,
-        recordType, // << use the route-provided recordType (e.g., "lead")
+        v.form_version_id,
+        v.fid,
+        recordType,   // e.g. "lead"
         recordId,
-        vText,
-        vNum,
-        vDate,
-        vJson,
-        file_id,
+        v.vText,
+        v.vNum,
+        v.vDate,
+        v.vJson,
+        null,         // file_id hook if/when you add storage
       ]
     );
   }
+
+  console.info("[CFV] Saved", { saved: validItems.length, skipped, fids });
 }
 
 /* ---------------- POST /api/leads (create) ---------------- */
@@ -585,6 +625,7 @@ router.post("/", upload.any(), async (req, res) => {
   const stage  = lead.stage  ?? null;
   const followup_at = lead.followup_at || null;
   const cfvItems = parseCfvItems(req.body, req.files || []);
+  console.debug("[CFV] parsed", { count: cfvItems.length, sample: cfvItems.slice(0,3) });
 
   const client = await pool.connect();
   try {
@@ -618,7 +659,7 @@ router.post("/", upload.any(), async (req, res) => {
     const { rows } = await client.query(insertSQL, vals);
     const created = rows[0];
 
-    // Upsert CFV rows (record_type 'lead') for the sent field_ids
+    // Upsert CFV rows (record_type 'lead') for the sent field_ids/codes
     await upsertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
 
     await client.query("COMMIT");
