@@ -1,18 +1,23 @@
-// src/routes/leads.routes.js — FULL (no JSX)
+// src/routes/leads.routes.js
 // Endpoints:
 //   GET    /api/leads/ping
 //   GET    /api/leads                 list (filters + paging)
 //   GET    /api/leads/pipelines       distinct stages (array)
 //   GET    /api/leads/stages          alias of pipelines
 //   GET    /api/leads/check-mobile    (?phone= or ?mobile=)
-//   POST   /api/leads                 create lead (JSON)
+//   POST   /api/leads                 create lead (multipart or JSON; inserts CFV rows)
 //   GET    /api/leads/:id             fetch one lead (tenant/company scoped)
 //   PATCH  /api/leads/:id             update (MASTER FIELDS enabled)
 
 import express from "express";
+import multer from "multer";
 import { pool } from "../db/pool.js";
 
 const router = express.Router();
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 20 },
+});
 
 /* ---------------- helpers ---------------- */
 function getTenantId(req) {
@@ -201,26 +206,121 @@ router.get("/check-mobile", async (req, res) => {
   }
 });
 
+/* ------------ helpers for POST (multipart + CFV insert) ------------ */
+
+// Parse cfv[i][field_id], cfv[i][value_text|value_number|value_date], cfv[i][file]
+function parseCfvItems(body = {}, files = []) {
+  const byIdx = {};
+  const re = /^cfv\[(\d+)\]\[(\w+)\]$/;
+  for (const [k, v] of Object.entries(body)) {
+    const m = re.exec(k);
+    if (!m) continue;
+    const idx = +m[1], key = m[2];
+    (byIdx[idx] ||= {})[key] = v;
+  }
+  for (const f of files) {
+    const m = re.exec(f.fieldname);
+    if (!m) continue;
+    const idx = +m[1], key = m[2];
+    if (key === "file") (byIdx[idx] ||= {}).file = f; // keep multer file object
+  }
+  const items = [];
+  for (const v of Object.values(byIdx)) {
+    if (!v.field_id) continue;
+    const value_number = v.value_number !== undefined && v.value_number !== ""
+      ? Number(v.value_number) : null;
+    const value_date = v.value_date ? String(v.value_date).slice(0, 10) : null;
+    const value_text = v.value_text !== undefined ? String(v.value_text) : null;
+    items.push({
+      field_id: v.field_id,
+      value_text,
+      value_number: Number.isFinite(value_number) ? value_number : null,
+      value_date,
+      // file handling is optional; leave file_id = null unless you wire storage
+      file: v.file || null,
+    });
+  }
+  return items;
+}
+
+// Map incoming body (JSON or multipart) to canonical fields
+function normalizeLeadBody(req) {
+  const b = req.body || {};
+  const pick = (...keys) => keys.map(k => b[k]).find(v => v !== undefined && v !== null);
+  const follow = pick("followup_at", "follow_up_date", "follow");
+  return {
+    name: String(pick("name", "title", "lead_name") || "").trim(),
+    email: pick("email") ? String(b.email).trim() : null,
+    phone: pick("phone", "mobile") ? String(pick("phone", "mobile")).trim() : null,
+    website: pick("website") ? String(b.website).trim() : null,
+    source: pick("source") ? String(b.source).trim() : null,
+    status: pick("status") ? String(b.status).trim() : "new",
+    stage:  pick("stage")  ? String(b.stage).trim()  : null,
+    followup_at: follow ? new Date(String(follow).slice(0,10)) : null,
+  };
+}
+
+// Insert custom_field_values rows. Fetch form_version_id for each field_id.
+async function insertCustomFieldValues(client, tenantId, recordType, recordId, items) {
+  if (!items?.length) return;
+
+  const fieldIds = [...new Set(items.map(i => i.field_id))];
+
+  const metaRes = await client.query(
+    `SELECT id, form_version_id, record_type
+       FROM public.custom_fields
+      WHERE tenant_id = ensure_tenant_scope()
+        AND id = ANY($1::uuid[])`,
+    [fieldIds]
+  );
+  const metaMap = new Map(metaRes.rows.map(r => [String(r.id), r]));
+
+  for (const it of items) {
+    const meta = metaMap.get(String(it.field_id));
+    if (!meta?.form_version_id) continue; // skip unknown field_id safely
+
+    // TODO: if you have a files table, save it.file.buffer there and set file_id.
+    const file_id = null;
+
+    await client.query(
+      `INSERT INTO public.custom_field_values
+         (tenant_id, form_version_id, field_id, record_type, record_id,
+          value_text, value_number, value_date, value_json, file_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        tenantId,
+        meta.form_version_id,
+        it.field_id,
+        meta.record_type || recordType,
+        recordId,
+        it.value_text ?? null,
+        it.value_number ?? null,
+        it.value_date ?? null,
+        null, // value_json unused here
+        file_id,
+      ]
+    );
+  }
+}
+
 /* ---------------- POST /api/leads (create) ---------------- */
-router.post("/", async (req, res) => {
+// Accept both JSON and multipart; multipart carries cfv[...] entries (and optional files).
+router.post("/", upload.any(), async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const companyId = getCompanyId(req);
-
-  const b = req.body || {};
-  const name = String(b.name || "").trim();
+  const lead = normalizeLeadBody(req);
+  const name = lead.name;
   if (!name) return res.status(400).json({ error: "name is required" });
 
-  const phone = b.phone ? String(b.phone).trim() : null;
-  const email = b.email ? String(b.email).trim() : null;
-  const source = b.source ? String(b.source).trim() : null;
-  const status = b.status ? String(b.status).trim() : "new";
-  const stage  = b.stage  ? String(b.stage).trim()  : null;
-
-  const followup_at = b.followup_at ? new Date(b.followup_at) : null;
-
-  const custom = (b.custom && typeof b.custom === "object") ? b.custom : {};
+  const phone = lead.phone ?? null;
+  const email = lead.email ?? null;
+  const source = lead.source ?? null;
+  const status = lead.status ?? "new";
+  const stage  = lead.stage  ?? null;
+  const followup_at = lead.followup_at || null;
+  const cfvItems = parseCfvItems(req.body, req.files || []);
 
   const sql = `
     INSERT INTO public.leads
@@ -229,14 +329,23 @@ router.post("/", async (req, res) => {
       ($1,        $2,         $3,   $4,    $5,    $6,      $7,     $8,     $9,    $10,         $11)
     RETURNING id, tenant_id, company_id, name, email, phone, website, source, status, stage, followup_at, created_at;
   `;
-  const params = [tenantId, companyId, name, email, phone, b.website ?? null, source, status, stage, followup_at, custom];
+  const params = [tenantId, companyId, name, email, phone, lead.website ?? null, source, status, stage, followup_at, {}];
 
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
+    await client.query("BEGIN");
+
     const { rows } = await client.query(sql, params);
-    return res.status(201).json(rows[0]);
+    const created = rows[0];
+
+    // Insert CFV rows (record_type 'lead')
+    await insertCustomFieldValues(client, tenantId, "lead", created.id, cfvItems);
+
+    await client.query("COMMIT");
+    return res.status(201).json(created);
   } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
     console.error("POST /leads error:", err);
     if (err.code === "23514") {
       return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
@@ -251,8 +360,6 @@ router.post("/", async (req, res) => {
 });
 
 /* ---------------- GET /api/leads/:id (fetch one) ---------------- */
-// Keep this AFTER specific paths like /pipelines, /stages, /check-mobile, and POST,
-// but BEFORE PATCH /:id so it isn't masked.
 router.get("/:id", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
