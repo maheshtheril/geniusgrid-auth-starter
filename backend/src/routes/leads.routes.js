@@ -43,6 +43,24 @@ async function setTenant(client, tenantId) {
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 
+/* ---------------- diagnostics & guards ---------------- */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
+
+if (process.env.NODE_ENV !== "production") {
+  router.use((req, _res, next) => {
+    console.log("[/api/leads] hit", {
+      method: req.method,
+      url: req.originalUrl,
+      tenant: getTenantId(req),
+      company: getCompanyId(req),
+      hasFiles: !!(req.files?.length),
+    });
+    next();
+  });
+}
+
 /* ---------------- probe ---------------- */
 router.get("/ping", (_req, res) => res.json({ ok: true }));
 
@@ -52,6 +70,10 @@ router.get("/", async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const companyId = getCompanyId(req);
+  if (companyId && !isUuid(companyId)) {
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  }
+
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const size = Math.min(100, Math.max(1, parseInt(req.query.pageSize ?? req.query.size, 10) || 25));
   const q = (req.query.q || "").trim();
@@ -64,7 +86,14 @@ router.get("/", async (req, res) => {
   let i = params.length;
 
   if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++i}`; }
-  if (q)         { params.push(`%${q}%`);  where += ` AND (name ILIKE $${++i} OR company ILIKE $${i} OR email ILIKE $${i} OR phone ILIKE $${i})`; }
+  if (q) {
+    params.push(`%${q}%`);
+    const idx = ++i;
+    where += ` AND (name ILIKE $${idx}
+                 OR COALESCE(company, company_name, '') ILIKE $${idx}
+                 OR email ILIKE $${idx}
+                 OR phone ILIKE $${idx})`;
+  }
   if (status)    { params.push(status);    where += ` AND status = $${++i}`; }
   if (stage)     { params.push(stage);     where += ` AND stage  = $${++i}`; }
   if (owner_id)  { params.push(owner_id);  where += ` AND owner_id::text = $${++i}`; }
@@ -78,7 +107,7 @@ router.get("/", async (req, res) => {
       company_id,
       owner_id,
       name,
-      company AS company_name,
+      COALESCE(company, company_name, NULL) AS company_name,
       email,
       phone,
       website,
@@ -123,7 +152,9 @@ router.get("/", async (req, res) => {
 
     res.json({ items, total: count.rows?.[0]?.total ?? 0, page, size });
   } catch (err) {
-    console.error("GET /leads error:", err);
+    console.error("GET /leads error:", {
+      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column,
+    });
     res.status(500).json({ error: "Failed to load leads" });
   } finally {
     client.release();
@@ -208,14 +239,6 @@ router.get("/check-mobile", async (req, res) => {
 
 /* ------------ helpers for POST (multipart + CFV insert) ------------ */
 
-// type guards
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function looksLikeUuid(x = "") {
-  return typeof x === "string" && UUID_RE.test(x);
-}
-
 // Parse cfv JSON or cfv[i][field_id] style multipart
 function parseCfvItems(body = {}, files = []) {
   const collected = [];
@@ -289,7 +312,7 @@ function normalizeLeadBody(req) {
  * Skips invalid UUIDs to avoid ANY(uuid[]) casting issues.
  */
 async function loadFieldMetaMap(client, fieldIds) {
-  const valid = [...new Set(fieldIds.map(String))].filter(looksLikeUuid);
+  const valid = [...new Set(fieldIds.map(String))].filter(isUuid);
   if (!valid.length) return new Map();
 
   const { rows } = await client.query(
@@ -309,7 +332,7 @@ async function loadFieldMetaMap(client, fieldIds) {
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
   if (!items?.length) return;
 
-  const fieldIds = [...new Set(items.map(i => i.field_id))].filter(looksLikeUuid);
+  const fieldIds = [...new Set(items.map(i => i.field_id))].filter(isUuid);
   if (!fieldIds.length) {
     console.warn("[CFV] No valid field_ids after validation. Skipping CFV upsert.");
     return;
@@ -391,6 +414,10 @@ router.post("/", upload.any(), async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const companyId = getCompanyId(req);
+  if (companyId && !isUuid(companyId)) {
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  }
+
   const lead = normalizeLeadBody(req);
   const name = lead.name;
   if (!name) return res.status(400).json({ error: "name is required" });
@@ -427,14 +454,28 @@ router.post("/", upload.any(), async (req, res) => {
     return res.status(201).json(created);
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
-    console.error("POST /leads error:", err);
-    if (err.code === "23514") {
-      return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
+    console.error("POST /leads error:", {
+      message: err?.message,
+      code: err?.code,
+      detail: err?.detail,
+      table: err?.table, column: err?.column, constraint: err?.constraint,
+    });
+    switch (err?.code) {
+      case "23514": // check_violation
+        return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
+      case "23505": // unique_violation
+        return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
+      case "22P02": // invalid_text_representation (bad UUID)
+        return res.status(400).json({ error: "Invalid UUID in x-company-id or cfv.field_id" });
+      case "23503": // foreign_key_violation
+        return res.status(400).json({ error: "Invalid reference: company_id or custom_field_id not found for tenant" });
+      case "23502": // not_null_violation
+        return res.status(400).json({ error: `Missing required column: ${err.column}` });
+      case "42703": // undefined_column
+        return res.status(500).json({ error: `Column not found: ${err.column} (schema mismatch)` });
+      default:
+        return res.status(500).json({ error: "Failed to create lead" });
     }
-    if (err.code === "23505") {
-      return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
-    }
-    return res.status(500).json({ error: "Failed to create lead" });
   } finally {
     client.release();
   }
@@ -446,7 +487,12 @@ router.get("/:id", async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const companyId = getCompanyId(req);
+  if (companyId && !isUuid(companyId)) {
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  }
+
   const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
 
   const client = await pool.connect();
   try {
@@ -466,7 +512,7 @@ router.get("/:id", async (req, res) => {
         company_id,
         owner_id,
         name,
-        company AS company_name,
+        COALESCE(company, company_name, NULL) AS company_name,
         email,
         phone,
         website,
@@ -503,7 +549,9 @@ router.get("/:id", async (req, res) => {
 
     return res.json(row);
   } catch (err) {
-    console.error("GET /leads/:id error:", err);
+    console.error("GET /leads/:id error:", {
+      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column,
+    });
     return res.status(500).json({ error: "Failed to load lead" });
   } finally {
     client.release();
@@ -516,7 +564,13 @@ router.patch("/:id", async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const companyId = getCompanyId(req);
+  if (companyId && !isUuid(companyId)) {
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  }
+
   const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
+
   const patch = req.body || {};
 
   const allow = {
@@ -579,7 +633,7 @@ router.patch("/:id", async (req, res) => {
                website,
                source,
                followup_at,
-               company AS company_name,
+               COALESCE(company, company_name, NULL) AS company_name,
                owner   AS owner_name,
                priority,
                tags_text,
@@ -603,11 +657,19 @@ router.patch("/:id", async (req, res) => {
     row.ai_next = Array.isArray(row.ai_next) ? row.ai_next : JSON.parse(row.ai_next || "[]");
     res.json(row);
   } catch (err) {
-    console.error("PATCH /leads/:id error:", err);
-    if (err.code === "23505") {
-      return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
+    console.error("PATCH /leads/:id error:", {
+      message: err?.message, code: err?.code, detail: err?.detail, column: err?.column,
+    });
+    switch (err?.code) {
+      case "23505":
+        return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
+      case "22P02":
+        return res.status(400).json({ error: "Invalid UUID in request" });
+      case "42703":
+        return res.status(500).json({ error: `Column not found: ${err.column} (schema mismatch)` });
+      default:
+        return res.status(500).json({ error: "Failed to update lead" });
     }
-    res.status(500).json({ error: "Failed to update lead" });
   } finally {
     client.release();
   }
