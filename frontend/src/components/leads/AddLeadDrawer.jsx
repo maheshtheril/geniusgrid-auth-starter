@@ -1,7 +1,7 @@
 // src/components/leads/AddLeadDrawer.jsx — full, updated, production-ready
 // - Phone input is max width; country dropdown is compact.
 // - Clean sections. Title "Advance". No "Add custom field" button.
-// - Custom fields are loaded from /api/custom-fields?record_type=lead.
+// - Custom fields are loaded from /api/crm/custom-fields?entity=lead&module=crm (falls back to /api/custom-fields?record_type=lead).
 // - Posts multipart/form-data with cfv[...] entries (no JSON map).
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -38,6 +38,29 @@ const INIT = {
   status: "new",
   source: "",
 };
+
+/* ---------------- map server fields -> UI fields (tolerant) --------------- */
+// Accepts both /api/crm/custom-fields (type/options) and legacy /api/custom-fields (field_type/options_json)
+function mapServerFieldToUI(f) {
+  const key = f.key || f.code;
+  const type = String(f.type || f.field_type || "text").toLowerCase();
+  const options = Array.isArray(f.options)
+    ? f.options
+    : Array.isArray(f.options_json)
+      ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
+      : [];
+  const accept = f.accept || f.validation_json?.accept;
+  return {
+    id: f.id,
+    key,
+    label: f.label,
+    type, // "text" | "textarea" | "number" | "date" | "select" | "checkbox" | "file"
+    required: !!(f.required ?? f.is_required),
+    options,
+    accept: type === "file" ? (accept || "*/*") : undefined,
+    order_index: f.order_index ?? f.order ?? 0,
+  };
+}
 
 /* --------------------------------- UI atoms -------------------------------- */
 function Section({ title, subtitle, children, right }) {
@@ -113,7 +136,7 @@ const Select = React.forwardRef(function Select(
 function CountrySelect({ options, value, onChange, disabled }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [hi, setHi] = useState(0);
+  ￼const [hi, setHi] = useState(0);
   const boxRef = useRef(null);
   const btnRef = useRef(null);
 
@@ -284,23 +307,37 @@ export default function AddLeadDrawer({
     setCustom({});
     (async () => {
       try {
-        const resp = await http.get("custom-fields", { params: { record_type: "lead" } });
-        const items = normalizeToArray(resp?.data);
+        // Prefer new CRM route
+        let data;
+        try {
+          const r1 = await http.get("/api/crm/custom-fields", {
+            params: { entity: "lead", module: "crm", active_only: 1 },
+          });
+          data = r1?.data;
+        } catch {
+          // Fallback to legacy route/shape
+          const r2 = await http.get("/api/custom-fields", {
+            params: { record_type: "lead" },
+          });
+          data = r2?.data;
+        }
+
+        const items = normalizeToArray(data);
         const mapped = items
           .filter((f) => f?.is_active !== false)
-          .map((f) => ({
-            id: f.id,
-            key: f.code,
-            label: f.label,
-            type: f.field_type, // "text" | "textarea" | "number" | "date" | "select" | "checkbox" | "file"
-            required: !!f.is_required,
-            options: Array.isArray(f.options_json)
-              ? f.options_json.map((o) => (typeof o === "string" ? o : o?.label ?? o?.value ?? ""))
-              : [],
-            accept: f.validation_json?.accept || undefined,
-            order_index: f.order_index ?? 0,
-          }))
-          .sort((a, b) => (a.order_index ?? 0) - (b.order_index ?? 0) || String(a.label).localeCompare(String(b.label)));
+          .map(mapServerFieldToUI)
+          .sort(
+            (a, b) =>
+              (a.order_index ?? 0) - (b.order_index ?? 0) ||
+              String(a.label).localeCompare(String(b.label))
+          );
+
+        if (process?.env?.NODE_ENV !== "production") {
+          // one-time helpful logs
+          console.log("[AddLeadDrawer] custom-fields raw:", data);
+          console.log("[AddLeadDrawer] custom-fields mapped:", mapped);
+        }
+
         setCfList(mapped);
       } catch (e) {
         console.error("Failed to load custom fields", e);
