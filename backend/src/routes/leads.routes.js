@@ -117,7 +117,7 @@ async function getLeadsSchema(client) {
 /* -------- projection builders (avoid undefined_column) -------- */
 function buildProjection(schema) {
   const sel = [];
-  // always-safe basics (assumed present in your schema; if not, add guards too)
+  // always-safe basics
   sel.push("id", "tenant_id", "company_id", "owner_id", "name");
 
   // company_name
@@ -131,23 +131,12 @@ function buildProjection(schema) {
     sel.push("NULL::text AS company_name");
   }
 
-  if (schema.has_email) sel.push("email");
-  else sel.push("NULL::text AS email");
-
-  if (schema.has_phone) sel.push("phone");
-  else sel.push("NULL::text AS phone");
-
-  if (schema.has_website) sel.push("website");
-  else sel.push("NULL::text AS website");
-
-  if (schema.has_source) sel.push("source");
-  else sel.push("NULL::text AS source");
-
-  if (schema.has_status) sel.push("status");
-  else sel.push("NULL::text AS status");
-
-  if (schema.has_stage) sel.push("stage");
-  else sel.push("NULL::text AS stage");
+  if (schema.has_email) sel.push("email"); else sel.push("NULL::text AS email");
+  if (schema.has_phone) sel.push("phone"); else sel.push("NULL::text AS phone");
+  if (schema.has_website) sel.push("website"); else sel.push("NULL::text AS website");
+  if (schema.has_source) sel.push("source"); else sel.push("NULL::text AS source");
+  if (schema.has_status) sel.push("status"); else sel.push("NULL::text AS status");
+  if (schema.has_stage) sel.push("stage"); else sel.push("NULL::text AS stage");
 
   // owner_name
   if (schema.has_owner && schema.has_owner_name) {
@@ -173,27 +162,6 @@ function buildProjection(schema) {
   if (schema.has_ai_next_action) sel.push("ai_next_action"); else sel.push("NULL::text AS ai_next_action");
 
   return sel.join(",\n      ");
-}
-
-function buildSearchClause(schema, paramIndexStart) {
-  // build list of columns we can safely search
-  const cols = ["name"];
-  if (schema.has_company) cols.push("company");
-  else if (schema.has_company_name) cols.push("company_name");
-  if (schema.has_email) cols.push("email");
-  if (schema.has_phone) cols.push("phone");
-
-  let i = paramIndexStart;
-  const parts = [];
-  for (const _ of cols) {
-    parts.push(`%${i + 1}%`); // placeholder tracking only; we’ll push params right below
-    i++;
-  }
-  // Construct SQL with separate $n placeholders
-  i = paramIndexStart;
-  const orSql = cols.map(() => `ILIKE $${++i}`).join(" OR ");
-  return { sql: `(${cols.map(c => `${c} ${orSql.split(" OR ")[0]}`).join(" OR ").replaceAll("ILIKE $"+(paramIndexStart+1), s=>s)}`, count: cols.length };
-  // ↑ That’s messy. Instead, do it simpler below in the route where we know the cols.
 }
 
 /* ---------------- probe ---------------- */
@@ -365,7 +333,6 @@ router.get("/check-mobile", async (req, res) => {
 /* ------------ helpers for POST (multipart + CFV insert) ------------ */
 
 // Parse cfv JSON or cfv[i][field_id] style multipart
-// REPLACE parseCfvItems with this
 function parseCfvItems(body = {}, files = []) {
   const collected = [];
 
@@ -424,7 +391,6 @@ function parseCfvItems(body = {}, files = []) {
   return collected;
 }
 
-
 // Map incoming body (JSON or multipart) to canonical fields
 function normalizeLeadBody(req) {
   const b = req.body || {};
@@ -444,20 +410,29 @@ function normalizeLeadBody(req) {
 
 /**
  * Fetches meta for provided field_ids and returns a map.
- * Skips invalid UUIDs to avoid cast issues.
+ * Uses custom_fields.field_type to drive coercion; no record_type/data_type here.
  */
 async function loadFieldMetaMap(client, fieldIds) {
   const valid = [...new Set(fieldIds.map(String))].filter(isUuid);
   if (!valid.length) return new Map();
 
   const { rows } = await client.query(
-    `SELECT id, form_version_id, record_type, data_type
+    `SELECT id, form_version_id, field_type
        FROM public.custom_fields
       WHERE tenant_id = ensure_tenant_scope()
         AND id = ANY($1::uuid[])`,
     [valid]
   );
-  return new Map(rows.map(r => [String(r.id), r]));
+
+  const map = new Map();
+  for (const r of rows) {
+    map.set(String(r.id), {
+      id: r.id,
+      form_version_id: r.form_version_id,
+      field_type: (r.field_type || "").toLowerCase().trim(),
+    });
+  }
+  return map;
 }
 
 /**
@@ -498,20 +473,59 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
       continue;
     }
 
-    // Optional coercion by data_type if your table uses it (text/number/date/json)
-    let value_text = it.value_text ?? null;
-    let value_number = it.value_number ?? null;
-    let value_date = it.value_date ?? null;
+    // Coerce by custom_fields.field_type
+    let vText  = it.value_text ?? null;
+    let vNum   = it.value_number ?? null;
+    let vDate  = it.value_date ?? null;
+    let vJson  = it.value_json ?? null;
 
-    if (meta.data_type === "number") {
-      value_number = Number.isFinite(Number(value_number)) ? Number(value_number) : null;
-      value_text = null; value_date = null;
-    } else if (meta.data_type === "date") {
-      value_date = value_date ? String(value_date).slice(0, 10) : null;
-      value_text = null; value_number = null;
-    } else if (meta.data_type === "text" || !meta.data_type) {
-      value_text = value_text != null ? String(value_text) : null;
-      value_number = null;
+    switch (meta.field_type) {
+      case "number":
+      case "int":
+      case "integer":
+      case "float":
+      case "decimal":
+      case "currency":
+        vNum = Number.isFinite(Number(vNum)) ? Number(vNum) : null;
+        vText = null; vDate = null; vJson = null;
+        break;
+
+      case "date":
+      case "dob":
+      case "birthday":
+        vDate = vDate ? String(vDate).slice(0, 10) : null;
+        vText = null; vNum = null; vJson = null;
+        break;
+
+      case "json":
+      case "object":
+      case "array":
+        if (vJson == null && vText) {
+          try { vJson = JSON.parse(vText); } catch { vJson = vText; }
+          vText = null;
+        }
+        vNum = null; vDate = null;
+        break;
+
+      case "multiselect":
+      case "multi_select":
+      case "checkboxes":
+      case "tags":
+        if (!Array.isArray(vJson)) {
+          if (Array.isArray(vText)) vJson = vText;
+          else if (typeof vText === "string") {
+            vJson = vText.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+          } else {
+            vJson = vJson ?? [];
+          }
+        }
+        vText = null; vNum = null; vDate = null;
+        break;
+
+      default: // text / select / radio / email / phone etc. -> value_text
+        if (vText != null) vText = String(vText);
+        vNum = null; vDate = null; // keep vJson only if explicitly provided
+        break;
     }
 
     const file_id = null; // hook your storage if needed
@@ -525,12 +539,12 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
         tenantId,
         meta.form_version_id,
         fid,
-        meta.record_type || recordType,
+        recordType, // << use the route-provided recordType (e.g., "lead")
         recordId,
-        value_text,
-        value_number,
-        value_date,
-        null,
+        vText,
+        vNum,
+        vDate,
+        vJson,
         file_id,
       ]
     );
