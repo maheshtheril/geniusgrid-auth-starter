@@ -47,6 +47,7 @@ async function setTenant(client, tenantId) {
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
+const DEV_ERRORS = process.env.NODE_ENV !== "production" && process.env.DEV_ERRORS === "1";
 
 if (process.env.NODE_ENV !== "production") {
   router.use((req, _res, next) => {
@@ -245,6 +246,17 @@ router.get("/", async (req, res) => {
     console.error("GET /leads error:", {
       message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
     });
+    if (DEV_ERRORS) {
+      return res.status(500).json({
+        error: "debug",
+        message: err?.message,
+        code: err?.code,
+        detail: err?.detail,
+        column: err?.column,
+        position: err?.position,
+        stack: err?.stack,
+      });
+    }
     res.status(500).json({ error: "Failed to load leads" });
   } finally {
     client.release();
@@ -321,6 +333,15 @@ router.get("/check-mobile", async (req, res) => {
     return res.json({ exists: rows.length > 0, lead: rows[0] || null, phone_norm: pn });
   } catch (err) {
     console.error("GET /leads/check-mobile error:", err);
+    if (DEV_ERRORS) {
+      return res.status(500).json({
+        error: "debug",
+        message: err?.message,
+        code: err?.code,
+        detail: err?.detail,
+        stack: err?.stack,
+      });
+    }
     return res.status(500).json({ exists: false, error: "server_error" });
   } finally {
     client.release();
@@ -683,6 +704,21 @@ router.post("/", upload.any(), async (req, res) => {
       stack: err?.stack,
     });
 
+    // Dev-mode: echo exact error back so the frontend sees it
+    if (DEV_ERRORS) {
+      return res.status(500).json({
+        error: "debug",
+        message: err?.message,
+        code: err?.code,
+        detail: err?.detail,
+        table: err?.table,
+        column: err?.column,
+        constraint: err?.constraint,
+        position: err?.position,
+        stack: err?.stack,
+      });
+    }
+
     // Map CFV-specific errors first
     if (err?.code === "CFV_NO_MATCH") {
       return res.status(err.status || 400).json({ error: "No matching custom_fields for provided field_id/code", code: err.code });
@@ -757,6 +793,17 @@ router.get("/:id", async (req, res) => {
     console.error("GET /leads/:id error:", {
       message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
     });
+    if (DEV_ERRORS) {
+      return res.status(500).json({
+        error: "debug",
+        message: err?.message,
+        code: err?.code,
+        detail: err?.detail,
+        column: err?.column,
+        position: err?.position,
+        stack: err?.stack,
+      });
+    }
     return res.status(500).json({ error: "Failed to load lead" });
   } finally {
     client.release();
@@ -879,6 +926,17 @@ router.patch("/:id", async (req, res) => {
     console.error("PATCH /leads/:id error:", {
       message: err?.message, code: err?.code, detail: err?.detail, column: err?.column, position: err?.position,
     });
+    if (DEV_ERRORS) {
+      return res.status(500).json({
+        error: "debug",
+        message: err?.message,
+        code: err?.code,
+        detail: err?.detail,
+        column: err?.column,
+        position: err?.position,
+        stack: err?.stack,
+      });
+    }
     switch (err?.code) {
       case "23505":
         return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
