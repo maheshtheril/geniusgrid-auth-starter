@@ -1,4 +1,3 @@
-// src/routes/leads.routes.js
 import express from "express";
 import multer from "multer";
 import { pool } from "../db/pool.js";
@@ -71,7 +70,7 @@ if (process.env.NODE_ENV !== "production") {
   });
 }
 
-/* -------- schema introspection (cached) -------- */
+/* -------- generic schema helpers (cached per-table) -------- */
 let leadsSchemaCache = null;
 let leadsSchemaFetchedAt = 0;
 const SCHEMA_TTL_MS = 5 * 60 * 1000;
@@ -121,6 +120,28 @@ async function getLeadsSchema(client) {
   leadsSchemaCache = schema;
   leadsSchemaFetchedAt = now;
   return schema;
+}
+
+async function tableExists(client, qname /* e.g. 'public.custom_fields' */) {
+  const { rows } = await client.query(`SELECT to_regclass($1) AS r`, [qname]);
+  return !!rows[0]?.r;
+}
+async function columnExists(client, schema, table, col) {
+  const { rows } = await client.query(
+    `SELECT 1
+       FROM information_schema.columns
+      WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+      LIMIT 1`,
+    [schema, table, col]
+  );
+  return rows.length > 0;
+}
+async function getColumnsSet(client, schema, table) {
+  const { rows } = await client.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_schema=$1 AND table_name=$2`,
+    [schema, table]
+  );
+  return new Set(rows.map((r) => r.column_name));
 }
 
 function buildProjection(schema) {
@@ -459,22 +480,8 @@ function parseCfvItems(body = {}, files = []) {
 }
 
 /* ---- NEW: helpers so we can read fields from multiple sources ---- */
-async function tableExists(client, qname /* e.g. 'public.custom_fields' */) {
-  const { rows } = await client.query(`SELECT to_regclass($1) AS r`, [qname]);
-  return !!rows[0]?.r;
-}
-async function columnExists(client, schema, table, col) {
-  const { rows } = await client.query(
-    `SELECT 1
-       FROM information_schema.columns
-      WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
-      LIMIT 1`,
-    [schema, table, col]
-  );
-  return rows.length > 0;
-}
+/* already have tableExists, columnExists, getColumnsSet above */
 
-/* ---- PATCHED: resolve field meta from multiple tables ---- */
 /* ---- PATCHED: resolve field meta from multiple tables (with tenantId) ---- */
 async function loadFieldMetaMap(client, tenantId, byFieldId, byCode) {
   const ids = [...new Set((byFieldId || []).filter(Boolean).map(String))].filter(isUuid);
@@ -576,14 +583,13 @@ async function loadFieldMetaMap(client, tenantId, byFieldId, byCode) {
   return map;
 }
 
-
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
   if (!items?.length) return { count: 0, resolved: [], skipped: [] };
 
   const requestedIds = items.map((i) => i.field_id).filter(Boolean);
   const requestedCodes = items.map((i) => i.code).filter(Boolean);
   
- const metaMap = await loadFieldMetaMap(client, tenantId, requestedIds, requestedCodes);
+  const metaMap = await loadFieldMetaMap(client, tenantId, requestedIds, requestedCodes);
   const rowsToInsert = [];
   const resolved = [];
   const skipped = [];
@@ -826,9 +832,7 @@ router.post("/", upload.any(), async (req, res) => {
     }
     return res.status(201).json({ ...created, _cfv_inserted: cfvResult.count });
   } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
+    try { await client.query("ROLLBACK"); } catch {}
     console.error("POST /leads error:", err);
     switch (err?.code) {
       case "23514":
@@ -1046,6 +1050,255 @@ router.patch("/:id", async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+/* ---------------- NOTES: list + create ---------------- */
+async function detectNotesSource(client) {
+  // Prefer dedicated lead_notes table; fallback to notes with record_type
+  if (await tableExists(client, 'public.lead_notes')) {
+    const cols = await getColumnsSet(client, 'public', 'lead_notes');
+    const contentCol = ['text','note','body','content'].find(c => cols.has(c)) || 'text';
+    return { schema: 'public', table: 'lead_notes', style: 'by_lead', hasTenant: cols.has('tenant_id'), contentCol, hasUser: cols.has('user_id'), hasCreated: cols.has('created_at') };
+  }
+  if (await tableExists(client, 'public.notes')) {
+    const cols = await getColumnsSet(client, 'public', 'notes');
+    const contentCol = ['text','note','body','content'].find(c => cols.has(c)) || 'text';
+    const hasRT = cols.has('record_type') && cols.has('record_id');
+    if (hasRT) return { schema: 'public', table: 'notes', style: 'by_record', hasTenant: cols.has('tenant_id'), contentCol, hasUser: cols.has('user_id'), hasCreated: cols.has('created_at') };
+  }
+  return null;
+}
+
+router.get('/:id/notes', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'Invalid lead id (must be UUID)' });
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const src = await detectNotesSource(client);
+    if (!src) return res.json([]); // no notes table, return empty
+
+    let sql, params;
+    if (src.style === 'by_lead') {
+      sql = `SELECT id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}
+               FROM ${src.schema}.${src.table}
+              WHERE ${src.hasTenant ? 'tenant_id = ensure_tenant_scope() AND ' : ''} lead_id = $1
+              ORDER BY ${src.hasCreated ? 'created_at' : 'id'} DESC
+              LIMIT ${limit}`;
+      params = [id];
+    } else { // by_record
+      sql = `SELECT id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}
+               FROM ${src.schema}.${src.table}
+              WHERE ${src.hasTenant ? 'tenant_id = ensure_tenant_scope() AND ' : ''} record_type IN ('lead','leads') AND record_id = $1
+              ORDER BY ${src.hasCreated ? 'created_at' : 'id'} DESC
+              LIMIT ${limit}`;
+      params = [id];
+    }
+    const r = await client.query(sql, params);
+    res.json(r.rows || []);
+  } catch (err) {
+    console.error('GET /leads/:id/notes error:', err);
+    res.status(500).json({ error: 'Failed to load notes' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/:id/notes', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'Invalid lead id (must be UUID)' });
+  const text = String(req.body?.text ?? req.body?.note ?? '').trim();
+  if (!text) return res.status(400).json({ error: 'text is required' });
+  const userId = req.session?.userId || null;
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const src = await detectNotesSource(client);
+    if (!src) return res.status(404).json({ error: 'Notes table not found' });
+
+    let sql, params;
+    if (src.style === 'by_lead') {
+      const cols = ['lead_id', src.contentCol];
+      const ph = ['$1', '$2'];
+      const vals = [id, text];
+      if (src.hasTenant) { cols.unshift('tenant_id'); ph.unshift('$0'); vals.unshift(tenantId); }
+      if (src.hasUser) { cols.push('user_id'); ph.push(`$${ph.length+ (src.hasTenant?0:1)}`); vals.push(userId); }
+      sql = `INSERT INTO ${src.schema}.${src.table} (${src.hasTenant ? 'tenant_id,' : ''} ${cols.filter(c=>c!=='tenant_id').join(', ')})
+             VALUES (${src.hasTenant ? '$1,' : ''} ${src.hasTenant ? '$2,$3' : '$1,$2'}${src.hasUser ? ', ' + (src.hasTenant ? '$4' : '$3') : ''})
+             RETURNING id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}`;
+      // Rebuild params cleanly for clarity
+      params = src.hasTenant
+        ? (src.hasUser ? [tenantId, id, text, userId] : [tenantId, id, text])
+        : (src.hasUser ? [id, text, userId] : [id, text]);
+    } else { // by_record
+      const hasRTCols = true; // guaranteed by detect
+      const tenantFrag = src.hasTenant ? 'tenant_id,' : '';
+      const tenantVals = src.hasTenant ? '$1,' : '';
+      const baseCols = `${tenantFrag}record_type, record_id, ${src.contentCol}${src.hasUser ? ', user_id' : ''}`;
+      const baseVals = `${tenantVals}${src.hasTenant ? '$2,$3,$4' : '$1,$2,$3'}${src.hasUser ? ',' + (src.hasTenant ? '$5' : '$4') : ''}`;
+      sql = `INSERT INTO ${src.schema}.${src.table} (${baseCols})
+             VALUES (${baseVals})
+             RETURNING id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}`;
+      params = src.hasTenant
+        ? (src.hasUser ? [tenantId, 'lead', id, text, userId] : [tenantId, 'lead', id, text])
+        : (src.hasUser ? ['lead', id, text, userId] : ['lead', id, text]);
+    }
+
+    const r = await client.query(sql, params);
+    res.status(201).json(r.rows?.[0] || { text });
+  } catch (err) {
+    console.error('POST /leads/:id/notes error:', err);
+    res.status(500).json({ error: 'Failed to create note' });
+  } finally {
+    client.release();
+  }
+});
+
+/* ---------------- HISTORY: list (best-effort across tables) ---------------- */
+async function detectHistorySource(client) {
+  const candidates = [
+    { schema: 'public', table: 'history' },
+    { schema: 'public', table: 'audit_log' },
+    { schema: 'public', table: 'activity_log' },
+    { schema: 'public', table: 'activities' },
+  ];
+  for (const c of candidates) {
+    if (await tableExists(client, `${c.schema}.${c.table}`)) {
+      const cols = await getColumnsSet(client, c.schema, c.table);
+      const hasRT = cols.has('record_type') && cols.has('record_id');
+      const hasLeadId = cols.has('lead_id');
+      const hasAction = cols.has('action') || cols.has('event_type');
+      const actionCol = cols.has('action') ? 'action' : (cols.has('event_type') ? 'event_type' : `'' AS action`);
+      const tableNameCol = cols.has('table_name') ? 'table_name' : `NULL::text AS table_name`;
+      const createdCol = cols.has('created_at') ? 'created_at' : 'NOW() AS created_at';
+      const hasTenant = cols.has('tenant_id');
+      if (hasRT || hasLeadId) return { ...c, cols, hasRT, hasLeadId, hasTenant, actionCol, tableNameCol, createdCol };
+    }
+  }
+  return null;
+}
+
+router.get('/:id/history', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'Invalid lead id (must be UUID)' });
+  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const src = await detectHistorySource(client);
+    if (!src) return res.json([]);
+
+    let sql, params;
+    if (src.hasLeadId) {
+      sql = `SELECT id, ${src.actionCol} AS action, ${src.tableNameCol} AS table_name, ${src.createdCol} AS created_at
+               FROM ${src.schema}.${src.table}
+              WHERE ${src.hasTenant ? 'tenant_id = ensure_tenant_scope() AND ' : ''} lead_id = $1
+              ORDER BY ${src.cols.has('created_at') ? 'created_at' : 'id'} DESC
+              LIMIT ${limit}`;
+      params = [id];
+    } else {
+      sql = `SELECT id, ${src.actionCol} AS action, ${src.tableNameCol} AS table_name, ${src.createdCol} AS created_at
+               FROM ${src.schema}.${src.table}
+              WHERE ${src.hasTenant ? 'tenant_id = ensure_tenant_scope() AND ' : ''} record_type IN ('lead','leads') AND record_id = $1
+              ORDER BY ${src.cols.has('created_at') ? 'created_at' : 'id'} DESC
+              LIMIT ${limit}`;
+      params = [id];
+    }
+    const r = await client.query(sql, params);
+    res.json(r.rows || []);
+  } catch (err) {
+    console.error('GET /leads/:id/history error:', err);
+    res.status(500).json({ error: 'Failed to load history' });
+  } finally {
+    client.release();
+  }
+});
+
+/* ---------------- AI helpers (simple stubs) ---------------- */
+router.post('/:id/ai-refresh', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'Invalid lead id (must be UUID)' });
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const r = await client.query(
+      `SELECT name, email, phone, company_name, status, stage, source
+         FROM public.leads
+        WHERE id = $1 AND tenant_id = $2
+        LIMIT 1`,
+      [id, tenantId]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: 'Lead not found' });
+    const L = r.rows[0];
+    const summary = `Lead ${L.name || ''}${L.company_name ? ' @ ' + L.company_name : ''}${L.email ? ' • ' + L.email : ''}${L.phone ? ' • ' + L.phone : ''}. Status: ${L.status || 'n/a'}${L.stage ? ', stage ' + L.stage : ''}${L.source ? ' (src: ' + L.source + ')' : ''}.`;
+    const next_actions = [
+      'Send intro email',
+      'Schedule follow-up call',
+      'Qualify budget & timeline',
+    ];
+    res.json({ summary, next_actions });
+  } catch (err) {
+    console.error('POST /leads/:id/ai-refresh error:', err);
+    res.status(500).json({ error: 'AI refresh failed' });
+  } finally {
+    client.release();
+  }
+});
+router.post('/:id/ai/refresh', (req, res) => router.handle({ ...req, url: req.url.replace('/ai/refresh', '/ai-refresh') }, res));
+
+router.post('/:id/ai-score', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: 'Invalid lead id (must be UUID)' });
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const r = await client.query(
+      `SELECT email, phone, website, status, stage, priority
+         FROM public.leads
+        WHERE id = $1 AND tenant_id = $2
+        LIMIT 1`,
+      [id, tenantId]
+    );
+    if (!r.rowCount) return res.status(404).json({ error: 'Lead not found' });
+    const L = r.rows[0];
+    let score = 0;
+    if (L.email) score += 25;
+    if (L.phone) score += 20;
+    if (L.website) score += 10;
+    if (['qualified','proposal','won'].includes((L.status||'').toLowerCase())) score += 25;
+    if ((L.priority|0) === 1) score += 15; else if ((L.priority|0) === 2) score += 8;
+    if ((L.stage||'').toLowerCase().includes('proposal')) score += 5;
+    score = Math.max(0, Math.min(100, score));
+    res.json({ score });
+  } catch (err) {
+    console.error('POST /leads/:id/ai-score error:', err);
+    res.status(500).json({ error: 'AI score failed' });
+  } finally {
+    client.release();
+  }
+});
+
+router.get('/:id/ai', async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
+  // Placeholder – return empty list for now
+  res.json([]);
 });
 
 export default router;

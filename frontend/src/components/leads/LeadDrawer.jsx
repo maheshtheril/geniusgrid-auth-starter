@@ -3,6 +3,8 @@
 // - ⌘/Ctrl+S Save, Esc Close
 // - Compact mode toggle
 // - MASTER FIELDS are now editable and saved via PATCH (server allow‑list updated)
+// - UX tighten: Cmd/Ctrl+Enter to add note, disabled Add while saving, optimistic note insert + rollback, clearer errors
+// - UX tighten: warn before unload/close if there are unsaved changes
 
 import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import useLeadsApi from "@/hooks/useLeadsApi";
@@ -32,12 +34,13 @@ function normalizeLead(raw = {}) {
   // ensure array type for ai_next
   let ai_next = unwrapped.ai_next;
   if (typeof ai_next === "string") {
-    // try CSV or newline to array
+    // try JSON, else CSV/newlines → array
     if (ai_next.trim().startsWith("[")) {
       try { ai_next = JSON.parse(ai_next); } catch { ai_next = []; }
     } else {
-      ai_next = ai_next.split(/\r?\n|,/)\
-        .map((s) => String(s).trim())\
+      ai_next = ai_next
+        .split(/\r?\n|,/) // split on newline or comma
+        .map((s) => String(s).trim())
         .filter(Boolean);
     }
   } else if (!Array.isArray(ai_next)) {
@@ -77,6 +80,7 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
   const [notes, setNotes] = useState([]);
   const [history, setHistory] = useState([]);
   const [noteText, setNoteText] = useState("");
+  const [addingNote, setAddingNote] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [scoreBusy, setScoreBusy] = useState(false);
   const [error, setError] = useState("");
@@ -137,16 +141,32 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
   }, [api, id]);
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  // Warn on unload if dirty
+  useEffect(() => {
+    if (!dirty) return;
+    const beforeUnload = (e) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", beforeUnload);
+    return () => window.removeEventListener("beforeunload", beforeUnload);
+  }, [dirty]);
+
+  const handleClose = useCallback(() => {
+    if (dirty) {
+      const ok = window.confirm("You have unsaved changes. Discard and close?");
+      if (!ok) return;
+    }
+    onClose?.();
+  }, [dirty, onClose]);
+
   // Global shortcuts
   useEffect(() => {
     const onKey = (e) => {
       const isModS = (e.key === 's' || e.key === 'S') && (e.metaKey || e.ctrlKey);
       if (isModS) { e.preventDefault(); if (!saving && dirty) saveAll(); return; }
-      if (e.key === 'Escape') { e.preventDefault(); onClose?.(); }
+      if (e.key === 'Escape') { e.preventDefault(); handleClose(); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [saving, dirty, onClose]);
+  }, [saving, dirty, handleClose]);
 
   const markChange = useCallback((key, value) => {
     setLead((prev) => normalizeLead({ ...(prev || {}), [key]: value }));
@@ -185,8 +205,8 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
       // ensure ai_next is array
       if (typeof payload.ai_next === "string") {
         payload.ai_next = payload.ai_next
-          .split(/\r?\n|,/)\
-          .map((s) => s.trim())\
+          .split(/\r?\n|,/)
+          .map((s) => s.trim())
           .filter(Boolean);
       }
 
@@ -203,13 +223,29 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
   };
 
   const addNote = async () => {
-    if (!noteText.trim()) return;
+    const text = noteText.trim();
+    if (!text || addingNote) return;
+    setAddingNote(true);
+    setError("");
+
+    // optimistic insert
+    const temp = { id: `temp-${Date.now()}`, text, created_at: new Date().toISOString() };
+    setNotes((prev) => [temp, ...(prev || [])]);
+    setNoteText("");
+
     try {
-      const added = await api.addNote(id, { text: noteText.trim() });
-      setNotes((prev) => [added, ...prev]);
-      setNoteText("");
-    } catch {
-      setError("Could not add note.");
+      const added = await api.addNote(id, { text });
+      // replace temp with server version
+      setNotes((prev) => prev.map((n) => (n.id === temp.id ? added : n)));
+    } catch (e) {
+      // rollback and show error
+      setNotes((prev) => prev.filter((n) => n.id !== temp.id));
+      const status = e?.response?.status;
+      if (status === 404) setError("Notes API not found. Ensure /api/leads/:id/notes is mounted.");
+      else setError(e?.response?.data?.error || "Could not add note.");
+      setNoteText(text); // restore input
+    } finally {
+      setAddingNote(false);
     }
   };
 
@@ -253,7 +289,7 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
 
   return (
     <div className="fixed inset-0 z-[1000] flex bg-base-200/50 backdrop-blur">
-      <div className="flex-1" onClick={onClose} aria-hidden />
+      <div className="flex-1" onClick={handleClose} aria-hidden />
 
       <div className="ml-auto h-full w-full max-w-[920px] bg-base-100 shadow-2xl grid grid-rows-[auto_auto_1fr_auto]" data-dense={dense}>
         {/* Sticky Header */}
@@ -266,7 +302,7 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
             <div className="hidden sm:flex items-center gap-2">
               <button className="btn btn-sm" disabled={aiBusy} onClick={refreshAI} title="Generate summary & next actions">{aiBusy ? "Refreshing…" : "↻ AI"}</button>
               <button className="btn btn-sm" disabled={scoreBusy} onClick={runScore} title="Re-score this lead">{scoreBusy ? "Scoring…" : "★ Score"}</button>
-              <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+              <button className="btn btn-ghost btn-sm" onClick={handleClose}>Close</button>
             </div>
           </div>
           <div className="px-3 md:px-4 pb-2 flex items-center gap-2">
@@ -288,7 +324,7 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
           {loading ? <Skeleton /> : tab === "summary" ? (
             <SummaryTab lead={lead} markChange={markChange} />
           ) : tab === "notes" ? (
-            <NotesTab notes={notes} noteText={noteText} setNoteText={setNoteText} addNote={addNote} />
+            <NotesTab notes={notes} noteText={noteText} setNoteText={setNoteText} addNote={addNote} addingNote={addingNote} />
           ) : (
             <HistoryTab history={history} />
           )}
@@ -298,10 +334,10 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
         <footer className="sticky bottom-0 z-20 bg-base-100/95 backdrop-blur border-t">
           <div className="px-3 md:px-4 py-2 flex items-center gap-2">
             <div className="text-xs opacity-70">{dirty ? (<>
-              You have unsaved changes — <kbd className="kbd kbd-xs">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd className="kbd kbd-xs">S</kbd> to save
+              You have unsaved changes — <kbd className="kbd kbd-xs">{typeof navigator !== 'undefined' && navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd className="kbd kbd-xs">S</kbd> to save
             </>) : "All changes saved"}</div>
             <div className="ml-auto flex items-center gap-2">
-              <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
+              <button className="btn btn-ghost btn-sm" onClick={handleClose}>Close</button>
               <button className={`btn btn-primary btn-sm ${saving || !dirty ? "btn-disabled" : ""}`} disabled={saving || !dirty} onClick={saveAll}>{saving ? "Saving…" : "Save changes"}</button>
             </div>
           </div>
@@ -434,12 +470,24 @@ function SummaryTab({ lead, markChange }) {
   );
 }
 
-function NotesTab({ notes, noteText, setNoteText, addNote }) {
+function NotesTab({ notes, noteText, setNoteText, addNote, addingNote }) {
+  const onKeyDown = (e) => {
+    const isModEnter = (e.key === 'Enter') && (e.metaKey || e.ctrlKey);
+    if (isModEnter) { e.preventDefault(); addNote(); }
+  };
   return (
     <div className="flex flex-col gap-3">
       <div className="flex gap-2">
-        <input className="input flex-1" placeholder="Write a note…" value={noteText} onChange={(e) => setNoteText(e.target.value)} />
-        <button className="btn btn-primary" onClick={addNote}>Add</button>
+        <input
+          className="input flex-1"
+          placeholder="Write a note…"
+          value={noteText}
+          onChange={(e) => setNoteText(e.target.value)}
+          onKeyDown={onKeyDown}
+        />
+        <button className="btn btn-primary" onClick={addNote} disabled={addingNote}>
+          {addingNote ? 'Adding…' : 'Add'}
+        </button>
       </div>
       <div className="divide-y">
         {notes?.map((n) => (

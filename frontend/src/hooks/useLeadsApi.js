@@ -1,36 +1,38 @@
-// src/hooks/useLeadsApi.js
+// src/hooks/useLeadsApi.js — full client API (Leads, Notes, History, AI)
+// Assumes your HTTP helpers (get/post/patch) already prefix "/api" and send cookies.
+// All methods return already-unwrapped payloads.
+
 import { useCallback, useMemo } from "react";
 import { get, post, patch } from "@/lib/api";
 
-// double-unwrap for payloads like { data: { data: {...} } }
+/** Double-unwrap common axios/data envelopes */
 const unwrap = (x) => {
   let d = x && typeof x === "object" && "data" in x ? x.data : x;
   if (d && typeof d === "object" && "data" in d) d = d.data;
   return d;
 };
 
-// pick first array under common keys (or the value itself if already an array)
+/** Pick first array from common container keys */
 const pickArray = (obj, keys) => {
   for (const k of keys) if (Array.isArray(obj?.[k])) return obj[k];
   return Array.isArray(obj) ? obj : [];
 };
 
-// strip empty query params
+/** Remove empty query params */
 const clean = (o = {}) =>
   Object.fromEntries(
     Object.entries(o).filter(([, v]) => v !== "" && v !== null && v !== undefined)
   );
 
 export default function useLeadsApi() {
-  // -------- Pipelines (must return string[]) --------
+  /* ---------------- Pipelines (stages as strings) ---------------- */
   const listPipelines = useCallback(async () => {
     let raw;
     try {
       raw = await get("/leads/pipelines", { meta: { dedupe: true } });
     } catch {
-      raw = await get("/pipelines", { meta: { dedupe: true } });
+      raw = await get("/pipelines", { meta: { dedupe: true } }); // legacy fallback
     }
-
     const data = unwrap(raw);
     const arr = pickArray(data, ["stages", "pipelines", "items", "data", "results"]);
     return arr
@@ -38,13 +40,9 @@ export default function useLeadsApi() {
       .filter(Boolean);
   }, []);
 
-  // -------- List (normalized shape) --------
+  /* ---------------- Leads list (normalized) ---------------- */
   const listLeads = useCallback(async (params) => {
-    const p = clean({
-      ...params,
-      size: params?.size ?? params?.pageSize, // normalize "pageSize" → "size"
-    });
-
+    const p = clean({ ...params, size: params?.size ?? params?.pageSize });
     const raw = await get("/leads", { params: p, meta: { dedupe: true } });
     const data = unwrap(raw);
     const items = pickArray(data, [
@@ -56,7 +54,6 @@ export default function useLeadsApi() {
       "leads",
       "nodes",
     ]);
-
     return {
       items,
       total: Number(data?.total ?? data?.count ?? items.length ?? 0),
@@ -65,24 +62,18 @@ export default function useLeadsApi() {
     };
   }, []);
 
-  // -------- CRUD --------
+  /* ---------------- CRUD ---------------- */
   const getLead = useCallback(async (id) => unwrap(await get(`/leads/${id}`)), []);
   const createLead = useCallback(async (body) => unwrap(await post("/leads", body)), []);
-  // Supports FormData for file custom fields (browser will set boundary)
-  const createLeadMultipart = useCallback(
-    async (formData) => unwrap(await post("/leads", formData)),
-    []
-  );
+  const createLeadMultipart = useCallback(async (formData) => unwrap(await post("/leads", formData)), []);
   const updateLead = useCallback(async (id, b) => unwrap(await patch(`/leads/${id}`, b)), []);
 
-  // -------- AI endpoints --------
+  /* ---------------- AI ---------------- */
   const aiRefresh = useCallback(async (id) => {
     try {
-      // preferred route
-      return unwrap(await post(`/leads/${id}/ai-refresh`, {}));
+      return unwrap(await post(`/leads/${id}/ai-refresh`, {})); // preferred
     } catch {
-      // legacy alias if present
-      return unwrap(await post(`/leads/${id}/ai/refresh`, {}));
+      return unwrap(await post(`/leads/${id}/ai/refresh`, {})); // legacy alias
     }
   }, []);
 
@@ -90,7 +81,6 @@ export default function useLeadsApi() {
     try {
       return unwrap(await post(`/leads/${id}/ai-score`, {}));
     } catch (e) {
-      // optional/ignore if backend route not present
       return { ok: false, error: e?.message || "ai-score failed" };
     }
   }, []);
@@ -104,10 +94,9 @@ export default function useLeadsApi() {
     }
   }, []);
 
-  // -------- Notes / History --------
+  /* ---------------- Notes / History ---------------- */
   const listNotes = useCallback(
-    async (leadId, p) =>
-      unwrap(await get(`/leads/${leadId}/notes`, { params: clean(p) })),
+    async (leadId, p) => unwrap(await get(`/leads/${leadId}/notes`, { params: clean(p) })),
     []
   );
   const addNote = useCallback(
@@ -115,18 +104,17 @@ export default function useLeadsApi() {
     []
   );
   const listHistory = useCallback(
-    async (leadId, p) =>
-      unwrap(await get(`/leads/${leadId}/history`, { params: clean(p) })),
+    async (leadId, p) => unwrap(await get(`/leads/${leadId}/history`, { params: clean(p) })),
     []
   );
 
-  // -------- Bulk --------
+  /* ---------------- Bulk ---------------- */
   const bulkUpdate = useCallback(
     async (payload) => unwrap(await patch(`/leads/bulk`, payload)),
     []
   );
 
-  // -------- Utilities --------
+  /* ---------------- Utilities ---------------- */
   // GET /leads/check-mobile?phone=+91%209876543210 → { exists: boolean }
   const checkMobile = useCallback(
     async ({ mobile }) =>
@@ -139,7 +127,7 @@ export default function useLeadsApi() {
     []
   );
 
-  // stable return so consumers don't re-render unnecessarily
+  // Stable reference object
   return useMemo(
     () => ({
       // lists
