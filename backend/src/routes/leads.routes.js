@@ -1076,8 +1076,6 @@ async function detectNotesSource(client) {
 /* ---------------- notes: list ---------------- */
 // at top you already have: import { randomUUID } from "crypto";
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
 
 router.post("/:id/notes", async (req, res) => {
   const tenantId = getTenantId(req);
