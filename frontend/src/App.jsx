@@ -44,6 +44,9 @@ const AuditPage       = React.lazy(() => import("@/pages/crm/incentives/AuditPag
 import { crmExtraRoutes } from "@/pages/crm/routes.extra";
 import { crmCompanyRoutes } from "@/pages/crm/companies/routes.companies";
 
+/* -------- Leads Scheduler (new) -------- */
+const LeadsCalendarPage = React.lazy(() => import("@/pages/crm/LeadsCalendarPage.jsx"));
+
 /* -------- Admin pages: all wired -------- */
 const OrganizationProfile = React.lazy(() => import("@/pages/OrganizationProfile.jsx"));
 const BrandingTheme       = React.lazy(() => import("@/pages/BrandingTheme.jsx"));
@@ -91,9 +94,6 @@ const AdminApprovals     = React.lazy(() => import("@/pages/AdminApprovals.jsx")
 const BillingSubscription= React.lazy(() => import("@/pages/BillingSubscription.jsx"));
 const UsageLimits        = React.lazy(() => import("@/pages/UsageLimits.jsx"));
 const SystemLogs         = React.lazy(() => import("@/pages/SystemLogs.jsx"));
-
-
-
 
 /* ---------- Error boundary ---------- */
 class ErrorBoundary extends React.Component {
@@ -415,6 +415,14 @@ export default function App() {
                 }
               />
               <Route
+                path="leads/calendar"
+                element={
+                  <React.Suspense fallback={<Fallback label="Loading Lead Scheduler…" />}>
+                    <LeadsCalendarPage />
+                  </React.Suspense>
+                }
+              />
+              <Route
                 path="discover"
                 element={
                   <React.Suspense fallback={<Fallback label="Loading Discover…" />}>
@@ -499,6 +507,11 @@ export default function App() {
 
           {/* Redirect helpers */}
           <Route path="/dashboard/app/*" element={<Navigate to="/app" replace />} />
+          {/* Menu paths without /app prefix → redirect to /app */}
+          <Route path="/crm" element={<Navigate to="/app/crm" replace />} />
+          <Route path="/crm/leads" element={<Navigate to="/app/crm/leads" replace />} />
+          <Route path="/crm/leads/calendar" element={<Navigate to="/app/crm/leads/calendar" replace />} />
+
           <Route path="*" element={<Navigate to="/health" replace />} />
         </Routes>
       </ErrorBoundary>
