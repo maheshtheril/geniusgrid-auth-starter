@@ -475,7 +475,6 @@ async function columnExists(client, schema, table, col) {
 }
 
 /* ---- PATCHED: resolve field meta from multiple tables ---- */
-// replace loadFieldMetaMap with this
 async function loadFieldMetaMap(client, byFieldId, byCode) {
   const ids = [...new Set((byFieldId || []).filter(Boolean).map(String))].filter(isUuid);
   const codesLC = [...new Set((byCode || []).map(String).map(s => s.trim().toLowerCase()).filter(Boolean))];
@@ -564,7 +563,6 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
 
   return map;
 }
-
 
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
   if (!items?.length) return { count: 0, resolved: [], skipped: [] };
