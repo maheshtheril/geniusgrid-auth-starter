@@ -8,6 +8,66 @@ import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import useLeadsApi from "@/hooks/useLeadsApi";
 import { post } from "@/lib/api";
 
+const DEFAULT_LEAD = {
+  id: null,
+  // master
+  name: "", email: "", phone: "", website: "",
+  source: "", followup_at: "",
+  company_name: "", owner_name: "",
+  priority: null, tags_text: "",
+  // ai/pipeline
+  status: "new", stage: "", ai_summary: "", ai_next: [], ai_score: 0,
+  // optional/nested that API may send
+  company: null,
+};
+
+function normalizeLead(raw = {}) {
+  const base = { ...DEFAULT_LEAD, ...(raw || {}) };
+  const unwrapped = base.item ?? base.data ?? base; // unwrap common API envelopes
+
+  // flatten company name if nested
+  const company_name =
+    unwrapped.company_name ?? unwrapped.company?.name ?? DEFAULT_LEAD.company_name;
+
+  // ensure array type for ai_next
+  let ai_next = unwrapped.ai_next;
+  if (typeof ai_next === "string") {
+    // try CSV or newline to array
+    if (ai_next.trim().startsWith("[")) {
+      try { ai_next = JSON.parse(ai_next); } catch { ai_next = []; }
+    } else {
+      ai_next = ai_next.split(/\r?\n|,/)\
+        .map((s) => String(s).trim())\
+        .filter(Boolean);
+    }
+  } else if (!Array.isArray(ai_next)) {
+    ai_next = [];
+  }
+
+  // numeric coercions
+  const ai_score = Number.isFinite(Number(unwrapped.ai_score)) ? Number(unwrapped.ai_score) : 0;
+  const priority = Number.isFinite(Number(unwrapped.priority)) ? Number(unwrapped.priority) : null;
+
+  // date normalization to yyyy-mm-dd for input[type=date]
+  let followup_at = unwrapped.followup_at || "";
+  try {
+    if (followup_at && !/^\d{4}-\d{2}-\d{2}$/.test(followup_at)) {
+      const d = new Date(followup_at);
+      if (!isNaN(d)) followup_at = d.toISOString().slice(0, 10);
+    }
+  } catch { /* noop */ }
+
+  return {
+    ...DEFAULT_LEAD,
+    ...unwrapped,
+    company_name,
+    ai_next,
+    ai_score,
+    priority,
+    followup_at,
+  };
+}
+
 export default function LeadDrawer({ id, onClose, onUpdated }) {
   const api = useLeadsApi();
 
@@ -45,8 +105,9 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
     setLoading(true);
     setError("");
     try {
-      const data = await api.getLead(id);
+      const raw = await api.getLead(id);
       if (!mounted.current) return;
+      const data = normalizeLead(raw);
       setLead(data);
 
       const [n, h] = await Promise.allSettled([
@@ -54,8 +115,13 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
         api.listHistory?.(id, { limit: 50 }),
       ]);
 
-      const notesArr = n.status === "fulfilled" ? ((Array.isArray(n.value?.items) ? n.value.items : n.value) || []) : [];
-      const historyArr = h.status === "fulfilled" ? ((Array.isArray(h.value?.items) ? h.value.items : h.value) || []) : [];
+      const notesArr = n.status === "fulfilled"
+        ? ((Array.isArray(n.value?.items) ? n.value.items : n.value) || [])
+        : [];
+
+      const historyArr = h.status === "fulfilled"
+        ? ((Array.isArray(h.value?.items) ? h.value.items : h.value) || [])
+        : [];
 
       if (!mounted.current) return;
       setNotes(notesArr);
@@ -83,7 +149,7 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
   }, [saving, dirty, onClose]);
 
   const markChange = useCallback((key, value) => {
-    setLead((prev) => ({ ...(prev || {}), [key]: value }));
+    setLead((prev) => normalizeLead({ ...(prev || {}), [key]: value }));
     if (allowedPatchKeys.has(key)) {
       setChanges((prev) => ({ ...prev, [key]: value }));
       setDirty(true);
@@ -94,7 +160,7 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
     setError("");
     try {
       const saved = await api.updateLead(id, patch);
-      setLead((prev) => ({ ...(prev || {}), ...saved, ...patch }));
+      setLead((prev) => normalizeLead({ ...(prev || {}), ...saved, ...patch }));
       onUpdated?.(saved || patch);
     } catch (e) {
       setError(e?.response?.data?.error || "Update failed. Please try again.");
@@ -107,10 +173,27 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
     setSaving(true);
     try {
       const payload = { ...changes };
-      // Normalize date string from input[type=date]
+
+      // date normalization (keep yyyy-mm-dd if provided)
       if (payload.followup_at && /^\d{4}-\d{2}-\d{2}$/.test(payload.followup_at)) {
-        payload.followup_at = payload.followup_at; // server accepts yyyy-mm-dd or ISO
+        // ok
+      } else if (payload.followup_at) {
+        const d = new Date(payload.followup_at);
+        if (!isNaN(d)) payload.followup_at = d.toISOString().slice(0, 10);
       }
+
+      // ensure ai_next is array
+      if (typeof payload.ai_next === "string") {
+        payload.ai_next = payload.ai_next
+          .split(/\r?\n|,/)\
+          .map((s) => s.trim())\
+          .filter(Boolean);
+      }
+
+      // coerce numbers
+      if (payload.ai_score != null) payload.ai_score = Number(payload.ai_score) || 0;
+      if (payload.priority != null) payload.priority = Number(payload.priority) || null;
+
       if (Object.keys(payload).length > 0) await savePatch(payload);
       setDirty(false);
       setChanges({});
@@ -138,9 +221,11 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
       const res = await api.aiRefresh(id);
       const next = {
         ai_summary: res?.summary ?? lead?.ai_summary ?? null,
-        ai_next: Array.isArray(res?.next_actions) ? res.next_actions : (Array.isArray(lead?.ai_next) ? lead.ai_next : []),
+        ai_next: Array.isArray(res?.next_actions)
+          ? res.next_actions
+          : (Array.isArray(lead?.ai_next) ? lead.ai_next : []),
       };
-      setLead((l) => (l ? { ...l, ...next } : l));
+      setLead((l) => normalizeLead(l ? { ...l, ...next } : next));
       setChanges((c) => ({ ...c, ...next }));
       setDirty(true);
     } catch {
@@ -212,7 +297,9 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
         {/* Sticky Save Bar */}
         <footer className="sticky bottom-0 z-20 bg-base-100/95 backdrop-blur border-t">
           <div className="px-3 md:px-4 py-2 flex items-center gap-2">
-            <div className="text-xs opacity-70">{dirty ? <>You have unsaved changes — <kbd className="kbd kbd-xs">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd className="kbd kbd-xs">S</kbd> to save</> : "All changes saved"}</div>
+            <div className="text-xs opacity-70">{dirty ? (<>
+              You have unsaved changes — <kbd className="kbd kbd-xs">{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd>+<kbd className="kbd kbd-xs">S</kbd> to save
+            </>) : "All changes saved"}</div>
             <div className="ml-auto flex items-center gap-2">
               <button className="btn btn-ghost btn-sm" onClick={onClose}>Close</button>
               <button className={`btn btn-primary btn-sm ${saving || !dirty ? "btn-disabled" : ""}`} disabled={saving || !dirty} onClick={saveAll}>{saving ? "Saving…" : "Save changes"}</button>
@@ -225,7 +312,7 @@ export default function LeadDrawer({ id, onClose, onUpdated }) {
       <style>{`
         [data-dense='true'] .p-3{padding:0.5rem!important}
         [data-dense='true'] .p-4{padding:0.75rem!important}
-        [data-dense='true'] .md\\:p-4{padding:0.75rem!important}
+        [data-dense='true'] .md\:p-4{padding:0.75rem!important}
         [data-dense='true'] .btn{height:2rem;min-height:2rem}
         [data-dense='true'] .btn-sm{height:1.75rem;min-height:1.75rem}
         [data-dense='true'] .input,[data-dense='true'] .select,[data-dense='true'] .textarea{font-size:0.95rem}
@@ -260,7 +347,7 @@ function SummaryTab({ lead, markChange }) {
       {/* Company */}
       <div>
         <label className="block text-xs md:text-sm opacity-70 mb-1">Company</label>
-        <input className="input w-full" value={lead?.company_name || ""} onChange={(e) => markChange("company_name", e.target.value)} />
+        <input className="input w-full" value={lead?.company_name || lead?.company?.name || ""} onChange={(e) => markChange("company_name", e.target.value)} />
       </div>
       {/* Owner */}
       <div>
