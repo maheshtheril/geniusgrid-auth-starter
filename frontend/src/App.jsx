@@ -3,7 +3,7 @@ import React from "react";
 import "./index.css";
 import "./styles.css";
 import "./styles/theme.css";
-import "./styles/sidebar-skin.css";
+
 import { Routes, Route, Navigate, Link, Outlet } from "react-router-dom";
 
 /* -------- Lazy: Public pages -------- */
