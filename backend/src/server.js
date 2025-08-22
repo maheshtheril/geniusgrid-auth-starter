@@ -49,9 +49,6 @@ import customFields from "./routes/customFields.js";
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
 
-/* ✅ Public CFV helper endpoints (keep public for now) */
-import cfvRouter from "./routes/cfv.routes.js";
-
 /* ---------- App init ---------- */
 const app = express();
 const PgStore = pgSimple(session);
@@ -78,7 +75,6 @@ const logger = pino({
   level: process.env.LOG_LEVEL || (isProd ? "info" : "debug"),
   base: { service: "geniusgrid-api", env: process.env.NODE_ENV || "dev" },
 });
-
 app.use(
   pinoHttp({
     logger,
@@ -167,28 +163,6 @@ app.use(
 /* ---------- Attach req.ctx for downstream routes ---------- */
 app.use(attachCtx);
 
-/* ---------- TEMP: default tenant & company headers (for your testing) ---------- */
-const TENANT_ID_DEFAULT =
-  process.env.TENANT_ID_DEFAULT || "26b7a805-2f6b-4899-b295-d03be045056f";
-const COMPANY_ID_DEFAULT =
-  process.env.COMPANY_ID_DEFAULT || "af3b367a-d61c-4748-9536-3fe94fe2d247";
-
-app.use((req, _res, next) => {
-  // If neither session nor header has tenant/company, inject defaults
-  const hasTenant =
-    req.session?.tenantId || req.session?.tenant_id || req.get("x-tenant-id");
-  const hasCompany =
-    req.session?.companyId || req.session?.company_id || req.get("x-company-id");
-
-  if (!hasTenant && TENANT_ID_DEFAULT) {
-    req.headers["x-tenant-id"] = TENANT_ID_DEFAULT;
-  }
-  if (!hasCompany && COMPANY_ID_DEFAULT) {
-    req.headers["x-company-id"] = COMPANY_ID_DEFAULT;
-  }
-  next();
-});
-
 /* ---------- Rate limiting ---------- */
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -219,9 +193,6 @@ app.get("/api/leads/ping", (_req, res) => res.json({ ok: true }));
 // ✅ PUBLIC custom-fields for the drawer (requires tenant via session/header/query)
 app.use("/api/custom-fields", customFields);
 
-// ✅ PUBLIC cfv helper endpoints (for testing inserts independently)
-app.use("/api/cfv", cfvRouter);
-
 /* ---------- AUTH routes ---------- */
 app.use("/api/auth", auth);
 app.use("/api/auth", authMe);
@@ -251,6 +222,9 @@ app.use("/api/leads-module", requireAuth, leadsModule);
 
 // Tenant menus (protected)
 app.use("/api", requireAuth, tenantMenusRoutes);
+
+// ❌ removed old protected mount of /api/custom-fields
+// app.use("/api/custom-fields", requireAuth, customFields);
 
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
