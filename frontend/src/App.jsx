@@ -505,7 +505,7 @@ export default function App() {
             />
           </Route>
 
-          {/* Redirect helpers */}
+          {/* Redirect helpers- */}
           <Route path="/dashboard/app/*" element={<Navigate to="/app" replace />} />
           {/* Menu paths without /app prefix → redirect to /app */}
           <Route path="/crm" element={<Navigate to="/app/crm" replace />} />
