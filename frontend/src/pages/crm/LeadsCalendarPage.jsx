@@ -7,7 +7,7 @@ import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid"; // premium
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline"; // premium
 import { DateTime } from "luxon";
 
-// NOTE: In this preview, we mock the backend so you can see the exact UX without your API.
+// NOTE: In this preview, we mock the backend so you can see the exact UX without your API .
 // You can copy just the visual pieces back into your app.
 
 /* ===== Mock Data ===== */
