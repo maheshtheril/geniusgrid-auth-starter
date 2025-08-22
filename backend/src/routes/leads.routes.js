@@ -475,35 +475,42 @@ async function columnExists(client, schema, table, col) {
 }
 
 /* ---- PATCHED: resolve field meta from multiple tables ---- */
-async function loadFieldMetaMap(client, byFieldId, byCode) {
+/* ---- PATCHED: resolve field meta from multiple tables (with tenantId) ---- */
+async function loadFieldMetaMap(client, tenantId, byFieldId, byCode) {
   const ids = [...new Set((byFieldId || []).filter(Boolean).map(String))].filter(isUuid);
-  const codesLC = [...new Set((byCode || []).map(String).map(s => s.trim().toLowerCase()).filter(Boolean))];
+  const codesLC = [...new Set((byCode || []).map((c) => String(c).trim().toLowerCase()).filter(Boolean))];
 
   const map = new Map();
   if (!ids.length && !codesLC.length) return map;
 
-  const sources = [{ schema: "public", table: "custom_fields", hasRT: true }];
+  const candidates = [
+    { schema: "public", table: "custom_fields" },
+    { schema: "public", table: "crm_custom_fields" },
+    { schema: "public", table: "lead_custom_fields" },
+  ];
 
-  if (await tableExists(client, "public.crm_custom_fields")) {
-    const hasRT = await columnExists(client, "public", "crm_custom_fields", "record_type");
-    sources.push({ schema: "public", table: "crm_custom_fields", hasRT });
+  const sources = [];
+  for (const c of candidates) {
+    if (!(await tableExists(client, `${c.schema}.${c.table}`))) continue;
+    const hasTenant = await columnExists(client, c.schema, c.table, "tenant_id");
+    const hasRT     = await columnExists(client, c.schema, c.table, "record_type");
+    sources.push({ ...c, hasTenant, hasRT });
   }
-  if (await tableExists(client, "public.lead_custom_fields")) {
-    const hasRT = await columnExists(client, "public", "lead_custom_fields", "record_type");
-    sources.push({ schema: "public", table: "lead_custom_fields", hasRT });
-  }
+  if (!sources.length) return map;
 
-  // By ID (do NOT filter by record_type for IDs)
+  // 1) By ID (never filter by record_type)
   if (ids.length) {
     for (const src of sources) {
-      const sql = `
+      const byIdSQL = `
         SELECT id::text AS id, code::text AS code, form_version_id,
                LOWER(COALESCE(field_type,'')) AS field_type
           FROM ${src.schema}.${src.table}
-         WHERE (tenant_id = ensure_tenant_scope() OR tenant_id IS NULL)
-           AND id = ANY($1::uuid[])`;
+         WHERE id = ANY($1::uuid[])
+           ${src.hasTenant ? "AND (tenant_id = ensure_tenant_scope() OR tenant_id = $2 OR tenant_id IS NULL)" : ""}
+      `;
+      const params = src.hasTenant ? [ids, tenantId || null] : [ids];
       try {
-        const r = await client.query(sql, [ids]);
+        const r = await client.query(byIdSQL, params);
         for (const row of r.rows) {
           if (!map.has(row.id)) {
             map.set(row.id, {
@@ -514,23 +521,24 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
             });
           }
         }
-      } catch (e) { if (e.code !== "42P01") throw e; }
+      } catch (e) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
     }
   }
 
-  // By code (accept 'lead'/'leads' when a record_type column exists)
+  // 2) By code (don’t require record_type match, but allow if present)
   if (codesLC.length) {
     for (const src of sources) {
-      const rtClause = src.hasRT ? `AND record_type IN ('lead','leads')` : ``;
-      const sql = `
+      const byCodeSQL = `
         SELECT id::text AS id, code::text AS code, form_version_id,
                LOWER(COALESCE(field_type,'')) AS field_type
           FROM ${src.schema}.${src.table}
-         WHERE (tenant_id = ensure_tenant_scope() OR tenant_id IS NULL)
-           ${rtClause}
-           AND LOWER(code) = ANY($1::text[])`;
+         WHERE LOWER(code) = ANY($1::text[])
+           ${src.hasRT ? "AND record_type IN ('lead','leads')" : ""}
+           ${src.hasTenant ? "AND (tenant_id = ensure_tenant_scope() OR tenant_id = $2 OR tenant_id IS NULL)" : ""}
+      `;
+      const params = src.hasTenant ? [codesLC, tenantId || null] : [codesLC];
       try {
-        const r = await client.query(sql, [codesLC]);
+        const r = await client.query(byCodeSQL, params);
         for (const row of r.rows) {
           if (!map.has(row.id)) {
             map.set(row.id, {
@@ -541,36 +549,41 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
             });
           }
         }
-      } catch (e) { if (e.code !== "42P01") throw e; }
+      } catch (e) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
     }
   }
 
-  // Fallback: if any matched rows lack form_version_id, borrow one
-  if (map.size) {
-    const needFV = [...map.values()].filter(m => !m.form_version_id);
-    if (needFV.length && await tableExists(client, "public.custom_fields")) {
-      const { rows } = await client.query(
-        `SELECT form_version_id
-           FROM public.custom_fields
-          WHERE (tenant_id = ensure_tenant_scope() OR tenant_id IS NULL)
-            AND form_version_id IS NOT NULL
-          LIMIT 1`
-      );
-      const fv = rows?.[0]?.form_version_id || null;
-      if (fv) needFV.forEach(m => { m.form_version_id ||= fv; });
+  // 3) Backfill missing form_version_id from any visible table
+  const needsFV = [...map.values()].filter(m => !m.form_version_id);
+  if (needsFV.length) {
+    for (const src of sources) {
+      const fvSQL = `
+        SELECT form_version_id
+          FROM ${src.schema}.${src.table}
+         WHERE form_version_id IS NOT NULL
+           ${src.hasTenant ? "AND (tenant_id = ensure_tenant_scope() OR tenant_id = $1 OR tenant_id IS NULL)" : ""}
+         LIMIT 1
+      `;
+      const params = src.hasTenant ? [tenantId || null] : [];
+      try {
+        const r = await client.query(fvSQL, params);
+        const fv = r.rows?.[0]?.form_version_id || null;
+        if (fv) { needsFV.forEach(m => { m.form_version_id ||= fv; }); break; }
+      } catch (e) { if (e.code !== "42P01" && e.code !== "42703") throw e; }
     }
   }
 
   return map;
 }
 
+
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
   if (!items?.length) return { count: 0, resolved: [], skipped: [] };
 
   const requestedIds = items.map((i) => i.field_id).filter(Boolean);
   const requestedCodes = items.map((i) => i.code).filter(Boolean);
-  const metaMap = await loadFieldMetaMap(client, requestedIds, requestedCodes);
-
+  
+ const metaMap = await loadFieldMetaMap(client, tenantId, requestedIds, requestedCodes);
   const rowsToInsert = [];
   const resolved = [];
   const skipped = [];
