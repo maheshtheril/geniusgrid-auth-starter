@@ -34,7 +34,7 @@ import leadsAiRoutes from "./routes/leads.ai.routes.js";
 import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js";
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
-
+import calendarLeadsRouter from "./routes/calendar.leads.routes.js";
 /* ✅ AI Prospect + Imports (store namespace) */
 import aiProspectRoutes from "./store/ai.prospect.routes.js";
 import leadsImportsRoutes from "./store/leads.imports.routes.js";
@@ -131,6 +131,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use("/api/calendar", calendarLeadsRouter);
 /* ---------- Early utility routes ---------- */
 app.use("/api", leadsCheckMobile);
 
