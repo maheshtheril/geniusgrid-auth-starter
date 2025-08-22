@@ -1074,27 +1074,53 @@ async function detectNotesSource(client) {
 }
 
 /* ---------------- notes: list ---------------- */
-router.get("/:id/notes", async (req, res) => {
+// at top you already have: import { randomUUID } from "crypto";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
+
+router.post("/:id/notes", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (UUID)" });
 
+  const text = (req.body?.text ?? req.body?.note ?? "").toString().trim();
+  if (!text) return res.status(400).json({ error: "text is required" });
+
+  // only accept user_id if it's a UUID; otherwise ignore it
+  const rawUserId =
+    req.session?.userId ||
+    req.session?.user_id ||
+    req.get("x-user-id") ||
+    null;
+  const userId = isUuid(rawUserId) ? rawUserId : null;
+
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
-    const { rows } = await client.query(
-      `SELECT id::text, text, user_id::text, created_at
-         FROM public.lead_notes
-        WHERE tenant_id = ensure_tenant_scope() AND lead_id = $1
-        ORDER BY created_at DESC`,
-      [id]
-    );
-    res.json({ items: rows, total: rows.length, page: 1, size: rows.length });
+
+    const cols = ["tenant_id", "lead_id", "text"];
+    const ph   = ["ensure_tenant_scope()", "$1", "$2"];
+    const vals = [id, text];
+
+    if (userId) { cols.push("user_id"); ph.push("$3"); vals.push(userId); }
+
+    const sql = `
+      INSERT INTO public.lead_notes (${cols.join(", ")})
+      VALUES (${ph.join(", ")})
+      RETURNING id::text, text, ${userId ? "user_id::text," : ""} created_at`;
+    const { rows } = await client.query(sql, vals);
+    return res.status(201).json(rows[0]);
   } catch (err) {
-    console.error("GET /leads/:id/notes error:", err);
-    res.status(500).json({ error: "Failed to load notes" });
+    const debug = req.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
+    console.error("POST /leads/:id/notes error:", err);
+    return res.status(500).json(
+      debug
+        ? { error: "Failed to add note", code: err.code, detail: err.detail, message: err.message }
+        : { error: "Failed to add note" }
+    );
   } finally {
     client.release();
   }
