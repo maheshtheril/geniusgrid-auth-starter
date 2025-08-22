@@ -139,7 +139,7 @@ app.use((req, res, next) => {
 
 /* ---------- Mount calendar routes early (public) ---------- */
 // Keep these public so the FE can call with headers or query params.
-app.use("/api/calendar", calendarLeadsRouter);
+
 
 /* ---------- Early utility routes ---------- */
 app.use("/api", leadsCheckMobile);
@@ -233,7 +233,7 @@ app.use("/api/leads-module", requireAuth, leadsModule);
 
 // Tenant menus (protected)
 app.use("/api", requireAuth, tenantMenusRoutes);
-
+app.use("/api/calendar",requireAuth, calendarLeadsRouter);
 // ❌ removed old protected mount of /api/custom-fields
 // app.use("/api/custom-fields", requireAuth, customFields);
 
