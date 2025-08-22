@@ -1,0 +1,36 @@
+/* src/styles/fc-tweaks.css */
+
+/* Make header days, date numbers, and time labels high-contrast */
+.fc .fc-col-header-cell-cushion,
+.fc .fc-daygrid-day-number,
+.fc .fc-timegrid-slot-label,
+.fc .fc-toolbar-title,
+.fc .fc-list-day-text,
+.fc .fc-list-table td,
+.fc .fc-list-table th {
+  color: #111827 !important; /* slate-900 for light mode */
+}
+
+/* Dark theme override (Tailwind's .dark on <html> or body) */
+.dark .fc .fc-col-header-cell-cushion,
+.dark .fc .fc-daygrid-day-number,
+.dark .fc .fc-timegrid-slot-label,
+.dark .fc .fc-toolbar-title,
+.dark .fc .fc-list-day-text,
+.dark .fc .fc-list-table td,
+.dark .fc .fc-list-table th {
+  color: #e5e7eb !important; /* slate-200 for dark mode */
+}
+
+/* Subtle grid + borders to improve legibility */
+.fc-theme-standard .fc-scrollgrid,
+.fc-theme-standard td,
+.fc-theme-standard th {
+  border-color: rgba(100, 116, 139, 0.25); /* slate-500 @ 25% */
+}
+
+/* Make day numbers clickable-looking (FC uses <a>) with better contrast */
+.fc .fc-daygrid-day-top a {
+  color: inherit !important;
+  text-decoration: none;
+}

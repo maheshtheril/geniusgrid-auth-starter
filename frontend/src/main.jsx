@@ -5,6 +5,7 @@ import "@/styles/tailwind.css";
 
 // 2) Then your skins/overrides (these win over Tailwind)
 import "./styles/sidebar.css";
+import "./styles/sidebar-skin.css";
 import "./styles/light-overrides.css";
 
 // 3) Other global styles & tokens

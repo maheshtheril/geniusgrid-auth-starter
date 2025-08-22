@@ -1,3 +1,4 @@
+// src/pages/crm/LeadsCalendarPage.jsx
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
@@ -6,62 +7,19 @@ import interactionPlugin from "@fullcalendar/interaction";
 import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid"; // premium
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline"; // premium
 import { DateTime } from "luxon";
+import { http } from "@/lib/http"; // <-- uses your axios instance with baseURL + cookies
 
-// NOTE: In this preview, we mock the backend so you can see the exact UX without your API .
-// You can copy just the visual pieces back into your app.
+import "@fullcalendar/core/index.css";
+import "@fullcalendar/daygrid/index.css";
+import "@fullcalendar/timegrid/index.css";
+import "@fullcalendar/resource-timeline/index.css";
+import "@/styles/fc-tweaks.css";
 
-/* ===== Mock Data ===== */
-const OWNERS = [
-  { id: "u1", title: "Aisha Khan" },
-  { id: "u2", title: "Rahul Verma" },
-  { id: "u3", title: "Meera Iyer" },
-  { id: "u4", title: "John Mathew" },
-];
-const STAGES = [
-  { id: "new", title: "New" },
-  { id: "qualified", title: "Qualified" },
-  { id: "proposal", title: "Proposal" },
-  { id: "negotiation", title: "Negotiation" },
-  { id: "won", title: "Won" },
-  { id: "lost", title: "Lost/Disq" },
-];
+/* ---------- tiny axios helpers ---------- */
+const httpGet = async (url, params = {}) => (await http.get(url, { params })).data;
+const httpPatch = async (url, body) => (await http.patch(url, body)).data;
 
-function rndBetween(start, end) {
-  const s = start.toMillis();
-  const e = end.toMillis();
-  const t = s + Math.floor(Math.random() * (e - s));
-  return DateTime.fromMillis(t);
-}
-
-function genEvents(rangeStart, rangeEnd, mode) {
-  const out = [];
-  const companies = ["Acme Corp", "BlueSky", "Zenith", "Nimbus", "Orbitals"];
-  const titles = ["Follow‑up", "Demo", "Negotiation", "Proposal Call", "Intro"];
-  for (let i = 0; i < 28; i++) {
-    const start = rndBetween(rangeStart, rangeEnd).startOf("hour");
-    const end = start.plus({ minutes: [30, 45, 60][Math.floor(Math.random() * 3)] });
-    const owner = OWNERS[Math.floor(Math.random() * OWNERS.length)];
-    const stage = STAGES[Math.floor(Math.random() * STAGES.length)];
-    out.push({
-      id: `L${i}`,
-      title: titles[Math.floor(Math.random() * titles.length)],
-      start: start.toISO(),
-      end: end.toISO(),
-      allDay: false,
-      resourceId: (mode === "owners" || mode === "timeline") ? owner.id : (mode === "stages" ? stage.id : undefined),
-      extendedProps: {
-        stageName: stage.title,
-        ownerUserId: owner.id,
-        ownerName: owner.title,
-        company: companies[Math.floor(Math.random() * companies.length)],
-        recurring: Math.random() < 0.15,
-      },
-    });
-  }
-  return out;
-}
-
-/* ===== UI Atoms ===== */
+/* ---------- small UI atoms ---------- */
 const initials = (name = "?") => {
   const parts = (name || "?").trim().split(/\s+/);
   return (parts[0]?.[0] || "?") + (parts[1]?.[0] || "");
@@ -71,27 +29,17 @@ const Avatar = ({ name }) => (
     {initials(name)}
   </div>
 );
-const OwnerChip = ({ name }) => (
-  <div className="flex items-center gap-2">
-    <Avatar name={name} />
-    <span className="text-xs opacity-80 truncate max-w-[160px]">{name || "Unassigned"}</span>
-  </div>
-);
-const StageBadge = ({ stage }) => {
-  const cls = useMemo(() => {
-    const s = (stage || "").toLowerCase();
-    if (!s) return "bg-neutral-200 text-neutral-700";
-    if (s.includes("new")) return "bg-sky-100 text-sky-700";
-    if (s.includes("qual")) return "bg-amber-100 text-amber-700";
-    if (s.includes("prop")) return "bg-fuchsia-100 text-fuchsia-700";
-    if (s.includes("nego")) return "bg-violet-100 text-violet-700";
-    if (s.includes("won")) return "bg-green-100 text-green-700";
-    if (s.includes("lost") || s.includes("disq")) return "bg-rose-100 text-rose-700";
-    return "bg-neutral-200 text-neutral-700";
-  }, [stage]);
+function StageBadge({ stage }) {
+  const s = (stage || "").toLowerCase();
+  let cls = "bg-neutral-200 text-neutral-700";
+  if (s.includes("new")) cls = "bg-sky-100 text-sky-700";
+  else if (s.includes("qual")) cls = "bg-amber-100 text-amber-700";
+  else if (s.includes("prop")) cls = "bg-fuchsia-100 text-fuchsia-700";
+  else if (s.includes("nego")) cls = "bg-violet-100 text-violet-700";
+  else if (s.includes("won")) cls = "bg-green-100 text-green-700";
+  else if (s.includes("lost") || s.includes("disq")) cls = "bg-rose-100 text-rose-700";
   return <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${cls}`}>{stage || "—"}</span>;
-};
-
+}
 function EventContent(arg) {
   const { title, extendedProps } = arg.event;
   const { stageName, ownerName, company, recurring } = extendedProps || {};
@@ -103,36 +51,217 @@ function EventContent(arg) {
         {company && <span className="text-[10px] opacity-70 truncate">{company}</span>}
       </div>
       <div className="text-[12px] font-semibold truncate">{title}</div>
-      <div className="mt-1">
-        <OwnerChip name={ownerName} />
+      <div className="mt-1 flex items-center gap-2">
+        <Avatar name={ownerName || "Unassigned"} />
+        <span className="text-xs opacity-80 truncate max-w-[160px]">{ownerName || "Unassigned"}</span>
       </div>
     </div>
   );
 }
 
-/* ===== Main Preview Component ===== */
-export default function App() {
+/* ---------- main ---------- */
+export default function LeadsCalendarPage({
+  canViewAll = false,
+  currentUserId = null,
+  defaultTZ = Intl.DateTimeFormat().resolvedOptions().timeZone,
+}) {
   const calRef = useRef(null);
+
+  // UI + state
   const [mode, setMode] = useState("week"); // week | month | owners | stages | timeline
-  const [tz, setTz] = useState(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  const [tz, setTz] = useState(defaultTZ);
   const [showWeekends, setShowWeekends] = useState(true);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
 
-  // In preview, resources are static
-  const resources = useMemo(() => {
-    if (mode === "owners" || mode === "timeline") return OWNERS;
-    if (mode === "stages") return STAGES;
-    return [];
-  }, [mode]);
+  // admin/user filters
+  const [users, setUsers] = useState([]);
+  const [ownerFilter, setOwnerFilter] = useState(null);
+  const [myOnly, setMyOnly] = useState(!canViewAll && !!currentUserId);
 
+  // resources for premium views
+  const [resources, setResources] = useState([]); // owners or stages
+  const schedulerLicenseKey =
+    import.meta.env.VITE_FC_LICENSE || "GPL-My-Project-Is-Open-Source";
+
+  /* ----- data loaders ----- */
+  const fetchUsers = useCallback(async () => {
+    if (!canViewAll) return;
+    try {
+      const data = await httpGet("/api/admin/users", { active: 1 });
+      setUsers(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("User list failed", e);
+    }
+  }, [canViewAll]);
+
+  const fetchResources = useCallback(async (kind) => {
+    try {
+      const data = await httpGet("/api/calendar/resources", { mode: kind }); // owners|stages
+      const normalized = (data || []).map((r) => ({
+        id: String(r.id ?? r.code ?? r.title ?? r.name),
+        title: r.title || r.name || r.label || String(r.id),
+      }));
+      setResources(normalized);
+    } catch (e) {
+      console.error("Resource fetch failed", e);
+      setResources([]);
+    }
+  }, []);
+
+  useEffect(() => { fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    if (mode === "owners" || mode === "timeline") fetchResources("owners");
+    else if (mode === "stages") fetchResources("stages");
+    else setResources([]);
+  }, [mode, fetchResources]);
+
+  /* ----- mapping ----- */
+  const mapRowsToEvents = useCallback((rows) => {
+    const s = search.trim().toLowerCase();
+    return (rows || [])
+      .filter((r) => {
+        if (!s) return true;
+        const title = (r.title || r.name || "").toLowerCase();
+        const company = (r.company || r.lead_company || "").toLowerCase();
+        const owner = (r.owner_name || r.owner || "").toLowerCase();
+        return title.includes(s) || company.includes(s) || owner.includes(s);
+      })
+      .map((r) => ({
+        id: String(r.lead_id || r.id),
+        title: r.title || r.name || "Follow-up",
+        start: r.start || r.start_at || r.followup_at,
+        end:
+          r.end ||
+          r.end_at ||
+          (r.followup_at
+            ? new Date(new Date(r.followup_at).getTime() + 30 * 60 * 1000).toISOString()
+            : undefined),
+        allDay: !!r.all_day,
+        resourceId:
+          mode === "owners" || mode === "timeline"
+            ? String(r.owner_id || r.owner_user_id || "")
+            : mode === "stages"
+            ? String(r.stage_id || r.stage || r.status || "")
+            : undefined,
+        extendedProps: {
+          stageName: r.stage_name || r.stage || r.status,
+          ownerUserId: r.owner_user_id || r.owner_id,
+          ownerName: r.owner_name || r.owner || "",
+          company: r.company || r.lead_company || "",
+          recurring: !!r.rrule,
+          rrule: r.rrule || null,
+          instanceId: r.instance_id || null,
+        },
+      }));
+  }, [mode, search]);
+
+  /* ----- event sources ----- */
+  const eventsSrc = useCallback(
+    async (info, success, failure) => {
+      try {
+        setLoading(true);
+        const rows = await httpGet("/api/calendar/leads", {
+          from: DateTime.fromJSDate(info.start).toUTC().toISO(),
+          to: DateTime.fromJSDate(info.end).toUTC().toISO(),
+          tz,
+          view: mode,
+          owner: canViewAll
+            ? ownerFilter || (myOnly ? currentUserId || undefined : undefined)
+            : myOnly
+            ? currentUserId || undefined
+            : undefined,
+        });
+        success(mapRowsToEvents(rows));
+      } catch (e) {
+        console.error(e);
+        failure?.(e);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [tz, mode, canViewAll, ownerFilter, currentUserId, myOnly, mapRowsToEvents]
+  );
+
+  // Free/busy overlay for owners/timeline
+  const busySrc = useCallback(
+    async (info, success, failure) => {
+      if (!(mode === "owners" || mode === "timeline")) {
+        success([]); return;
+      }
+      try {
+        const owners = resources.map((r) => r.id);
+        if (!owners.length) { success([]); return; }
+        const rows = await httpGet("/api/calendar/freebusy", {
+          from: info.startStr, to: info.endStr, owners
+        });
+        success(
+          (rows || []).map((b) => ({
+            id: `busy-${b.owner_id}-${b.start}`,
+            start: b.start,
+            end: b.end,
+            display: "background",
+            resourceId: String(b.owner_id),
+            color: "rgba(239,68,68,0.08)", // soft red bg
+          }))
+        );
+      } catch (e) {
+        failure?.(e);
+      }
+    },
+    [mode, resources]
+  );
+
+  /* ----- interactions ----- */
+  const onEventDrop = useCallback(
+    async (info) => {
+      try {
+        const newStart = info.event.start?.toISOString();
+        const ep = info.event.extendedProps;
+        const newRes = info.newResource?.id;
+
+        if (mode === "owners" || mode === "timeline") {
+          if (newRes && newRes !== String(ep.ownerUserId)) {
+            await httpPatch(`/api/leads/${info.event.id}/owner`, { owner_id: newRes });
+          }
+        } else if (mode === "stages") {
+          if (newRes && newRes !== String(ep.stageName)) {
+            await httpPatch(`/api/leads/${info.event.id}/stage`, { stage: newRes });
+          }
+        }
+
+        await httpPatch(`/api/leads/${info.event.id}/schedule`, { followup_at: newStart });
+      } catch (e) {
+        console.error(e);
+        info.revert();
+      }
+    },
+    [mode]
+  );
+
+  const onEventResize = useCallback(async (info) => {
+    try {
+      await httpPatch(`/api/leads/${info.event.id}/schedule`, {
+        followup_at: info.event.start?.toISOString(),
+      });
+    } catch (e) {
+      console.error(e);
+      info.revert();
+    }
+  }, []);
+
+  const onEventClick = useCallback((info) => {
+    if (window.openLeadDrawer) window.openLeadDrawer(info.event.id);
+    else window.location.href = `/crm/leads/${info.event.id}`;
+  }, []);
+
+  /* ----- view selection & styles ----- */
   const fcView = useMemo(() => {
     if (mode === "owners" || mode === "stages") return "resourceTimeGridWeek";
     if (mode === "timeline") return "resourceTimelineWeek";
     if (mode === "month") return "dayGridMonth";
     return "timeGridWeek";
   }, [mode]);
-
   const isPremiumView = useMemo(() => ["owners", "stages", "timeline"].includes(mode), [mode]);
 
   const eventDidMount = useCallback((arg) => {
@@ -144,31 +273,15 @@ export default function App() {
     else arg.el.style.borderLeft = "3px solid #64748b";
   }, []);
 
-  const eventsSrc = useCallback(async (info, success) => {
-    setLoading(true);
-    // generate consistent sample events for the requested window
-    const start = DateTime.fromJSDate(info.start);
-    const end = DateTime.fromJSDate(info.end);
-    let rows = genEvents(start, end, mode);
-    if (search) {
-      const s = search.toLowerCase();
-      rows = rows.filter((r) =>
-        r.title.toLowerCase().includes(s) ||
-        r.extendedProps.company.toLowerCase().includes(s) ||
-        r.extendedProps.ownerName.toLowerCase().includes(s)
-      );
-    }
-    success(rows);
-    setLoading(false);
-  }, [mode, search]);
-
   return (
     <div className="p-4">
+      {/* Toolbar */}
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Lead Scheduler — Preview</h1>
-          <p className="text-sm opacity-70">Telerik‑style UX with resources, context, and quick actions.</p>
+          <h1 className="text-xl font-semibold">Lead Scheduler</h1>
+          <p className="text-sm opacity-70">Drag to reschedule; drag across columns to reassign/change stage; ↻ = series.</p>
         </div>
+
         <div className="flex flex-wrap items-center gap-2">
           <select className="select select-sm select-bordered" value={mode} onChange={(e) => setMode(e.target.value)}>
             <option value="week">Week</option>
@@ -177,15 +290,39 @@ export default function App() {
             <option value="stages">Stages (resource)</option>
             <option value="timeline">Timeline (owners)</option>
           </select>
+
           <select className="select select-sm select-bordered" value={tz} onChange={(e) => setTz(e.target.value)}>
             {[tz, "UTC", "Asia/Kolkata", "America/New_York", "Europe/London", "Asia/Singapore"].map((z) => (
               <option key={z} value={z}>{z}</option>
             ))}
           </select>
+
           <label className="text-sm flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={showWeekends} onChange={(e) => setShowWeekends(e.target.checked)} />
             <span className="opacity-80">Weekends</span>
           </label>
+
+          <label className="text-sm flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={myOnly} onChange={(e) => setMyOnly(e.target.checked)} />
+            <span className="opacity-80">My leads</span>
+          </label>
+
+          {canViewAll && (
+            <div className="flex items-center gap-2">
+              <label className="text-sm opacity-75">User</label>
+              <select
+                className="select select-sm select-bordered"
+                value={ownerFilter || ""}
+                onChange={(e) => setOwnerFilter(e.target.value || null)}
+              >
+                <option value="">All</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name || u.display_name || u.email}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <input
             className="input input-sm input-bordered"
             placeholder="Search title / company / owner"
@@ -195,6 +332,7 @@ export default function App() {
         </div>
       </div>
 
+      {/* Legend */}
       <div className="mb-2 flex flex-wrap items-center gap-2 text-[11px]">
         <span className="opacity-70">Legend:</span>
         <span className="px-1 py-0.5 rounded bg-sky-100 text-sky-700">New</span>
@@ -205,6 +343,7 @@ export default function App() {
         <span className="px-1 py-0.5 rounded bg-rose-100 text-rose-700">Lost/Disq</span>
       </div>
 
+      {/* Calendar */}
       <div className="rounded-2xl border shadow-sm overflow-hidden relative">
         {loading && (
           <div className="absolute inset-0 z-10 bg-base-100/60 backdrop-blur-sm grid place-items-center">
@@ -213,7 +352,7 @@ export default function App() {
         )}
         <FullCalendar
           ref={calRef}
-          schedulerLicenseKey={"GPL-My-Project-Is-Open-Source"}
+          schedulerLicenseKey={schedulerLicenseKey}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, resourceTimeGridPlugin, resourceTimelinePlugin]}
           timeZone={tz}
           initialView={fcView}
@@ -231,9 +370,9 @@ export default function App() {
           slotMinTime="07:00:00"
           slotMaxTime="21:00:00"
           stickyHeaderDates
-          dayMaxEvents={true}
-          expandRows={true}
-          slotEventOverlap={true}
+          dayMaxEvents
+          expandRows
+          slotEventOverlap
           eventMinHeight={26}
           editable
           droppable
@@ -241,9 +380,13 @@ export default function App() {
           eventResizableFromStart
           selectable
           selectMirror
-          events={eventsSrc}
           eventContent={(arg) => <EventContent {...arg} />}
           eventDidMount={eventDidMount}
+          eventDrop={onEventDrop}
+          eventResize={onEventResize}
+          eventClick={onEventClick}
+          // sources: real events + free/busy overlay
+          eventSources={[{ events: eventsSrc }, { events: busySrc }]}
           resources={isPremiumView ? resources : undefined}
           resourceAreaHeaderContent={
             mode === "owners" || mode === "timeline" ? "Owners" :
@@ -257,6 +400,11 @@ export default function App() {
             </div>
           )}
           resourceOrder="title"
+          // prevent hard-dragging too far into the past (soft)
+          eventAllow={(dropInfo) => {
+            const start = dropInfo.start;
+            return start >= DateTime.now().minus({ days: 1 }).startOf("day").toJSDate();
+          }}
         />
       </div>
     </div>
