@@ -28,6 +28,7 @@ function getCompanyId(req) {
   );
 }
 async function setTenant(client, tenantId) {
+  // harmless to keep if your DB uses GUCs in views/triggers; no longer required for WHERE
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
 }
 async function tableExists(client, qname /* 'public.lead_events' */) {
@@ -41,26 +42,50 @@ async function getColumnsSet(client, schema, table) {
   );
   return new Set(rows.map((r) => r.column_name));
 }
+async function getLeadsSchema(client) {
+  const cols = await getColumnsSet(client, "public", "leads");
+  return {
+    has_followup_at: cols.has("followup_at"),
+    has_owner_id: cols.has("owner_id"),
+    has_stage: cols.has("stage"),
+    has_company_id: cols.has("company_id"),
+    has_owner_name: cols.has("owner_name") || cols.has("owner"),
+  };
+}
 
 // tiny utils
-const toIso = (d) => (d instanceof Date ? d.toISOString() : new Date(d).toISOString());
-const addMinutes = (d, mins) => new Date(new Date(d).getTime() + mins * 60000);
+const toIso = (d) =>
+  d instanceof Date ? d.toISOString() : new Date(d).toISOString();
+const addMinutes = (d, mins) =>
+  new Date(new Date(d).getTime() + mins * 60000);
 
 /* ---------------- GET /api/calendar/leads ----------------
    Responds with an array of FullCalendar events for the requested range.
    Prefers public.lead_events if available; otherwise falls back to leads.followup_at.
 -------------------------------------------------------------------- */
 router.get("/leads", async (req, res) => {
-  const tenantId = getTenantId(req);
+  const tenantId = String(getTenantId(req) || "").trim();
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  if (!isUuid(tenantId))
+    return res.status(400).json({ error: "Invalid tenant_id (must be UUID)" });
 
-  const companyId = getCompanyId(req);
+  const companyIdRaw = getCompanyId(req);
+  const companyId = companyIdRaw ? String(companyIdRaw).trim() : null;
   if (companyId && !isUuid(companyId))
-    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+    return res
+      .status(400)
+      .json({ error: "Invalid x-company-id (must be UUID)" });
 
   const fromISO = String(req.query.from || "").trim();
-  const toISO   = String(req.query.to   || "").trim();
-  if (!fromISO || !toISO) return res.status(400).json({ error: "from and to are required ISO datetimes" });
+  const toISO = String(req.query.to || "").trim();
+  if (!fromISO || !toISO)
+    return res
+      .status(400)
+      .json({ error: "from and to are required ISO datetimes" });
+
+  // optional extras from UI; not needed server-side but safe to accept
+  const _tz = String(req.query.tz || "UTC");
+  const _view = String(req.query.view || "").split(":")[0]; // normalize e.g. 'week:1' -> 'week'
 
   const client = await pool.connect();
   try {
@@ -80,30 +105,36 @@ router.get("/leads", async (req, res) => {
         stage: cols.has("stage"),
       };
 
-      const params = [fromISO, toISO];
-      let where = `WHERE (e.start_at < $2::timestamptz) AND (COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') > $1::timestamptz)
-                   AND e.tenant_id = ensure_tenant_scope()`;
-      if (companyId) { params.push(companyId); where += ` AND l.company_id::text = $3`; }
+      const params = [fromISO, toISO, tenantId];
+      let where = `
+        WHERE (e.start_at < $2::timestamptz)
+          AND (COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') > $1::timestamptz)
+          AND e.tenant_id = $3::uuid`;
+
+      if (companyId) {
+        params.push(companyId);
+        where += ` AND l.company_id = $4::uuid`;
+      }
 
       const sql = `
         SELECT
-          e.lead_id::text                   AS lead_id,
-          ${want.title ? "NULLIF(e.title,'')" : "NULL"}      AS evt_title,
-          e.start_at                        AS start_at,
-          ${want.end_at ? "e.end_at" : "NULL"}               AS end_at,
+          e.lead_id::text                                        AS lead_id,
+          ${want.title ? "NULLIF(e.title,'')" : "NULL"}          AS evt_title,
+          e.start_at                                             AS start_at,
+          ${want.end_at ? "e.end_at" : "NULL"}                   AS end_at,
           ${want.all_day ? "COALESCE(e.all_day,false)" : "false"}::bool AS all_day,
           COALESCE(${want.owner_id ? "e.owner_id" : "NULL"}, l.owner_id)::text AS owner_id,
-          ${want.stage ? "NULLIF(e.stage,'')" : "NULL"}      AS stage,
-          l.name                             AS lead_name,
-          COALESCE(l.company, l.company_name) AS company_name,
-          COALESCE(l.owner, l.owner_name)     AS owner_name,
-          l.status                            AS status
+          ${want.stage ? "NULLIF(e.stage,'')" : "NULL"}          AS stage,
+          l.name                                                 AS lead_name,
+          COALESCE(l.company, l.company_name)                    AS company_name,
+          COALESCE(l.owner, l.owner_name)                        AS owner_name,
+          l.status                                               AS status
         FROM public.lead_events e
         JOIN public.leads l ON l.id = e.lead_id
         ${where}
         ORDER BY e.start_at ASC
-        LIMIT 500;
-      `;
+        LIMIT 500;`;
+
       const r = await client.query(sql, params);
       for (const row of r.rows) {
         rows.push({
@@ -129,12 +160,17 @@ router.get("/leads", async (req, res) => {
     }
 
     if (!rows.length) {
-      const params = [fromISO, toISO];
-      let where = `WHERE tenant_id = ensure_tenant_scope()
-                   AND followup_at IS NOT NULL
-                   AND followup_at < $2::timestamptz
-                   AND (followup_at + INTERVAL '45 minutes') > $1::timestamptz`;
-      if (companyId) { params.push(companyId); where += ` AND company_id::text = $3`; }
+      const params = [fromISO, toISO, tenantId];
+      let where = `
+        WHERE tenant_id = $3::uuid
+          AND followup_at IS NOT NULL
+          AND followup_at < $2::timestamptz
+          AND (followup_at + INTERVAL '45 minutes') > $1::timestamptz`;
+
+      if (companyId) {
+        params.push(companyId);
+        where += ` AND company_id = $4::uuid`;
+      }
 
       const sql = `
         SELECT
@@ -149,8 +185,8 @@ router.get("/leads", async (req, res) => {
         ${where}
         ORDER BY followup_at ASC
         LIMIT 500;`;
-      const r = await client.query(sql, params);
 
+      const r = await client.query(sql, params);
       for (const row of r.rows) {
         rows.push({
           id: row.lead_id,
@@ -184,45 +220,70 @@ router.get("/leads", async (req, res) => {
 });
 
 router.get("/resources", async (req, res) => {
-  const tenantId = getTenantId(req);
+  const tenantId = String(getTenantId(req) || "").trim();
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
-  const companyId = getCompanyId(req);
+  if (!isUuid(tenantId))
+    return res.status(400).json({ error: "Invalid tenant_id (must be UUID)" });
+
+  const companyIdRaw = getCompanyId(req);
+  const companyId = companyIdRaw ? String(companyIdRaw).trim() : null;
+  if (companyId && !isUuid(companyId))
+    return res
+      .status(400)
+      .json({ error: "Invalid x-company-id (must be UUID)" });
+
   const mode = String(req.query.mode || "").toLowerCase();
 
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
 
     if (mode === "owners" || mode === "owner") {
-      const params = [];
-      let where = `WHERE tenant_id = ensure_tenant_scope() AND owner_id IS NOT NULL`;
-      if (companyId) { params.push(companyId); where += ` AND company_id::text = $1`; }
+      const params = [tenantId];
+      let where = `WHERE tenant_id = $1::uuid AND owner_id IS NOT NULL`;
+      if (companyId && schema.has_company_id) {
+        params.push(companyId);
+        where += ` AND company_id = $2::uuid`;
+      }
 
+      const nameExpr = schema.has_owner_name
+        ? "COALESCE(owner_name, owner)"
+        : "NULL";
       const sql = `
-        SELECT DISTINCT owner_id::text AS id, COALESCE(owner_name, owner) AS title
+        SELECT DISTINCT owner_id::text AS id, ${nameExpr} AS title
           FROM public.leads
           ${where}
          ORDER BY title NULLS LAST
          LIMIT 500`;
       const r = await client.query(sql, params);
-      return res.json((r.rows || []).filter(x => x.id).map(x => ({
-        id: x.id, title: x.title || x.id
-      })));
+      return res.json(
+        (r.rows || [])
+          .filter((x) => x.id)
+          .map((x) => ({ id: x.id, title: x.title || x.id }))
+      );
     }
 
     // stages
-    const params = [];
-    let where = `WHERE tenant_id = ensure_tenant_scope() AND stage IS NOT NULL AND stage <> ''`;
-    if (companyId) { params.push(companyId); where += ` AND company_id::text = $1`; }
+    if (!schema.has_stage) return res.json([]);
+    const params = [tenantId];
+    let where = `WHERE tenant_id = $1::uuid AND stage IS NOT NULL AND stage <> ''`;
+    if (companyId && schema.has_company_id) {
+      params.push(companyId);
+      where += ` AND company_id = $2::uuid`;
+    }
 
     const r = await client.query(
       `SELECT DISTINCT stage AS id
          FROM public.leads
          ${where}
          ORDER BY stage ASC
-         LIMIT 200`, params
+         LIMIT 200`,
+      params
     );
-    return res.json((r.rows || []).map(x => ({ id: String(x.id), title: String(x.id) })));
+    return res.json(
+      (r.rows || []).map((x) => ({ id: String(x.id), title: String(x.id) }))
+    );
   } catch (e) {
     console.error("GET /api/calendar/resources error:", e);
     return res.status(500).json({ error: "Failed to load resources" });
@@ -230,15 +291,20 @@ router.get("/resources", async (req, res) => {
     client.release();
   }
 });
+
 router.get("/freebusy", async (req, res) => {
-  const tenantId = getTenantId(req);
+  const tenantId = String(getTenantId(req) || "").trim();
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  if (!isUuid(tenantId))
+    return res.status(400).json({ error: "Invalid tenant_id (must be UUID)" });
 
   const fromISO = String(req.query.from || "").trim();
-  const toISO   = String(req.query.to   || "").trim();
+  const toISO = String(req.query.to || "").trim();
   let owners = req.query.owners;
-  if (typeof owners === "string") owners = owners.split(",").map(s => s.trim()).filter(Boolean);
-  if (!Array.isArray(owners) || !owners.length || !fromISO || !toISO) return res.json([]);
+  if (typeof owners === "string")
+    owners = owners.split(",").map((s) => s.trim()).filter(Boolean);
+  if (!Array.isArray(owners) || !owners.length || !fromISO || !toISO)
+    return res.json([]);
 
   const client = await pool.connect();
   try {
@@ -253,15 +319,19 @@ router.get("/freebusy", async (req, res) => {
           COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') AS end_at
         FROM public.lead_events e
         JOIN public.leads l ON l.id = e.lead_id
-       WHERE e.tenant_id = ensure_tenant_scope()
+       WHERE e.tenant_id = $3::uuid
          AND (e.start_at < $2::timestamptz)
          AND (COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') > $1::timestamptz)
-         AND COALESCE(e.owner_id::text, l.owner_id::text) = ANY($3::text[])
+         AND COALESCE(e.owner_id::text, l.owner_id::text) = ANY($4::text[])
        LIMIT 1000`;
-      const r = await client.query(sql, [fromISO, toISO, owners]);
+      const r = await client.query(sql, [fromISO, toISO, tenantId, owners]);
       for (const row of r.rows) {
         if (!row.owner_id) continue;
-        out.push({ owner_id: row.owner_id, start: toIso(row.start_at), end: toIso(row.end_at) });
+        out.push({
+          owner_id: row.owner_id,
+          start: toIso(row.start_at),
+          end: toIso(row.end_at),
+        });
       }
     } else {
       const sql = `
@@ -269,15 +339,19 @@ router.get("/freebusy", async (req, res) => {
                followup_at AS start_at,
                (followup_at + INTERVAL '45 minutes') AS end_at
           FROM public.leads
-         WHERE tenant_id = ensure_tenant_scope()
+         WHERE tenant_id = $3::uuid
            AND owner_id IS NOT NULL
            AND followup_at < $2::timestamptz
            AND (followup_at + INTERVAL '45 minutes') > $1::timestamptz
-           AND owner_id::text = ANY($3::text[])
+           AND owner_id::text = ANY($4::text[])
          LIMIT 1000`;
-      const r = await client.query(sql, [fromISO, toISO, owners]);
+      const r = await client.query(sql, [fromISO, toISO, tenantId, owners]);
       for (const row of r.rows) {
-        out.push({ owner_id: row.owner_id, start: toIso(row.start_at), end: toIso(row.end_at) });
+        out.push({
+          owner_id: row.owner_id,
+          start: toIso(row.start_at),
+          end: toIso(row.end_at),
+        });
       }
     }
 
@@ -290,14 +364,15 @@ router.get("/freebusy", async (req, res) => {
   }
 });
 
-
 /* ---------------- PATCH /api/calendar/leads/:id ----------------
    Move/resize an event. For `evt:<lead_events.id>` updates lead_events.
    For `lead:<lead.id>` updates leads.followup_at (end duration ignored).
 -------------------------------------------------------------------- */
 router.patch("/leads/:id", async (req, res) => {
-  const tenantId = getTenantId(req);
+  const tenantId = String(getTenantId(req) || "").trim();
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  if (!isUuid(tenantId))
+    return res.status(400).json({ error: "Invalid tenant_id (must be UUID)" });
 
   const rawId = String(req.params.id || "");
   const isEvt = rawId.startsWith("evt:");
@@ -320,7 +395,8 @@ router.patch("/leads/:id", async (req, res) => {
       if (!isUuid(id)) return res.status(400).json({ error: "Invalid event id" });
 
       const exists = await tableExists(client, "public.lead_events");
-      if (!exists) return res.status(404).json({ error: "lead_events not available" });
+      if (!exists)
+        return res.status(404).json({ error: "lead_events not available" });
 
       const { rowCount } = await client.query(
         `UPDATE public.lead_events
@@ -328,8 +404,8 @@ router.patch("/leads/:id", async (req, res) => {
                 end_at   = COALESCE($2::timestamptz, $1::timestamptz + INTERVAL '45 minutes'),
                 updated_at = NOW()
           WHERE id = $3::uuid
-            AND tenant_id = ensure_tenant_scope()`,
-        [start.toISOString(), end ? end.toISOString() : null, id]
+            AND tenant_id = $4::uuid`,
+        [start.toISOString(), end ? end.toISOString() : null, id, tenantId]
       );
       if (!rowCount) return res.status(404).json({ error: "Event not found" });
       return res.json({ ok: true });
@@ -343,8 +419,8 @@ router.patch("/leads/:id", async (req, res) => {
             SET followup_at = $1::timestamptz,
                 updated_at  = NOW()
           WHERE id = $2::uuid
-            AND tenant_id = ensure_tenant_scope()`,
-        [start.toISOString(), id]
+            AND tenant_id = $3::uuid`,
+        [start.toISOString(), id, tenantId]
       );
       if (!rowCount) return res.status(404).json({ error: "Lead not found" });
       return res.json({ ok: true });
@@ -356,33 +432,49 @@ router.patch("/leads/:id", async (req, res) => {
     client.release();
   }
 });
+
 // PATCH /leads/:id/schedule   { followup_at?: ISO, start?: ISO }
 router.patch("/:id/schedule", async (req, res) => {
-  const tenantId = getTenantId(req);
+  const tenantId = String(getTenantId(req) || "").trim();
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  if (!isUuid(tenantId))
+    return res.status(400).json({ error: "Invalid tenant_id (must be UUID)" });
 
-  const companyId = getCompanyId(req);
+  const companyIdRaw = getCompanyId(req);
+  const companyId = companyIdRaw ? String(companyIdRaw).trim() : null;
+  if (companyId && !isUuid(companyId))
+    return res
+      .status(400)
+      .json({ error: "Invalid x-company-id (must be UUID)" });
+
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
 
   const raw = req.body?.followup_at || req.body?.start;
-  const dt  = raw ? new Date(raw) : null;
-  if (!dt || Number.isNaN(+dt)) return res.status(400).json({ error: "followup_at/start is required ISO datetime" });
+  const dt = raw ? new Date(raw) : null;
+  if (!dt || Number.isNaN(+dt))
+    return res
+      .status(400)
+      .json({ error: "followup_at/start is required ISO datetime" });
 
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
     const schema = await getLeadsSchema(client);
-    if (!schema.has_followup_at) return res.status(400).json({ error: "followup_at not available in schema" });
+    if (!schema.has_followup_at)
+      return res.status(400).json({ error: "followup_at not available in schema" });
 
     const params = [dt.toISOString(), id, tenantId];
     let extra = "";
-    if (companyId) { params.push(companyId); extra = ` AND company_id::text = $4`; }
+    if (companyId && schema.has_company_id) {
+      params.push(companyId);
+      extra = ` AND company_id = $4::uuid`;
+    }
 
     const r = await client.query(
       `UPDATE public.leads
           SET followup_at = $1::timestamptz, updated_at = NOW()
-        WHERE id = $2::uuid AND tenant_id = $3${extra}`,
+        WHERE id = $2::uuid AND tenant_id = $3::uuid${extra}`,
       params
     );
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
@@ -397,10 +489,18 @@ router.patch("/:id/schedule", async (req, res) => {
 
 // PATCH /leads/:id/owner   { owner_id: UUID }
 router.patch("/:id/owner", async (req, res) => {
-  const tenantId = getTenantId(req);
+  const tenantId = String(getTenantId(req) || "").trim();
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  if (!isUuid(tenantId))
+    return res.status(400).json({ error: "Invalid tenant_id (must be UUID)" });
 
-  const companyId = getCompanyId(req);
+  const companyIdRaw = getCompanyId(req);
+  const companyId = companyIdRaw ? String(companyIdRaw).trim() : null;
+  if (companyId && !isUuid(companyId))
+    return res
+      .status(400)
+      .json({ error: "Invalid x-company-id (must be UUID)" });
+
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
 
@@ -411,16 +511,20 @@ router.patch("/:id/owner", async (req, res) => {
   try {
     await setTenant(client, tenantId);
     const schema = await getLeadsSchema(client);
-    if (!schema.has_owner_id) return res.status(400).json({ error: "owner_id not available in schema" });
+    if (!schema.has_owner_id)
+      return res.status(400).json({ error: "owner_id not available in schema" });
 
     const params = [ownerId, id, tenantId];
     let extra = "";
-    if (companyId) { params.push(companyId); extra = ` AND company_id::text = $4`; }
+    if (companyId && schema.has_company_id) {
+      params.push(companyId);
+      extra = ` AND company_id = $4::uuid`;
+    }
 
     const r = await client.query(
       `UPDATE public.leads
           SET owner_id = $1::uuid, updated_at = NOW()
-        WHERE id = $2::uuid AND tenant_id = $3${extra}`,
+        WHERE id = $2::uuid AND tenant_id = $3::uuid${extra}`,
       params
     );
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
@@ -435,10 +539,18 @@ router.patch("/:id/owner", async (req, res) => {
 
 // PATCH /leads/:id/stage   { stage: string }
 router.patch("/:id/stage", async (req, res) => {
-  const tenantId = getTenantId(req);
+  const tenantId = String(getTenantId(req) || "").trim();
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  if (!isUuid(tenantId))
+    return res.status(400).json({ error: "Invalid tenant_id (must be UUID)" });
 
-  const companyId = getCompanyId(req);
+  const companyIdRaw = getCompanyId(req);
+  const companyId = companyIdRaw ? String(companyIdRaw).trim() : null;
+  if (companyId && !isUuid(companyId))
+    return res
+      .status(400)
+      .json({ error: "Invalid x-company-id (must be UUID)" });
+
   const { id } = req.params;
   if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
 
@@ -449,16 +561,20 @@ router.patch("/:id/stage", async (req, res) => {
   try {
     await setTenant(client, tenantId);
     const schema = await getLeadsSchema(client);
-    if (!schema.has_stage) return res.status(400).json({ error: "stage not available in schema" });
+    if (!schema.has_stage)
+      return res.status(400).json({ error: "stage not available in schema" });
 
     const params = [stage, id, tenantId];
     let extra = "";
-    if (companyId) { params.push(companyId); extra = ` AND company_id::text = $4`; }
+    if (companyId && schema.has_company_id) {
+      params.push(companyId);
+      extra = ` AND company_id = $4::uuid`;
+    }
 
     const r = await client.query(
       `UPDATE public.leads
           SET stage = $1::text, updated_at = NOW()
-        WHERE id = $2::uuid AND tenant_id = $3${extra}`,
+        WHERE id = $2::uuid AND tenant_id = $3::uuid${extra}`,
       params
     );
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
