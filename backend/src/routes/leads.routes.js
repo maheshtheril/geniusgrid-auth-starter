@@ -372,46 +372,96 @@ function parseCfvItems(body = {}, files = []) {
   return out;
 }
 
+/* ---- NEW: helpers so we can read fields from multiple sources ---- */
+async function tableExists(client, qname /* e.g. 'public.custom_fields' */) {
+  const { rows } = await client.query(`SELECT to_regclass($1) AS r`, [qname]);
+  return !!rows[0]?.r;
+}
+async function columnExists(client, schema, table, col) {
+  const { rows } = await client.query(
+    `SELECT 1
+       FROM information_schema.columns
+      WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+      LIMIT 1`,
+    [schema, table, col]
+  );
+  return rows.length > 0;
+}
+
+/* ---- PATCHED: resolve field meta from multiple tables ---- */
 async function loadFieldMetaMap(client, byFieldId, byCode) {
-  const ids = [...new Set((byFieldId || []).filter(Boolean))].filter(isUuid);
-  const codes = [...new Set((byCode || []).map((c) => String(c).trim()).filter(Boolean))];
+  const ids = [...new Set((byFieldId || []).filter(Boolean).map(String))].filter(isUuid);
+  const codesLC = [
+    ...new Set((byCode || []).map((c) => String(c).trim()).filter(Boolean).map((s) => s.toLowerCase())),
+  ];
 
   const map = new Map();
+  if (!ids.length && !codesLC.length) return map;
 
-  if (ids.length) {
-    const { rows } = await client.query(
-      `SELECT id, code, form_version_id, field_type
-       FROM public.custom_fields
-       WHERE tenant_id = ensure_tenant_scope()
-         AND id = ANY($1::uuid[])`,
-      [ids]
-    );
-    for (const r of rows)
-      map.set(String(r.id), {
-        id: String(r.id),
-        code: r.code || null,
-        form_version_id: r.form_version_id,
-        field_type: (r.field_type || "").toLowerCase().trim(),
-      });
+  // Always try canonical table first
+  const sources = [{ schema: "public", table: "custom_fields", filterRecordType: false }];
+
+  // Try common admin tables if they exist
+  if (await tableExists(client, "public.crm_custom_fields")) {
+    const hasRT = await columnExists(client, "public", "crm_custom_fields", "record_type");
+    sources.push({ schema: "public", table: "crm_custom_fields", filterRecordType: hasRT });
+  }
+  if (await tableExists(client, "public.lead_custom_fields")) {
+    const hasRT = await columnExists(client, "public", "lead_custom_fields", "record_type");
+    sources.push({ schema: "public", table: "lead_custom_fields", filterRecordType: hasRT });
   }
 
-  if (codes.length) {
-    const { rows } = await client.query(
-      `SELECT id, code, form_version_id, field_type
-       FROM public.custom_fields
-       WHERE tenant_id = ensure_tenant_scope()
-         AND code = ANY($1::text[])`,
-      [codes]
-    );
-    for (const r of rows) {
-      const id = String(r.id);
-      if (!map.has(id))
-        map.set(id, {
-          id,
-          code: r.code || null,
-          form_version_id: r.form_version_id,
-          field_type: (r.field_type || "").toLowerCase().trim(),
-        });
+  for (const src of sources) {
+    const rtClause = src.filterRecordType ? `AND record_type = 'lead'` : ``;
+
+    if (ids.length) {
+      const byIdSQL = `
+        SELECT id::text AS id, code::text AS code, form_version_id, LOWER(COALESCE(field_type,'')) AS field_type
+          FROM ${src.schema}.${src.table}
+         WHERE tenant_id = ensure_tenant_scope()
+           ${rtClause}
+           AND id = ANY($1::uuid[])
+      `;
+      try {
+        const r = await client.query(byIdSQL, [ids]);
+        for (const row of r.rows) {
+          if (!map.has(row.id)) {
+            map.set(row.id, {
+              id: row.id,
+              code: row.code || null,
+              form_version_id: row.form_version_id,
+              field_type: row.field_type || "text",
+            });
+          }
+        }
+      } catch (e) {
+        if (e.code !== "42P01") throw e; // ignore missing optional tables
+      }
+    }
+
+    if (codesLC.length) {
+      const byCodeSQL = `
+        SELECT id::text AS id, code::text AS code, form_version_id, LOWER(COALESCE(field_type,'')) AS field_type
+          FROM ${src.schema}.${src.table}
+         WHERE tenant_id = ensure_tenant_scope()
+           ${rtClause}
+           AND LOWER(code) = ANY($1::text[])
+      `;
+      try {
+        const r = await client.query(byCodeSQL, [codesLC]);
+        for (const row of r.rows) {
+          if (!map.has(row.id)) {
+            map.set(row.id, {
+              id: row.id,
+              code: row.code || null,
+              form_version_id: row.form_version_id,
+              field_type: row.field_type || "text",
+            });
+          }
+        }
+      } catch (e) {
+        if (e.code !== "42P01") throw e;
+      }
     }
   }
 
