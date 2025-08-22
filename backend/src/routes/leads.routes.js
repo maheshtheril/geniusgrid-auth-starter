@@ -1,3 +1,4 @@
+// src/routes/leads.routes.js
 import express from "express";
 import multer from "multer";
 import { pool } from "../db/pool.js";
@@ -479,9 +480,6 @@ function parseCfvItems(body = {}, files = []) {
   return out;
 }
 
-/* ---- NEW: helpers so we can read fields from multiple sources ---- */
-/* already have tableExists, columnExists, getColumnsSet above */
-
 /* ---- PATCHED: resolve field meta from multiple tables (with tenantId) ---- */
 async function loadFieldMetaMap(client, tenantId, byFieldId, byCode) {
   const ids = [...new Set((byFieldId || []).filter(Boolean).map(String))].filter(isUuid);
@@ -505,7 +503,7 @@ async function loadFieldMetaMap(client, tenantId, byFieldId, byCode) {
   }
   if (!sources.length) return map;
 
-  // 1) By ID (never filter by record_type)
+  // 1) By ID
   if (ids.length) {
     for (const src of sources) {
       const byIdSQL = `
@@ -532,7 +530,7 @@ async function loadFieldMetaMap(client, tenantId, byFieldId, byCode) {
     }
   }
 
-  // 2) By code (don’t require record_type match, but allow if present)
+  // 2) By code
   if (codesLC.length) {
     for (const src of sources) {
       const byCodeSQL = `
@@ -560,7 +558,7 @@ async function loadFieldMetaMap(client, tenantId, byFieldId, byCode) {
     }
   }
 
-  // 3) Backfill missing form_version_id from any visible table
+  // 3) Backfill missing form_version_id
   const needsFV = [...map.values()].filter(m => !m.form_version_id);
   if (needsFV.length) {
     for (const src of sources) {
@@ -588,7 +586,7 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
 
   const requestedIds = items.map((i) => i.field_id).filter(Boolean);
   const requestedCodes = items.map((i) => i.code).filter(Boolean);
-  
+
   const metaMap = await loadFieldMetaMap(client, tenantId, requestedIds, requestedCodes);
   const rowsToInsert = [];
   const resolved = [];
@@ -1052,31 +1050,40 @@ router.patch("/:id", async (req, res) => {
   }
 });
 
-/* ---------------- NOTES: list + create ---------------- */
-// ADD BELOW your existing helpers (reuses tableExists/columnExists/setTenant/getTenantId/getCompanyId)
-async function detectNotesSource(client) {
-  // preferred: per-lead notes table
-  if (await tableExists(client, "public.lead_notes")) {
-    const hasTenant = await columnExists(client, "public", "lead_notes", "tenant_id");
-    const hasUser   = await columnExists(client, "public", "lead_notes", "user_id");
-    return { kind: "lead_notes", hasTenant, hasUser };
+/* ---------------- NOTES: list + create (ONLY public.lead_notes; NO ensure_tenant_scope) ---------------- */
+
+// GET /leads/:id/notes?limit=20
+router.get("/:id/notes", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (UUID)" });
+
+  const size = Math.max(1, Math.min(100, parseInt(req.query.limit ?? req.query.size ?? "20", 10) || 20));
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId); // harmless; not relied upon
+    const params = [tenantId, id, size];
+    const sql = `
+      SELECT id::text, text, user_id::text, created_at
+        FROM public.lead_notes
+       WHERE tenant_id = $1 AND lead_id = $2
+       ORDER BY created_at DESC
+       LIMIT $3`;
+    const { rows } = await client.query(sql, params);
+    res.json({ items: rows, total: rows.length, page: 1, size: rows.length });
+  } catch (err) {
+    const debug = req.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
+    console.error("GET /leads/:id/notes error:", err);
+    res.status(500).json(debug ? { error: "Failed to load notes", code: err.code, detail: err.detail, message: err.message } : { error: "Failed to load notes" });
+  } finally {
+    client.release();
   }
-  // generic notes table with record_type/record_id
-  if (await tableExists(client, "public.notes")) {
-    const hasTenant    = await columnExists(client, "public", "notes", "tenant_id");
-    const hasRecordTyp = await columnExists(client, "public", "notes", "record_type");
-    const hasRecordId  = await columnExists(client, "public", "notes", "record_id");
-    const hasText      = await columnExists(client, "public", "notes", "text");
-    if (hasText) return { kind: "notes_generic", hasTenant, hasRecordTyp, hasRecordId };
-  }
-  // fallback: JSONB in leads.custom
-  return { kind: (await columnExists(client, "public", "leads", "custom")) ? "leads_custom" : "none" };
-}
+});
 
-/* ---------------- notes: list ---------------- */
-// at top you already have: import { randomUUID } from "crypto";
-
-
+// POST /leads/:id/notes  body: { text: "..." }
 router.post("/:id/notes", async (req, res) => {
   const tenantId = getTenantId(req);
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
@@ -1087,7 +1094,7 @@ router.post("/:id/notes", async (req, res) => {
   const text = (req.body?.text ?? req.body?.note ?? "").toString().trim();
   if (!text) return res.status(400).json({ error: "text is required" });
 
-  // only accept user_id if it's a UUID; otherwise ignore it
+  // Accept user id only if valid UUID; otherwise ignore
   const rawUserId =
     req.session?.userId ||
     req.session?.user_id ||
@@ -1097,58 +1104,13 @@ router.post("/:id/notes", async (req, res) => {
 
   const client = await pool.connect();
   try {
-    await setTenant(client, tenantId);
+    await setTenant(client, tenantId); // harmless; not relied upon
 
     const cols = ["tenant_id", "lead_id", "text"];
-    const ph   = ["ensure_tenant_scope()", "$1", "$2"];
-    const vals = [id, text];
+    const ph   = ["$1", "$2", "$3"];
+    const vals = [tenantId, id, text];
 
-    if (userId) { cols.push("user_id"); ph.push("$3"); vals.push(userId); }
-
-    const sql = `
-      INSERT INTO public.lead_notes (${cols.join(", ")})
-      VALUES (${ph.join(", ")})
-      RETURNING id::text, text, ${userId ? "user_id::text," : ""} created_at`;
-    const { rows } = await client.query(sql, vals);
-    return res.status(201).json(rows[0]);
-  } catch (err) {
-    const debug = req.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
-    console.error("POST /leads/:id/notes error:", err);
-    return res.status(500).json(
-      debug
-        ? { error: "Failed to add note", code: err.code, detail: err.detail, message: err.message }
-        : { error: "Failed to add note" }
-    );
-  } finally {
-    client.release();
-  }
-});
-
-// --- NOTES: CREATE (uses public.lead_notes) ---
-router.post("/:id/notes", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (UUID)" });
-
-  const text = (req.body?.text ?? req.body?.note ?? "").toString().trim();
-  if (!text) return res.status(400).json({ error: "text is required" });
-
-  const userId =
-    req.session?.userId ||
-    req.session?.user_id ||
-    req.get("x-user-id") ||
-    null;
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-    const cols = ["tenant_id", "lead_id", "text"];
-    const ph   = ["ensure_tenant_scope()", "$1", "$2"];
-    const vals = [id, text];
-
-    if (userId) { cols.push("user_id"); ph.push("$3"); vals.push(userId); }
+    if (userId) { cols.push("user_id"); ph.push("$4"); vals.push(userId); }
 
     const sql = `
       INSERT INTO public.lead_notes (${cols.join(", ")})
@@ -1158,257 +1120,13 @@ router.post("/:id/notes", async (req, res) => {
 
     res.status(201).json(rows[0]);
   } catch (err) {
-    console.error("POST /leads/:id/notes error:", err);
-    res.status(500).json({ error: "Failed to add note" });
-  } finally {
-    client.release();
-  }
-});
-
-/* ---------------- notes: create ---------------- */
-router.post("/:id/notes", async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: "No tenant" });
-
-  const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
-
-  const text = (req.body?.text ?? req.body?.note ?? "").toString().trim();
-  if (!text) return res.status(400).json({ error: "text is required" });
-
-  // try to get a user id if the table needs it
-  const reqUserId =
-    req.session?.userId ||
-    req.session?.user_id ||
-    req.get("x-user-id") ||
-    null;
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-    const src = await detectNotesSource(client);
-
-    if (src.kind === "lead_notes") {
-      const userMeta = await columnMeta(client, "public", "lead_notes", "user_id");
-
-      const cols = [];
-      const vals = [];
-      const ph = [];
-      let i = 0;
-
-      if (src.hasTenant) { cols.push("tenant_id"); ph.push("ensure_tenant_scope()"); }
-      cols.push("lead_id");  ph.push(`$${++i}`); vals.push(id);
-      cols.push("text");     ph.push(`$${++i}`); vals.push(text);
-
-      // only include user_id if column exists AND we have a value
-      if (userMeta.exists) {
-        if (!userMeta.nullable && !userMeta.has_default && !reqUserId) {
-          return res.status(400).json({ error: "user_id required by lead_notes; pass x-user-id header or enable session user" });
-        }
-        if (reqUserId) { cols.push("user_id"); ph.push(`$${++i}`); vals.push(reqUserId); }
-      }
-
-      const sql = `
-        INSERT INTO public.lead_notes (${cols.join(", ")})
-        VALUES (${ph.join(", ")})
-        RETURNING id::text, text, ${userMeta.exists ? "user_id::text," : ""} created_at`;
-      const { rows } = await client.query(sql, vals);
-      return res.status(201).json(rows[0]);
-    }
-
-    if (src.kind === "notes_generic") {
-      // discover optional columns
-      const hasUser   = (await columnMeta(client, "public", "notes", "user_id")).exists;
-      const hasRecTyp = (await columnMeta(client, "public", "notes", "record_type")).exists;
-      const recIdMeta = await columnMeta(client, "public", "notes", "record_id");
-
-      const cols = [];
-      const vals = [];
-      const ph = [];
-      let i = 0;
-
-      // tenant
-      if (src.hasTenant) { cols.push("tenant_id"); ph.push("ensure_tenant_scope()"); }
-
-      // record_type if present
-      if (hasRecTyp) { cols.push("record_type"); ph.push(`$${++i}`); vals.push("lead"); }
-
-      // record_id if present (and usually NOT NULL)
-      if (recIdMeta.exists) { cols.push("record_id"); ph.push(`$${++i}`); vals.push(id); }
-
-      // text
-      cols.push("text"); ph.push(`$${++i}`); vals.push(text);
-
-      // user_id if present and we have a value
-      if (hasUser && reqUserId) { cols.push("user_id"); ph.push(`$${++i}`); vals.push(reqUserId); }
-
-      // if record_id is required and we somehow couldn't set it, error early
-      if (recIdMeta.exists === false && !recIdMeta.nullable && !recIdMeta.has_default) {
-        return res.status(400).json({ error: "notes.record_id required but column not detected; adjust table or handler" });
-      }
-
-      const sql = `
-        INSERT INTO public.notes (${cols.join(", ")})
-        VALUES (${ph.join(", ")})
-        RETURNING id::text, text, created_at`;
-      const { rows } = await client.query(sql, vals);
-      return res.status(201).json(rows[0]);
-    }
-
-    if (src.kind === "leads_custom") {
-      const note = { id: randomUUID(), text, created_at: new Date().toISOString() };
-      await client.query("BEGIN");
-      const r1 = await client.query(
-        `SELECT COALESCE(custom,'{}'::jsonb) AS custom
-           FROM public.leads
-          WHERE id = $1 AND tenant_id = ensure_tenant_scope()
-          FOR UPDATE`,
-        [id]
-      );
-      if (!r1.rowCount) {
-        await client.query("ROLLBACK");
-        return res.status(404).json({ error: "Lead not found" });
-      }
-      const custom = r1.rows[0].custom || {};
-      const notes = Array.isArray(custom.notes) ? custom.notes : [];
-      custom.notes = [note, ...notes];
-
-      await client.query(
-        `UPDATE public.leads
-            SET custom = $2::jsonb, updated_at = NOW()
-          WHERE id = $1 AND tenant_id = ensure_tenant_scope()`,
-        [id, JSON.stringify(custom)]
-      );
-      await client.query("COMMIT");
-      return res.status(201).json(note);
-    }
-
-    return res.status(404).json({ error: "Notes storage not found" });
-  } catch (err) {
-    // Easier debugging without exposing too much in prod
     const debug = req.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
     console.error("POST /leads/:id/notes error:", err);
-    if (debug) {
-      return res.status(500).json({
-        error: "Failed to add note",
-        code: err.code,
-        detail: err.detail,
-        message: err.message,
-      });
-    }
-    return res.status(500).json({ error: "Failed to add note" });
+    res.status(500).json(debug ? { error: "Failed to add note", code: err.code, detail: err.detail, message: err.message } : { error: "Failed to add note" });
   } finally {
     client.release();
   }
 });
-
-router.get('/:id/notes', async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
-  const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ error: 'Invalid lead id (must be UUID)' });
-  const limit = Math.min(200, Math.max(1, parseInt(req.query.limit, 10) || 50));
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-    const src = await detectNotesSource(client);
-    if (!src) return res.json([]); // no notes table, return empty
-
-    let sql, params;
-    if (src.style === 'by_lead') {
-      sql = `SELECT id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}
-               FROM ${src.schema}.${src.table}
-              WHERE ${src.hasTenant ? 'tenant_id = ensure_tenant_scope() AND ' : ''} lead_id = $1
-              ORDER BY ${src.hasCreated ? 'created_at' : 'id'} DESC
-              LIMIT ${limit}`;
-      params = [id];
-    } else { // by_record
-      sql = `SELECT id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}
-               FROM ${src.schema}.${src.table}
-              WHERE ${src.hasTenant ? 'tenant_id = ensure_tenant_scope() AND ' : ''} record_type IN ('lead','leads') AND record_id = $1
-              ORDER BY ${src.hasCreated ? 'created_at' : 'id'} DESC
-              LIMIT ${limit}`;
-      params = [id];
-    }
-    const r = await client.query(sql, params);
-    res.json(r.rows || []);
-  } catch (err) {
-    console.error('GET /leads/:id/notes error:', err);
-    res.status(500).json({ error: 'Failed to load notes' });
-  } finally {
-    client.release();
-  }
-});
-
-router.post('/:id/notes', async (req, res) => {
-  const tenantId = getTenantId(req);
-  if (!tenantId) return res.status(401).json({ error: 'No tenant' });
-  const { id } = req.params;
-  if (!isUuid(id)) return res.status(400).json({ error: 'Invalid lead id (must be UUID)' });
-  const text = String(req.body?.text ?? req.body?.note ?? '').trim();
-  if (!text) return res.status(400).json({ error: 'text is required' });
-  const userId = req.session?.userId || null;
-
-  const client = await pool.connect();
-  try {
-    await setTenant(client, tenantId);
-    const src = await detectNotesSource(client);
-    if (!src) return res.status(404).json({ error: 'Notes table not found' });
-
-    let sql, params;
-    if (src.style === 'by_lead') {
-      const cols = ['lead_id', src.contentCol];
-      const ph = ['$1', '$2'];
-      const vals = [id, text];
-      if (src.hasTenant) { cols.unshift('tenant_id'); ph.unshift('$0'); vals.unshift(tenantId); }
-      if (src.hasUser) { cols.push('user_id'); ph.push(`$${ph.length+ (src.hasTenant?0:1)}`); vals.push(userId); }
-      sql = `INSERT INTO ${src.schema}.${src.table} (${src.hasTenant ? 'tenant_id,' : ''} ${cols.filter(c=>c!=='tenant_id').join(', ')})
-             VALUES (${src.hasTenant ? '$1,' : ''} ${src.hasTenant ? '$2,$3' : '$1,$2'}${src.hasUser ? ', ' + (src.hasTenant ? '$4' : '$3') : ''})
-             RETURNING id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}`;
-      // Rebuild params cleanly for clarity
-      params = src.hasTenant
-        ? (src.hasUser ? [tenantId, id, text, userId] : [tenantId, id, text])
-        : (src.hasUser ? [id, text, userId] : [id, text]);
-    } else { // by_record
-      const hasRTCols = true; // guaranteed by detect
-      const tenantFrag = src.hasTenant ? 'tenant_id,' : '';
-      const tenantVals = src.hasTenant ? '$1,' : '';
-      const baseCols = `${tenantFrag}record_type, record_id, ${src.contentCol}${src.hasUser ? ', user_id' : ''}`;
-      const baseVals = `${tenantVals}${src.hasTenant ? '$2,$3,$4' : '$1,$2,$3'}${src.hasUser ? ',' + (src.hasTenant ? '$5' : '$4') : ''}`;
-      sql = `INSERT INTO ${src.schema}.${src.table} (${baseCols})
-             VALUES (${baseVals})
-             RETURNING id, ${src.contentCol} AS text, ${src.hasCreated ? 'created_at' : 'NOW() AS created_at'}`;
-      params = src.hasTenant
-        ? (src.hasUser ? [tenantId, 'lead', id, text, userId] : [tenantId, 'lead', id, text])
-        : (src.hasUser ? ['lead', id, text, userId] : ['lead', id, text]);
-    }
-
-    const r = await client.query(sql, params);
-    res.status(201).json(r.rows?.[0] || { text });
-  } catch (err) {
-    console.error('POST /leads/:id/notes error:', err);
-    res.status(500).json({ error: 'Failed to create note' });
-  } finally {
-    client.release();
-  }
-});
-
-async function columnMeta(client, schema, table, col) {
-  const { rows } = await client.query(
-    `SELECT is_nullable, column_default
-       FROM information_schema.columns
-      WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
-      LIMIT 1`,
-    [schema, table, col]
-  );
-  if (!rows.length) return { exists: false, nullable: true, has_default: false };
-  return {
-    exists: true,
-    nullable: rows[0].is_nullable === "YES",
-    has_default: rows[0].column_default != null,
-  };
-}
 
 /* ---------------- HISTORY: list (best-effort across tables) ---------------- */
 async function detectHistorySource(client) {
@@ -1445,7 +1163,7 @@ router.get('/:id/history', async (req, res) => {
   try {
     await setTenant(client, tenantId);
     const src = await detectHistorySource(client);
-    if (!src) return res.json([]);
+    if (!src) return res.json({ items: [], total: 0, page: 1, size: 0 });
 
     let sql, params;
     if (src.hasLeadId) {
@@ -1464,7 +1182,7 @@ router.get('/:id/history', async (req, res) => {
       params = [id];
     }
     const r = await client.query(sql, params);
-    res.json(r.rows || []);
+    res.json({ items: r.rows || [], total: (r.rows || []).length, page: 1, size: (r.rows || []).length });
   } catch (err) {
     console.error('GET /leads/:id/history error:', err);
     res.status(500).json({ error: 'Failed to load history' });
@@ -1506,7 +1224,9 @@ router.post('/:id/ai-refresh', async (req, res) => {
     client.release();
   }
 });
-router.post('/:id/ai/refresh', (req, res) => router.handle({ ...req, url: req.url.replace('/ai/refresh', '/ai-refresh') }, res));
+router.post('/:id/ai/refresh', (req, res) =>
+  router.handle({ ...req, url: req.url.replace('/ai/refresh', '/ai-refresh') }, res)
+);
 
 router.post('/:id/ai-score', async (req, res) => {
   const tenantId = getTenantId(req);
