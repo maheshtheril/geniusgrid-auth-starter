@@ -475,24 +475,16 @@ async function columnExists(client, schema, table, col) {
 }
 
 /* ---- PATCHED: resolve field meta from multiple tables ---- */
+// replace loadFieldMetaMap with this
 async function loadFieldMetaMap(client, byFieldId, byCode) {
   const ids = [...new Set((byFieldId || []).filter(Boolean).map(String))].filter(isUuid);
-  const codesLC = [
-    ...new Set(
-      (byCode || [])
-        .map((c) => String(c).trim())
-        .filter(Boolean)
-        .map((s) => s.toLowerCase())
-    ),
-  ];
+  const codesLC = [...new Set((byCode || []).map(String).map(s => s.trim().toLowerCase()).filter(Boolean))];
 
   const map = new Map();
   if (!ids.length && !codesLC.length) return map;
 
-  // Always try canonical table first
   const sources = [{ schema: "public", table: "custom_fields", hasRT: true }];
 
-  // Try common admin tables if they exist
   if (await tableExists(client, "public.crm_custom_fields")) {
     const hasRT = await columnExists(client, "public", "crm_custom_fields", "record_type");
     sources.push({ schema: "public", table: "crm_custom_fields", hasRT });
@@ -502,16 +494,15 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
     sources.push({ schema: "public", table: "lead_custom_fields", hasRT });
   }
 
-  // By ID: DO NOT filter by record_type (IDs are unique per tenant)
+  // By ID (do NOT filter by record_type for IDs)
   if (ids.length) {
     for (const src of sources) {
       const sql = `
         SELECT id::text AS id, code::text AS code, form_version_id,
                LOWER(COALESCE(field_type,'')) AS field_type
           FROM ${src.schema}.${src.table}
-         WHERE tenant_id = ensure_tenant_scope()
-           AND id = ANY($1::uuid[])
-      `;
+         WHERE (tenant_id = ensure_tenant_scope() OR tenant_id IS NULL)
+           AND id = ANY($1::uuid[])`;
       try {
         const r = await client.query(sql, [ids]);
         for (const row of r.rows) {
@@ -524,13 +515,11 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
             });
           }
         }
-      } catch (e) {
-        if (e.code !== "42P01") throw e; // ignore missing optional tables
-      }
+      } catch (e) { if (e.code !== "42P01") throw e; }
     }
   }
 
-  // By code: accept both 'lead' and 'leads' record_type when a table has it
+  // By code (accept 'lead'/'leads' when a record_type column exists)
   if (codesLC.length) {
     for (const src of sources) {
       const rtClause = src.hasRT ? `AND record_type IN ('lead','leads')` : ``;
@@ -538,10 +527,9 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
         SELECT id::text AS id, code::text AS code, form_version_id,
                LOWER(COALESCE(field_type,'')) AS field_type
           FROM ${src.schema}.${src.table}
-         WHERE tenant_id = ensure_tenant_scope()
+         WHERE (tenant_id = ensure_tenant_scope() OR tenant_id IS NULL)
            ${rtClause}
-           AND LOWER(code) = ANY($1::text[])
-      `;
+           AND LOWER(code) = ANY($1::text[])`;
       try {
         const r = await client.query(sql, [codesLC]);
         for (const row of r.rows) {
@@ -554,34 +542,29 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
             });
           }
         }
-      } catch (e) {
-        if (e.code !== "42P01") throw e;
-      }
+      } catch (e) { if (e.code !== "42P01") throw e; }
     }
   }
 
-  // Fallback: if some matched rows are missing form_version_id, borrow one
+  // Fallback: if any matched rows lack form_version_id, borrow one
   if (map.size) {
-    const needFV = [...map.values()].filter((m) => !m.form_version_id);
-    if (
-      needFV.length &&
-      (await tableExists(client, "public.custom_fields"))
-    ) {
+    const needFV = [...map.values()].filter(m => !m.form_version_id);
+    if (needFV.length && await tableExists(client, "public.custom_fields")) {
       const { rows } = await client.query(
-        `SELECT DISTINCT form_version_id
+        `SELECT form_version_id
            FROM public.custom_fields
-          WHERE tenant_id = ensure_tenant_scope()
+          WHERE (tenant_id = ensure_tenant_scope() OR tenant_id IS NULL)
             AND form_version_id IS NOT NULL
-          ORDER BY form_version_id ASC
           LIMIT 1`
       );
       const fv = rows?.[0]?.form_version_id || null;
-      if (fv) needFV.forEach((m) => (m.form_version_id = m.form_version_id || fv));
+      if (fv) needFV.forEach(m => { m.form_version_id ||= fv; });
     }
   }
 
   return map;
 }
+
 
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
   if (!items?.length) return { count: 0, resolved: [], skipped: [] };
