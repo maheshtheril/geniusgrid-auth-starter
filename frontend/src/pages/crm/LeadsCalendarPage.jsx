@@ -354,6 +354,7 @@ export default function LeadsCalendarPage({
           headerToolbar={{
             left: "prev,next today",
             center: loading ? "Loading…" : "title",
+            center: "title",
             right: isPremiumView
               ? "resourceTimeGridWeek,resourceTimelineWeek,dayGridMonth,timeGridWeek,timeGridDay"
               : "dayGridMonth,timeGridWeek,timeGridDay",

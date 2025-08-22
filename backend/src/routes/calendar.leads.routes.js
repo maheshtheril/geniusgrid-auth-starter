@@ -58,23 +58,19 @@ router.get("/leads", async (req, res) => {
   if (companyId && !isUuid(companyId))
     return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
 
-  // Range (ISO strings). We accept any ISO; treat them as UTC instants.
   const fromISO = String(req.query.from || "").trim();
-  const toISO = String(req.query.to || "").trim();
+  const toISO   = String(req.query.to   || "").trim();
   if (!fromISO || !toISO) return res.status(400).json({ error: "from and to are required ISO datetimes" });
-
-  const view = (req.query.view || "").toLowerCase(); // e.g. 'week' (not used server-side)
-  const tz = req.query.tz || "UTC"; // not needed to filter; FullCalendar will render in its own tz
 
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
 
     const hasLeadEvents = await tableExists(client, "public.lead_events");
-    let events = [];
+    const rows = [];
 
     if (hasLeadEvents) {
-      // Detect available columns to keep this resilient
+      // detect optional columns
       const cols = await getColumnsSet(client, "public", "lead_events");
       const want = {
         title: cols.has("title"),
@@ -84,29 +80,24 @@ router.get("/leads", async (req, res) => {
         stage: cols.has("stage"),
       };
 
-      // Build query from lead_events joined to leads for context
-      const params = [fromISO, toISO, tenantId];
-      let where = `WHERE (e.start_at < $2::timestamptz) AND (COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') > $1::timestamptz) AND e.tenant_id = ensure_tenant_scope()`;
-      if (companyId) {
-        params.push(companyId);
-        where += ` AND l.company_id::text = $${params.length}`;
-      }
+      const params = [fromISO, toISO];
+      let where = `WHERE (e.start_at < $2::timestamptz) AND (COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') > $1::timestamptz)
+                   AND e.tenant_id = ensure_tenant_scope()`;
+      if (companyId) { params.push(companyId); where += ` AND l.company_id::text = $3`; }
 
       const sql = `
         SELECT
-          e.id::text          AS event_id,
-          e.lead_id::text     AS lead_id,
-          e.start_at          AS start_at,
-          ${want.end_at ? "e.end_at AS end_at," : "NULL::timestamptz AS end_at,"}
-          ${want.all_day ? "COALESCE(e.all_day, false) AS all_day," : "false AS all_day,"}
-          ${want.title ? "NULLIF(e.title,'') AS evt_title," : "NULL::text AS evt_title,"}
-          ${want.owner_id ? "e.owner_id::text AS owner_id," : "l.owner_id::text AS owner_id,"}
-          ${want.stage ? "NULLIF(e.stage,'') AS stage," : "l.stage AS stage,"}
-          l.name              AS lead_name,
+          e.lead_id::text                   AS lead_id,
+          ${want.title ? "NULLIF(e.title,'')" : "NULL"}      AS evt_title,
+          e.start_at                        AS start_at,
+          ${want.end_at ? "e.end_at" : "NULL"}               AS end_at,
+          ${want.all_day ? "COALESCE(e.all_day,false)" : "false"}::bool AS all_day,
+          COALESCE(${want.owner_id ? "e.owner_id" : "NULL"}, l.owner_id)::text AS owner_id,
+          ${want.stage ? "NULLIF(e.stage,'')" : "NULL"}      AS stage,
+          l.name                             AS lead_name,
           COALESCE(l.company, l.company_name) AS company_name,
           COALESCE(l.owner, l.owner_name)     AS owner_name,
-          l.status           AS status,
-          l.source           AS source
+          l.status                            AS status
         FROM public.lead_events e
         JOIN public.leads l ON l.id = e.lead_id
         ${where}
@@ -114,41 +105,36 @@ router.get("/leads", async (req, res) => {
         LIMIT 500;
       `;
       const r = await client.query(sql, params);
-
-      events = (r.rows || []).map((row) => ({
-        id: `evt:${row.event_id}`,
-        title:
-          row.evt_title ||
-          `Follow-up${row.company_name ? " • " + row.company_name : ""}`,
-        start: toIso(row.start_at),
-        end: toIso(row.end_at || addMinutes(row.start_at, 45)),
-        allDay: !!row.all_day,
-        // Let the frontend decide how to use this resource (owners/stages/timeline).
-        resourceId: row.owner_id || undefined,
-        extendedProps: {
-          type: "lead_event",
-          leadId: row.lead_id,
-          stageName: row.stage || null,
-          ownerUserId: row.owner_id || null,
-          ownerName: row.owner_name || null,
+      for (const row of r.rows) {
+        rows.push({
+          id: row.lead_id,
+          lead_id: row.lead_id,
+          title: row.evt_title || row.lead_name || "Follow-up",
+          name: row.lead_name,
+          start_at: toIso(row.start_at),
+          end_at: toIso(row.end_at || addMinutes(row.start_at, 45)),
+          all_day: !!row.all_day,
+          owner_id: row.owner_id || null,
+          owner_user_id: row.owner_id || null,
+          owner_name: row.owner_name || null,
+          stage: row.stage || null,
+          stage_name: row.stage || null,
           company: row.company_name || null,
+          lead_company: row.company_name || null,
           status: row.status || null,
-          source: row.source || null,
-          recurring: false,
-          tz,
-          view,
-        },
-      }));
+          rrule: null,
+          instance_id: null,
+        });
+      }
     }
 
-    // If no lead_events table, or it returned nothing, fall back to leads.followup_at
-    if (!events.length) {
-      const params = [tenantId, fromISO, toISO];
-      let where = `WHERE tenant_id = ensure_tenant_scope() AND followup_at IS NOT NULL AND followup_at >= $2::timestamptz AND followup_at < $3::timestamptz`;
-      if (companyId) {
-        params.push(companyId);
-        where += ` AND company_id::text = $${params.length}`;
-      }
+    if (!rows.length) {
+      const params = [fromISO, toISO];
+      let where = `WHERE tenant_id = ensure_tenant_scope()
+                   AND followup_at IS NOT NULL
+                   AND followup_at < $2::timestamptz
+                   AND (followup_at + INTERVAL '45 minutes') > $1::timestamptz`;
+      if (companyId) { params.push(companyId); where += ` AND company_id::text = $3`; }
 
       const sql = `
         SELECT
@@ -158,37 +144,37 @@ router.get("/leads", async (req, res) => {
           COALESCE(company, company_name) AS company_name,
           COALESCE(owner, owner_name)     AS owner_name,
           owner_id::text AS owner_id,
-          stage, status, source
+          stage, status
         FROM public.leads
         ${where}
         ORDER BY followup_at ASC
         LIMIT 500;`;
       const r = await client.query(sql, params);
 
-      events = (r.rows || []).map((row) => ({
-        id: `lead:${row.lead_id}`,
-        title: `Follow-up${row.company_name ? " • " + row.company_name : ""}`,
-        start: toIso(row.start_at),
-        end: toIso(addMinutes(row.start_at, 45)),
-        allDay: false,
-        resourceId: row.owner_id || undefined, // frontend can remap for stage views
-        extendedProps: {
-          type: "lead_followup",
-          leadId: row.lead_id,
-          stageName: row.stage || null,
-          ownerUserId: row.owner_id || null,
-          ownerName: row.owner_name || null,
+      for (const row of r.rows) {
+        rows.push({
+          id: row.lead_id,
+          lead_id: row.lead_id,
+          title: row.lead_name || "Follow-up",
+          name: row.lead_name,
+          start_at: toIso(row.start_at),
+          end_at: toIso(addMinutes(row.start_at, 45)),
+          all_day: false,
+          owner_id: row.owner_id || null,
+          owner_user_id: row.owner_id || null,
+          owner_name: row.owner_name || null,
+          stage: row.stage || null,
+          stage_name: row.stage || null,
           company: row.company_name || null,
+          lead_company: row.company_name || null,
           status: row.status || null,
-          source: row.source || null,
-          recurring: false,
-          tz,
-          view,
-        },
-      }));
+          rrule: null,
+          instance_id: null,
+        });
+      }
     }
 
-    return res.json(events);
+    return res.json(rows);
   } catch (err) {
     console.error("GET /api/calendar/leads error:", err);
     return res.status(500).json({ error: "Failed to load calendar leads" });
@@ -196,6 +182,114 @@ router.get("/leads", async (req, res) => {
     client.release();
   }
 });
+
+router.get("/resources", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  const companyId = getCompanyId(req);
+  const mode = String(req.query.mode || "").toLowerCase();
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+
+    if (mode === "owners" || mode === "owner") {
+      const params = [];
+      let where = `WHERE tenant_id = ensure_tenant_scope() AND owner_id IS NOT NULL`;
+      if (companyId) { params.push(companyId); where += ` AND company_id::text = $1`; }
+
+      const sql = `
+        SELECT DISTINCT owner_id::text AS id, COALESCE(owner_name, owner) AS title
+          FROM public.leads
+          ${where}
+         ORDER BY title NULLS LAST
+         LIMIT 500`;
+      const r = await client.query(sql, params);
+      return res.json((r.rows || []).filter(x => x.id).map(x => ({
+        id: x.id, title: x.title || x.id
+      })));
+    }
+
+    // stages
+    const params = [];
+    let where = `WHERE tenant_id = ensure_tenant_scope() AND stage IS NOT NULL AND stage <> ''`;
+    if (companyId) { params.push(companyId); where += ` AND company_id::text = $1`; }
+
+    const r = await client.query(
+      `SELECT DISTINCT stage AS id
+         FROM public.leads
+         ${where}
+         ORDER BY stage ASC
+         LIMIT 200`, params
+    );
+    return res.json((r.rows || []).map(x => ({ id: String(x.id), title: String(x.id) })));
+  } catch (e) {
+    console.error("GET /api/calendar/resources error:", e);
+    return res.status(500).json({ error: "Failed to load resources" });
+  } finally {
+    client.release();
+  }
+});
+router.get("/freebusy", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  const fromISO = String(req.query.from || "").trim();
+  const toISO   = String(req.query.to   || "").trim();
+  let owners = req.query.owners;
+  if (typeof owners === "string") owners = owners.split(",").map(s => s.trim()).filter(Boolean);
+  if (!Array.isArray(owners) || !owners.length || !fromISO || !toISO) return res.json([]);
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+
+    const out = [];
+    if (await tableExists(client, "public.lead_events")) {
+      const sql = `
+        SELECT
+          COALESCE(e.owner_id::text, l.owner_id::text) AS owner_id,
+          e.start_at AS start_at,
+          COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') AS end_at
+        FROM public.lead_events e
+        JOIN public.leads l ON l.id = e.lead_id
+       WHERE e.tenant_id = ensure_tenant_scope()
+         AND (e.start_at < $2::timestamptz)
+         AND (COALESCE(e.end_at, e.start_at + INTERVAL '45 minutes') > $1::timestamptz)
+         AND COALESCE(e.owner_id::text, l.owner_id::text) = ANY($3::text[])
+       LIMIT 1000`;
+      const r = await client.query(sql, [fromISO, toISO, owners]);
+      for (const row of r.rows) {
+        if (!row.owner_id) continue;
+        out.push({ owner_id: row.owner_id, start: toIso(row.start_at), end: toIso(row.end_at) });
+      }
+    } else {
+      const sql = `
+        SELECT owner_id::text AS owner_id,
+               followup_at AS start_at,
+               (followup_at + INTERVAL '45 minutes') AS end_at
+          FROM public.leads
+         WHERE tenant_id = ensure_tenant_scope()
+           AND owner_id IS NOT NULL
+           AND followup_at < $2::timestamptz
+           AND (followup_at + INTERVAL '45 minutes') > $1::timestamptz
+           AND owner_id::text = ANY($3::text[])
+         LIMIT 1000`;
+      const r = await client.query(sql, [fromISO, toISO, owners]);
+      for (const row of r.rows) {
+        out.push({ owner_id: row.owner_id, start: toIso(row.start_at), end: toIso(row.end_at) });
+      }
+    }
+
+    res.json(out);
+  } catch (e) {
+    console.error("GET /api/calendar/freebusy error:", e);
+    res.status(500).json({ error: "Failed to load free/busy" });
+  } finally {
+    client.release();
+  }
+});
+
 
 /* ---------------- PATCH /api/calendar/leads/:id ----------------
    Move/resize an event. For `evt:<lead_events.id>` updates lead_events.
@@ -258,6 +352,120 @@ router.patch("/leads/:id", async (req, res) => {
   } catch (err) {
     console.error("PATCH /api/calendar/leads/:id error:", err);
     return res.status(500).json({ error: "Failed to update event" });
+  } finally {
+    client.release();
+  }
+});
+// PATCH /leads/:id/schedule   { followup_at?: ISO, start?: ISO }
+router.patch("/:id/schedule", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  const companyId = getCompanyId(req);
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
+
+  const raw = req.body?.followup_at || req.body?.start;
+  const dt  = raw ? new Date(raw) : null;
+  if (!dt || Number.isNaN(+dt)) return res.status(400).json({ error: "followup_at/start is required ISO datetime" });
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
+    if (!schema.has_followup_at) return res.status(400).json({ error: "followup_at not available in schema" });
+
+    const params = [dt.toISOString(), id, tenantId];
+    let extra = "";
+    if (companyId) { params.push(companyId); extra = ` AND company_id::text = $4`; }
+
+    const r = await client.query(
+      `UPDATE public.leads
+          SET followup_at = $1::timestamptz, updated_at = NOW()
+        WHERE id = $2::uuid AND tenant_id = $3${extra}`,
+      params
+    );
+    if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PATCH /leads/:id/schedule error:", err);
+    res.status(500).json({ error: "Failed to update schedule" });
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /leads/:id/owner   { owner_id: UUID }
+router.patch("/:id/owner", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  const companyId = getCompanyId(req);
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
+
+  const ownerId = String(req.body?.owner_id || "").trim();
+  if (!isUuid(ownerId)) return res.status(400).json({ error: "owner_id must be UUID" });
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
+    if (!schema.has_owner_id) return res.status(400).json({ error: "owner_id not available in schema" });
+
+    const params = [ownerId, id, tenantId];
+    let extra = "";
+    if (companyId) { params.push(companyId); extra = ` AND company_id::text = $4`; }
+
+    const r = await client.query(
+      `UPDATE public.leads
+          SET owner_id = $1::uuid, updated_at = NOW()
+        WHERE id = $2::uuid AND tenant_id = $3${extra}`,
+      params
+    );
+    if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PATCH /leads/:id/owner error:", err);
+    res.status(500).json({ error: "Failed to update owner" });
+  } finally {
+    client.release();
+  }
+});
+
+// PATCH /leads/:id/stage   { stage: string }
+router.patch("/:id/stage", async (req, res) => {
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+
+  const companyId = getCompanyId(req);
+  const { id } = req.params;
+  if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
+
+  const stage = String(req.body?.stage || "").trim();
+  if (!stage) return res.status(400).json({ error: "stage is required" });
+
+  const client = await pool.connect();
+  try {
+    await setTenant(client, tenantId);
+    const schema = await getLeadsSchema(client);
+    if (!schema.has_stage) return res.status(400).json({ error: "stage not available in schema" });
+
+    const params = [stage, id, tenantId];
+    let extra = "";
+    if (companyId) { params.push(companyId); extra = ` AND company_id::text = $4`; }
+
+    const r = await client.query(
+      `UPDATE public.leads
+          SET stage = $1::text, updated_at = NOW()
+        WHERE id = $2::uuid AND tenant_id = $3${extra}`,
+      params
+    );
+    if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("PATCH /leads/:id/stage error:", err);
+    res.status(500).json({ error: "Failed to update stage" });
   } finally {
     client.release();
   }
