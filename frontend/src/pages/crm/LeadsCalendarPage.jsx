@@ -15,7 +15,7 @@ import { DateTime } from "luxon";
 // import "@fullcalendar/resource-timeline/index.css";
 
 /**
- * World-class Lead Scheduler for SaaSERP
+ * World-class Lead Scheduler for SaaS ERP
  * - Views: Week/Month (standard), Owners (resource time grid), Stages (resource time grid), Timeline (owner)
  * - Recurrence aware (UI recognizes rrule, backend expands)
  * - Free/busy overlay for owners
