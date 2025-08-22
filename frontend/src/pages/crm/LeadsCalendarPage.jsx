@@ -8,11 +8,6 @@ import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid"; // premium
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline"; // premium
 import { DateTime } from "luxon";
 import { http } from "@/lib/http"; // <-- uses your axios instance with baseURL + cookies
-
-import "@fullcalendar/core/index.css";
-import "@fullcalendar/daygrid/index.css";
-import "@fullcalendar/timegrid/index.css";
-import "@fullcalendar/resource-timeline/index.css";
 import "@/styles/fc-tweaks.css";
 
 /* ---------- tiny axios helpers ---------- */
