@@ -6,13 +6,30 @@ import { pool } from "../db/pool.js";
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 20 } });
 
+
 /* ---------------- config: temporary hard-coded company + record_type ---------------- */
 const DEFAULT_COMPANY_ID = "af3b367a-d61c-4748-9536-3fe94fe2d247";
 const RECORD_TYPE_FOR_LEADS = process.env.CFV_RECORD_TYPE_LEAD || "lead";
 
+
 /* ---------------- helpers ---------------- */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
+
+// --- TEMP: multipart probe (no DB) to debug crashes/CORS ---
+router.post("/__probe", upload.any(), (req, res) => {
+  res.json({
+    ok: true,
+    auth: !!req.session?.userId,
+    tenant: (req.session?.tenantId || req.get("x-tenant-id") || req.query.tenant_id) || null,
+    company: (req.session?.companyId || req.get("x-company-id") || req.query.company_id) || null,
+    bodyKeys: Object.keys(req.body || {}),
+    files: (req.files || []).map(f => ({
+      fieldname: f.fieldname, size: f.size, mimetype: f.mimetype
+    })),
+  });
+});
+
 
 function getTenantId(req) {
   return req.session?.tenantId || req.session?.tenant_id || req.get("x-tenant-id") || req.query.tenant_id || null;
