@@ -1160,30 +1160,76 @@ router.post("/:id/notes", async (req, res) => {
   const text = (req.body?.text ?? req.body?.note ?? "").toString().trim();
   if (!text) return res.status(400).json({ error: "text is required" });
 
+  // try to get a user id if the table needs it
+  const reqUserId =
+    req.session?.userId ||
+    req.session?.user_id ||
+    req.get("x-user-id") ||
+    null;
+
   const client = await pool.connect();
   try {
     await setTenant(client, tenantId);
     const src = await detectNotesSource(client);
 
     if (src.kind === "lead_notes") {
-      const sql = `
-        INSERT INTO public.lead_notes (${src.hasTenant ? "tenant_id," : ""} lead_id, text)
-        VALUES (${src.hasTenant ? "ensure_tenant_scope()," : ""} $1, $2)
-        RETURNING id::text, text, created_at`;
-      const { rows } = await client.query(sql, [id, text]);
-      return res.status(201).json(rows[0]);
-    }
+      const userMeta = await columnMeta(client, "public", "lead_notes", "user_id");
 
-    if (src.kind === "notes_generic") {
       const cols = [];
       const vals = [];
       const ph = [];
       let i = 0;
 
-      if (src.hasTenant) { cols.push("tenant_id"); vals.push(null); ph.push(`ensure_tenant_scope()`); }
-      if (src.hasRecordTyp) { cols.push("record_type"); vals.push("lead"); ph.push(`$${++i}`); }
-      if (src.hasRecordId)  { cols.push("record_id");  vals.push(id);    ph.push(`$${++i}`); }
-      cols.push("text");     vals.push(text);           ph.push(`$${++i}`);
+      if (src.hasTenant) { cols.push("tenant_id"); ph.push("ensure_tenant_scope()"); }
+      cols.push("lead_id");  ph.push(`$${++i}`); vals.push(id);
+      cols.push("text");     ph.push(`$${++i}`); vals.push(text);
+
+      // only include user_id if column exists AND we have a value
+      if (userMeta.exists) {
+        if (!userMeta.nullable && !userMeta.has_default && !reqUserId) {
+          return res.status(400).json({ error: "user_id required by lead_notes; pass x-user-id header or enable session user" });
+        }
+        if (reqUserId) { cols.push("user_id"); ph.push(`$${++i}`); vals.push(reqUserId); }
+      }
+
+      const sql = `
+        INSERT INTO public.lead_notes (${cols.join(", ")})
+        VALUES (${ph.join(", ")})
+        RETURNING id::text, text, ${userMeta.exists ? "user_id::text," : ""} created_at`;
+      const { rows } = await client.query(sql, vals);
+      return res.status(201).json(rows[0]);
+    }
+
+    if (src.kind === "notes_generic") {
+      // discover optional columns
+      const hasUser   = (await columnMeta(client, "public", "notes", "user_id")).exists;
+      const hasRecTyp = (await columnMeta(client, "public", "notes", "record_type")).exists;
+      const recIdMeta = await columnMeta(client, "public", "notes", "record_id");
+
+      const cols = [];
+      const vals = [];
+      const ph = [];
+      let i = 0;
+
+      // tenant
+      if (src.hasTenant) { cols.push("tenant_id"); ph.push("ensure_tenant_scope()"); }
+
+      // record_type if present
+      if (hasRecTyp) { cols.push("record_type"); ph.push(`$${++i}`); vals.push("lead"); }
+
+      // record_id if present (and usually NOT NULL)
+      if (recIdMeta.exists) { cols.push("record_id"); ph.push(`$${++i}`); vals.push(id); }
+
+      // text
+      cols.push("text"); ph.push(`$${++i}`); vals.push(text);
+
+      // user_id if present and we have a value
+      if (hasUser && reqUserId) { cols.push("user_id"); ph.push(`$${++i}`); vals.push(reqUserId); }
+
+      // if record_id is required and we somehow couldn't set it, error early
+      if (recIdMeta.exists === false && !recIdMeta.nullable && !recIdMeta.has_default) {
+        return res.status(400).json({ error: "notes.record_id required but column not detected; adjust table or handler" });
+      }
 
       const sql = `
         INSERT INTO public.notes (${cols.join(", ")})
@@ -1194,9 +1240,7 @@ router.post("/:id/notes", async (req, res) => {
     }
 
     if (src.kind === "leads_custom") {
-      // upsert into leads.custom->notes
       const note = { id: randomUUID(), text, created_at: new Date().toISOString() };
-
       await client.query("BEGIN");
       const r1 = await client.query(
         `SELECT COALESCE(custom,'{}'::jsonb) AS custom
@@ -1211,7 +1255,7 @@ router.post("/:id/notes", async (req, res) => {
       }
       const custom = r1.rows[0].custom || {};
       const notes = Array.isArray(custom.notes) ? custom.notes : [];
-      custom.notes = [note, ...notes]; // prepend newest
+      custom.notes = [note, ...notes];
 
       await client.query(
         `UPDATE public.leads
@@ -1225,8 +1269,17 @@ router.post("/:id/notes", async (req, res) => {
 
     return res.status(404).json({ error: "Notes storage not found" });
   } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
+    // Easier debugging without exposing too much in prod
+    const debug = req.get("x-debug") === "1" || process.env.NODE_ENV !== "production";
     console.error("POST /leads/:id/notes error:", err);
+    if (debug) {
+      return res.status(500).json({
+        error: "Failed to add note",
+        code: err.code,
+        detail: err.detail,
+        message: err.message,
+      });
+    }
     return res.status(500).json({ error: "Failed to add note" });
   } finally {
     client.release();
@@ -1324,6 +1377,22 @@ router.post('/:id/notes', async (req, res) => {
     client.release();
   }
 });
+
+async function columnMeta(client, schema, table, col) {
+  const { rows } = await client.query(
+    `SELECT is_nullable, column_default
+       FROM information_schema.columns
+      WHERE table_schema = $1 AND table_name = $2 AND column_name = $3
+      LIMIT 1`,
+    [schema, table, col]
+  );
+  if (!rows.length) return { exists: false, nullable: true, has_default: false };
+  return {
+    exists: true,
+    nullable: rows[0].is_nullable === "YES",
+    has_default: rows[0].column_default != null,
+  };
+}
 
 /* ---------------- HISTORY: list (best-effort across tables) ---------------- */
 async function detectHistorySource(client) {
