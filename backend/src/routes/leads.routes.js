@@ -4,41 +4,58 @@ import multer from "multer";
 import { pool } from "../db/pool.js";
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024, files: 20 } });
-
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024, files: 20 },
+});
 
 /* ---------------- config: temporary hard-coded company + record_type ---------------- */
 const DEFAULT_COMPANY_ID = "af3b367a-d61c-4748-9536-3fe94fe2d247";
 const RECORD_TYPE_FOR_LEADS = process.env.CFV_RECORD_TYPE_LEAD || "lead";
 
-
 /* ---------------- helpers ---------------- */
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = (x) => typeof x === "string" && UUID_RE.test(x);
 
-// --- TEMP: multipart probe (no DB) to debug crashes/CORS ---
-router.post("/__probe", upload.any(), (req, res) => {
-  res.json({
-    ok: true,
-    auth: !!req.session?.userId,
-    tenant: (req.session?.tenantId || req.get("x-tenant-id") || req.query.tenant_id) || null,
-    company: (req.session?.companyId || req.get("x-company-id") || req.query.company_id) || null,
-    bodyKeys: Object.keys(req.body || {}),
-    files: (req.files || []).map(f => ({
-      fieldname: f.fieldname, size: f.size, mimetype: f.mimetype
-    })),
-  });
-});
-
-
 function getTenantId(req) {
-  return req.session?.tenantId || req.session?.tenant_id || req.get("x-tenant-id") || req.query.tenant_id || null;
+  return (
+    req.session?.tenantId ||
+    req.session?.tenant_id ||
+    req.get("x-tenant-id") ||
+    req.query.tenant_id ||
+    null
+  );
 }
 function getCompanyId(req) {
-  return req.session?.companyId || req.session?.company_id || req.get("x-company-id") || req.query.company_id || null;
+  return (
+    req.session?.companyId ||
+    req.session?.company_id ||
+    req.get("x-company-id") ||
+    req.query.company_id ||
+    null
+  );
 }
 async function setTenant(client, tenantId) {
   await client.query(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId]);
+}
+
+// map request body (JSON or multipart) to canonical lead fields
+function normalizeLeadBody(req) {
+  const b = req.body || {};
+  const pick = (...keys) =>
+    keys.map((k) => b[k]).find((v) => v !== undefined && v !== null);
+  const follow = pick("followup_at", "follow_up_date", "follow");
+  return {
+    name: String(pick("name", "title", "lead_name") || "").trim(),
+    email: pick("email") ? String(b.email).trim() : null,
+    phone: pick("phone", "mobile") ? String(pick("phone", "mobile")).trim() : null,
+    website: pick("website") ? String(b.website).trim() : null,
+    source: pick("source") ? String(b.source).trim() : null,
+    status: pick("status") ? String(b.status).trim() : "new",
+    stage: pick("stage") ? String(b.stage).trim() : null,
+    followup_at: follow ? new Date(String(follow).slice(0, 10)) : null,
+  };
 }
 
 if (process.env.NODE_ENV !== "production") {
@@ -68,9 +85,9 @@ async function getLeadsSchema(client) {
        FROM information_schema.columns
       WHERE table_schema='public' AND table_name='leads'`
   );
-  const set = new Set(rows.map(r => r.column_name));
-
+  const set = new Set(rows.map((r) => r.column_name));
   const has = (c) => set.has(c);
+
   const schema = {
     has_company: has("company"),
     has_company_name: has("company_name"),
@@ -141,6 +158,24 @@ function buildProjection(schema) {
   return sel.join(",\n      ");
 }
 
+/* ---------- PROBE (no DB) ---------- */
+router.post("/__probe", upload.any(), (req, res) => {
+  res.json({
+    ok: true,
+    auth: !!req.session?.userId,
+    tenant: getTenantId(req),
+    company: getCompanyId(req) || DEFAULT_COMPANY_ID,
+    bodyKeys: Object.keys(req.body || {}),
+    cfvRaw: Object.entries(req.body || {}).filter(([k]) => k.startsWith("cfv[")),
+    files: (req.files || []).map((f) => ({
+      fieldname: f.fieldname,
+      size: f.size,
+      mimetype: f.mimetype,
+    })),
+  });
+});
+
+/* ---------------- probe ---------------- */
 router.get("/ping", (_req, res) => res.json({ ok: true }));
 
 /* ---------------- list ---------------- */
@@ -188,15 +223,20 @@ router.get("/", async (req, res) => {
     const offset = (page - 1) * size;
     const projection = buildProjection(schema);
 
-    const listSQL  = `SELECT ${projection} FROM public.leads ${where} ORDER BY ${schema.has_updated_at ? "updated_at" : "created_at"} DESC LIMIT ${size} OFFSET ${offset};`;
+    const listSQL  = `SELECT ${projection} FROM public.leads ${where}
+                      ORDER BY ${schema.has_updated_at ? "updated_at" : "created_at"} DESC
+                      LIMIT ${size} OFFSET ${offset};`;
     const countSQL = `SELECT COUNT(*)::int AS total FROM public.leads ${where};`;
 
     const [list, count] = await Promise.all([client.query(listSQL, params), client.query(countSQL, params)]);
     const items = (list.rows || []).map((r) => ({
       ...r,
-      ai_next: Array.isArray(r.ai_next) ? r.ai_next :
-               (typeof r.ai_next === "string" && r.ai_next.startsWith("[")) ? JSON.parse(r.ai_next) :
-               r.ai_next || [],
+      ai_next:
+        Array.isArray(r.ai_next)
+          ? r.ai_next
+          : (typeof r.ai_next === "string" && r.ai_next.startsWith("["))
+          ? JSON.parse(r.ai_next)
+          : r.ai_next || [],
     }));
     res.json({ items, total: count.rows?.[0]?.total ?? 0, page, size });
   } catch (err) {
@@ -214,7 +254,7 @@ async function loadStageList(tenantId, companyId) {
   let j = params.length;
   if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++j}`; }
   const { rows } = await pool.query(`SELECT DISTINCT stage FROM public.leads ${where} ORDER BY stage ASC`, params);
-  const stages = rows.map(r => r.stage).filter(Boolean);
+  const stages = rows.map((r) => r.stage).filter(Boolean);
   return stages.length ? stages : ["new", "qualified", "proposal", "won", "lost"];
 }
 router.get("/pipelines", async (req, res) => {
@@ -269,7 +309,7 @@ function parseCfvItems(body = {}, files = []) {
       code: raw.code != null ? String(raw.code) : null,
       value_text: raw.value_text !== undefined ? String(raw.value_text) : null,
       value_number: raw.value_number !== undefined && raw.value_number !== "" ? Number(raw.value_number) : null,
-      value_date: raw.value_date ? String(raw.value_date).slice(0,10) : null,
+      value_date: raw.value_date ? String(raw.value_date).slice(0, 10) : null,
       value_json: null,
       file: raw.file || null,
     };
@@ -288,7 +328,11 @@ function parseCfvItems(body = {}, files = []) {
   else if (j && typeof j === "object") {
     for (const [k, v] of Object.entries(j)) {
       if (v && typeof v === "object" && !Array.isArray(v)) {
-        pushItem({ ...v, field_id: v.field_id ?? (isU(k) ? k : undefined), code: v.code ?? (!isU(k) ? k : undefined) });
+        pushItem({
+          ...v,
+          field_id: v.field_id ?? (isU(k) ? k : undefined),
+          code: v.code ?? (!isU(k) ? k : undefined),
+        });
       } else {
         pushItem({ field_id: isU(k) ? k : undefined, code: !isU(k) ? k : undefined, value_text: v });
       }
@@ -299,7 +343,12 @@ function parseCfvItems(body = {}, files = []) {
       if (Array.isArray(parsed)) parsed.forEach(pushItem);
       else if (parsed && typeof parsed === "object") {
         for (const [k, v] of Object.entries(parsed)) {
-          if (v && typeof v === "object" && !Array.isArray(v)) pushItem({ ...v, field_id: v.field_id ?? (isU(k) ? k : undefined), code: v.code ?? (!isU(k) ? k : undefined) });
+          if (v && typeof v === "object" && !Array.isArray(v))
+            pushItem({
+              ...v,
+              field_id: v.field_id ?? (isU(k) ? k : undefined),
+              code: v.code ?? (!isU(k) ? k : undefined),
+            });
           else pushItem({ field_id: isU(k) ? k : undefined, code: !isU(k) ? k : undefined, value_text: v });
         }
       }
@@ -325,7 +374,7 @@ function parseCfvItems(body = {}, files = []) {
 
 async function loadFieldMetaMap(client, byFieldId, byCode) {
   const ids = [...new Set((byFieldId || []).filter(Boolean))].filter(isUuid);
-  const codes = [...new Set((byCode || []).map(c => String(c).trim()).filter(Boolean))];
+  const codes = [...new Set((byCode || []).map((c) => String(c).trim()).filter(Boolean))];
 
   const map = new Map();
 
@@ -337,7 +386,13 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
          AND id = ANY($1::uuid[])`,
       [ids]
     );
-    for (const r of rows) map.set(String(r.id), { id: String(r.id), code: r.code || null, form_version_id: r.form_version_id, field_type: (r.field_type || "").toLowerCase().trim() });
+    for (const r of rows)
+      map.set(String(r.id), {
+        id: String(r.id),
+        code: r.code || null,
+        form_version_id: r.form_version_id,
+        field_type: (r.field_type || "").toLowerCase().trim(),
+      });
   }
 
   if (codes.length) {
@@ -350,7 +405,13 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
     );
     for (const r of rows) {
       const id = String(r.id);
-      if (!map.has(id)) map.set(id, { id, code: r.code || null, form_version_id: r.form_version_id, field_type: (r.field_type || "").toLowerCase().trim() });
+      if (!map.has(id))
+        map.set(id, {
+          id,
+          code: r.code || null,
+          form_version_id: r.form_version_id,
+          field_type: (r.field_type || "").toLowerCase().trim(),
+        });
     }
   }
 
@@ -360,8 +421,8 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
 async function upsertCustomFieldValues(client, tenantId, recordType, recordId, items) {
   if (!items?.length) return { count: 0, resolved: [], skipped: [] };
 
-  const requestedIds = items.map(i => i.field_id).filter(Boolean);
-  const requestedCodes = items.map(i => i.code).filter(Boolean);
+  const requestedIds = items.map((i) => i.field_id).filter(Boolean);
+  const requestedCodes = items.map((i) => i.code).filter(Boolean);
   const metaMap = await loadFieldMetaMap(client, requestedIds, requestedCodes);
 
   const rowsToInsert = [];
@@ -373,7 +434,9 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
 
     if (it.field_id && metaMap.has(String(it.field_id))) meta = metaMap.get(String(it.field_id));
     else if (it.code) {
-      const found = [...metaMap.values()].find(m => (m.code || "").toLowerCase() === String(it.code).toLowerCase());
+      const found = [...metaMap.values()].find(
+        (m) => (m.code || "").toLowerCase() === String(it.code).toLowerCase()
+      );
       if (found) meta = found;
     }
 
@@ -386,22 +449,50 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
     let vJson = it.value_json ?? null;
 
     switch ((meta.field_type || "").toLowerCase()) {
-      case "number": case "int": case "integer": case "float": case "decimal": case "currency":
-        vNum = Number.isFinite(Number(vNum)) ? Number(vNum) : null; vText = null; vDate = null; vJson = null; break;
-      case "date": case "dob": case "birthday":
-        vDate = vDate ? String(vDate).slice(0,10) : null; vText = null; vNum = null; vJson = null; break;
-      case "json": case "object": case "array":
-        if (vJson == null && vText != null) { try { vJson = JSON.parse(vText); } catch { vJson = vText; } vText = null; }
-        vNum = null; vDate = null; break;
-      case "multiselect": case "multi_select": case "checkboxes": case "tags":
+      case "number":
+      case "int":
+      case "integer":
+      case "float":
+      case "decimal":
+      case "currency":
+        vNum = Number.isFinite(Number(vNum)) ? Number(vNum) : null;
+        vText = null; vDate = null; vJson = null;
+        break;
+
+      case "date":
+      case "dob":
+      case "birthday":
+        vDate = vDate ? String(vDate).slice(0, 10) : null;
+        vText = null; vNum = null; vJson = null;
+        break;
+
+      case "json":
+      case "object":
+      case "array":
+        if (vJson == null && vText != null) {
+          try { vJson = JSON.parse(vText); } catch { vJson = vText; }
+          vText = null;
+        }
+        vNum = null; vDate = null;
+        break;
+
+      case "multiselect":
+      case "multi_select":
+      case "checkboxes":
+      case "tags":
         if (!Array.isArray(vJson)) {
           if (Array.isArray(vText)) vJson = vText;
-          else if (typeof vText === "string") vJson = vText.split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+          else if (typeof vText === "string")
+            vJson = vText.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
           else vJson = vJson ?? [];
         }
-        vText = null; vNum = null; vDate = null; break;
-      default:
-        if (vText != null) vText = String(vText); vNum = null; vDate = null; break;
+        vText = null; vNum = null; vDate = null;
+        break;
+
+      default: // text/select/email/phone/etc.
+        if (vText != null) vText = String(vText);
+        vNum = null; vDate = null; // keep vJson only if explicitly provided
+        break;
     }
 
     rowsToInsert.push({
@@ -421,7 +512,7 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
 
   if (!rowsToInsert.length) return { count: 0, resolved, skipped };
 
-  const fieldIds = [...new Set(rowsToInsert.map(r => r.field_id))];
+  const fieldIds = [...new Set(rowsToInsert.map((r) => r.field_id))];
   await client.query(
     `DELETE FROM public.custom_field_values
       WHERE tenant_id = ensure_tenant_scope()
@@ -458,7 +549,8 @@ router.post("/", upload.any(), async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   let companyId = getCompanyId(req) || DEFAULT_COMPANY_ID;
-  if (!isUuid(String(companyId || ""))) return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  if (!isUuid(String(companyId || "")))
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
 
   const lead = normalizeLeadBody(req);
   if (!lead.name) return res.status(400).json({ error: "name is required" });
@@ -477,30 +569,46 @@ router.post("/", upload.any(), async (req, res) => {
     const ph = ["$1", "$2", "$3"];
     let i = 3;
 
-    if (schema.has_email)      { cols.push("email");      vals.push(lead.email ?? null);         ph.push(`$${++i}`); }
-    if (schema.has_phone)      { cols.push("phone");      vals.push(lead.phone ?? null);         ph.push(`$${++i}`); }
-    if (schema.has_website)    { cols.push("website");    vals.push(lead.website ?? null);       ph.push(`$${++i}`); }
-    if (schema.has_source)     { cols.push("source");     vals.push(lead.source ?? null);        ph.push(`$${++i}`); }
-    if (schema.has_status)     { cols.push("status");     vals.push(lead.status ?? "new");       ph.push(`$${++i}`); }
-    if (schema.has_stage)      { cols.push("stage");      vals.push(lead.stage ?? null);         ph.push(`$${++i}`); }
-    if (schema.has_followup_at){ cols.push("followup_at");vals.push(lead.followup_at ?? null);   ph.push(`$${++i}`); }
-    if (schema.has_custom)     { cols.push("custom");     vals.push(JSON.stringify({}));         ph.push(`$${++i}`); }
+    if (schema.has_email)      { cols.push("email");      vals.push(lead.email ?? null);       ph.push(`$${++i}`); }
+    if (schema.has_phone)      { cols.push("phone");      vals.push(lead.phone ?? null);       ph.push(`$${++i}`); }
+    if (schema.has_website)    { cols.push("website");    vals.push(lead.website ?? null);     ph.push(`$${++i}`); }
+    if (schema.has_source)     { cols.push("source");     vals.push(lead.source ?? null);      ph.push(`$${++i}`); }
+    if (schema.has_status)     { cols.push("status");     vals.push(lead.status ?? "new");     ph.push(`$${++i}`); }
+    if (schema.has_stage)      { cols.push("stage");      vals.push(lead.stage ?? null);       ph.push(`$${++i}`); }
+    if (schema.has_followup_at){ cols.push("followup_at");vals.push(lead.followup_at ?? null); ph.push(`$${++i}`); }
+    if (schema.has_custom)     { cols.push("custom");     vals.push(JSON.stringify({}));       ph.push(`$${++i}`); }
 
     const projection = buildProjection(schema);
-    const insertSQL = `INSERT INTO public.leads (${cols.join(", ")}) VALUES (${ph.join(", ")}) RETURNING ${projection};`;
+    const insertSQL = `INSERT INTO public.leads (${cols.join(", ")})
+                       VALUES (${ph.join(", ")})
+                       RETURNING ${projection};`;
     const { rows } = await client.query(insertSQL, vals);
     const created = rows[0];
 
-    const cfvResult = await upsertCustomFieldValues(client, tenantId, RECORD_TYPE_FOR_LEADS, created.id, cfvItems);
+    const cfvResult = await upsertCustomFieldValues(
+      client,
+      tenantId,
+      RECORD_TYPE_FOR_LEADS,
+      created.id,
+      cfvItems
+    );
 
     await client.query("COMMIT");
 
     created.ai_next = Array.isArray(created.ai_next)
       ? created.ai_next
-      : (typeof created.ai_next === "string" && created.ai_next.startsWith("[")) ? JSON.parse(created.ai_next) : created.ai_next || [];
+      : (typeof created.ai_next === "string" && created.ai_next.startsWith("["))
+      ? JSON.parse(created.ai_next)
+      : created.ai_next || [];
 
     if (wantDebug) {
-      return res.status(201).json({ ...created, _cfv_inserted: cfvResult.count, _cfv_resolved: cfvResult.resolved, _cfv_skipped: cfvResult.skipped, _parsed_cfv: cfvItems });
+      return res.status(201).json({
+        ...created,
+        _cfv_inserted: cfvResult.count,
+        _cfv_resolved: cfvResult.resolved,
+        _cfv_skipped: cfvResult.skipped,
+        _parsed_cfv: cfvItems,
+      });
     }
     return res.status(201).json({ ...created, _cfv_inserted: cfvResult.count });
   } catch (err) {
@@ -545,8 +653,11 @@ router.get("/:id", async (req, res) => {
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
 
     const row = r.rows[0];
-    row.ai_next = Array.isArray(row.ai_next) ? row.ai_next :
-                  (typeof row.ai_next === "string" && row.ai_next.startsWith("[")) ? JSON.parse(row.ai_next) : row.ai_next || [];
+    row.ai_next = Array.isArray(row.ai_next)
+      ? row.ai_next
+      : (typeof row.ai_next === "string" && row.ai_next.startsWith("["))
+      ? JSON.parse(row.ai_next)
+      : row.ai_next || [];
     return res.json(row);
   } catch (err) {
     console.error("GET /leads/:id error:", err);
