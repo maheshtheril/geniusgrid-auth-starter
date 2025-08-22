@@ -35,6 +35,7 @@ import leadsDupRoutes from "./routes/leads.duplicates.routes.js";
 import leadsAssignRoutes from "./routes/leads.assign.routes.js";
 import leadsMergeRoutes from "./routes/leads.merge.routes.js";
 import calendarLeadsRouter from "./routes/calendar.leads.routes.js";
+
 /* ✅ AI Prospect + Imports (store namespace) */
 import aiProspectRoutes from "./store/ai.prospect.routes.js";
 import leadsImportsRoutes from "./store/leads.imports.routes.js";
@@ -60,7 +61,7 @@ const PORT = Number(process.env.PORT || (isProd ? 8080 : 3000));
 // APP_URL comes from env; if not set, build from PORT
 const APP_URL = process.env.APP_URL || `http://localhost:${PORT}`;
 
-/* ---------- CORS ---------- */
+/* ---------- CORS allowlist ---------- */
 const ORIGINS = [
   process.env.FRONTEND_ORIGIN,
   "http://localhost:5173",
@@ -69,6 +70,7 @@ const ORIGINS = [
 ]
   .filter(Boolean)
   .map((s) => s.trim());
+const ALLOW = new Set(ORIGINS);
 
 /* ---------- Logger ---------- */
 const logger = pino({
@@ -96,33 +98,37 @@ app.use(compression());
 app.use(express.json({ limit: "1mb" }));
 app.use(cookieParser());
 
-/* ---------- CORS (before routes) ---------- */
-app.use(
-  cors({
-    origin: ORIGINS,
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: [
-      "Content-Type",
-      "X-Requested-With",
-      "X-CSRF-Token",
-      "Authorization",
-      "X-Company-ID",
-      "X-Company-Id",
-      "x-company-id",
-      // ✅ allow tenant header variants
-      "X-Tenant-ID",
-      "X-Tenant-Id",
-      "x-tenant-id",
-    ],
-    exposedHeaders: ["X-Request-Id", "X-Version"],
-  })
-);
+/* ---------- CORS (must be before routes) ---------- */
+const corsOpts = {
+  origin(origin, cb) {
+    // allow server-to-server, curl, same-origin (no Origin header)
+    if (!origin) return cb(null, true);
+    return cb(null, ALLOW.has(origin));
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: [
+    "Content-Type",
+    "X-Requested-With",
+    "X-CSRF-Token",
+    "Authorization",
+    "X-Company-ID",
+    "X-Company-Id",
+    "x-company-id",
+    // ✅ allow tenant header variants
+    "X-Tenant-ID",
+    "X-Tenant-Id",
+    "x-tenant-id",
+  ],
+  exposedHeaders: ["X-Request-Id", "X-Version"],
+  maxAge: 86400, // cache preflight for a day
+};
+app.use(cors(corsOpts));
+app.options("*", cors(corsOpts)); // preflight responder
 app.use((req, res, next) => {
-  res.header("Vary", "Origin");
+  res.header("Vary", "Origin"); // play nice with caches/CDNs
   next();
 });
-app.options("*", cors({ origin: ORIGINS, credentials: true }));
 
 /* ---------- Version headers ---------- */
 app.use((req, res, next) => {
@@ -131,7 +137,10 @@ app.use((req, res, next) => {
   next();
 });
 
+/* ---------- Mount calendar routes early (public) ---------- */
+// Keep these public so the FE can call with headers or query params.
 app.use("/api/calendar", calendarLeadsRouter);
+
 /* ---------- Early utility routes ---------- */
 app.use("/api", leadsCheckMobile);
 
@@ -145,6 +154,7 @@ app.head("/", (_req, res) => res.sendStatus(200));
 app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
 
 /* ---------- Session ---------- */
+// For cross-site requests (FE on a different domain), cookies must be SameSite=None; Secure
 app.use(
   session({
     store: new PgStore({ pool, createTableIfMissing: true }),
@@ -154,7 +164,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: isProd,
+      secure: isProd,          // required for SameSite=None
       sameSite: isProd ? "none" : "lax",
       maxAge: Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60 * 1000,
     },
@@ -244,7 +254,7 @@ app.use((err, req, res, _next) => {
 /* ---------- Start & Shutdown ---------- */
 const server = app.listen(PORT, "0.0.0.0", () => {
   logger.info(
-    { port: PORT, deploy_env: isProd ? "prod" : "dev", url: APP_URL },
+    { port: PORT, deploy_env: isProd ? "prod" : "dev", url: APP_URL, cors_allow: [...ALLOW] },
     "API listening"
   );
 });
