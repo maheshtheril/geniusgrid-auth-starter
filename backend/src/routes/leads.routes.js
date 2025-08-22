@@ -78,7 +78,8 @@ const SCHEMA_TTL_MS = 5 * 60 * 1000;
 
 async function getLeadsSchema(client) {
   const now = Date.now();
-  if (leadsSchemaCache && now - leadsSchemaFetchedAt < SCHEMA_TTL_MS) return leadsSchemaCache;
+  if (leadsSchemaCache && now - leadsSchemaFetchedAt < SCHEMA_TTL_MS)
+    return leadsSchemaCache;
 
   const { rows } = await client.query(
     `SELECT column_name
@@ -126,34 +127,52 @@ function buildProjection(schema) {
   const sel = [];
   sel.push("id", "tenant_id", "company_id", "owner_id", "name");
 
-  if (schema.has_company && schema.has_company_name) sel.push("COALESCE(company, company_name) AS company_name");
+  if (schema.has_company && schema.has_company_name)
+    sel.push("COALESCE(company, company_name) AS company_name");
   else if (schema.has_company) sel.push("company AS company_name");
   else if (schema.has_company_name) sel.push("company_name");
   else sel.push("NULL::text AS company_name");
 
-  if (schema.has_email) sel.push("email"); else sel.push("NULL::text AS email");
-  if (schema.has_phone) sel.push("phone"); else sel.push("NULL::text AS phone");
-  if (schema.has_website) sel.push("website"); else sel.push("NULL::text AS website");
-  if (schema.has_source) sel.push("source"); else sel.push("NULL::text AS source");
-  if (schema.has_status) sel.push("status"); else sel.push("NULL::text AS status");
-  if (schema.has_stage) sel.push("stage"); else sel.push("NULL::text AS stage");
+  if (schema.has_email) sel.push("email");
+  else sel.push("NULL::text AS email");
+  if (schema.has_phone) sel.push("phone");
+  else sel.push("NULL::text AS phone");
+  if (schema.has_website) sel.push("website");
+  else sel.push("NULL::text AS website");
+  if (schema.has_source) sel.push("source");
+  else sel.push("NULL::text AS source");
+  if (schema.has_status) sel.push("status");
+  else sel.push("NULL::text AS status");
+  if (schema.has_stage) sel.push("stage");
+  else sel.push("NULL::text AS stage");
 
-  if (schema.has_owner && schema.has_owner_name) sel.push("COALESCE(owner, owner_name) AS owner_name");
+  if (schema.has_owner && schema.has_owner_name)
+    sel.push("COALESCE(owner, owner_name) AS owner_name");
   else if (schema.has_owner) sel.push("owner AS owner_name");
   else if (schema.has_owner_name) sel.push("owner_name");
   else sel.push("NULL::text AS owner_name");
 
-  if (schema.has_score) sel.push("score"); else sel.push("NULL::int AS score");
-  if (schema.has_priority) sel.push("priority"); else sel.push("NULL::int AS priority");
-  if (schema.has_tags_text) sel.push("tags_text"); else sel.push("NULL::text AS tags_text");
-  if (schema.has_followup_at) sel.push("followup_at"); else sel.push("NULL::timestamptz AS followup_at");
-  if (schema.has_created_at) sel.push("created_at"); else sel.push("NOW() AS created_at");
-  if (schema.has_updated_at) sel.push("updated_at"); else sel.push("NOW() AS updated_at");
+  if (schema.has_score) sel.push("score");
+  else sel.push("NULL::int AS score");
+  if (schema.has_priority) sel.push("priority");
+  else sel.push("NULL::int AS priority");
+  if (schema.has_tags_text) sel.push("tags_text");
+  else sel.push("NULL::text AS tags_text");
+  if (schema.has_followup_at) sel.push("followup_at");
+  else sel.push("NULL::timestamptz AS followup_at");
+  if (schema.has_created_at) sel.push("created_at");
+  else sel.push("NOW() AS created_at");
+  if (schema.has_updated_at) sel.push("updated_at");
+  else sel.push("NOW() AS updated_at");
 
-  if (schema.has_ai_summary) sel.push("ai_summary"); else sel.push("NULL::text AS ai_summary");
-  if (schema.has_ai_next) sel.push("ai_next"); else sel.push("NULL::text AS ai_next");
-  if (schema.has_ai_score) sel.push("ai_score"); else sel.push("NULL::int AS ai_score");
-  if (schema.has_ai_next_action) sel.push("ai_next_action"); else sel.push("NULL::text AS ai_next_action");
+  if (schema.has_ai_summary) sel.push("ai_summary");
+  else sel.push("NULL::text AS ai_summary");
+  if (schema.has_ai_next) sel.push("ai_next");
+  else sel.push("NULL::text AS ai_next");
+  if (schema.has_ai_score) sel.push("ai_score");
+  else sel.push("NULL::int AS ai_score");
+  if (schema.has_ai_next_action) sel.push("ai_next_action");
+  else sel.push("NULL::text AS ai_next_action");
 
   return sel.join(",\n      ");
 }
@@ -184,10 +203,14 @@ router.get("/", async (req, res) => {
   if (!tenantId) return res.status(401).json({ error: "No tenant" });
 
   const companyId = getCompanyId(req);
-  if (companyId && !isUuid(companyId)) return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  if (companyId && !isUuid(companyId))
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
 
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
-  const size = Math.min(100, Math.max(1, parseInt(req.query.pageSize ?? req.query.size, 10) || 25));
+  const size = Math.min(
+    100,
+    Math.max(1, parseInt(req.query.pageSize ?? req.query.size, 10) || 25)
+  );
   const q = (req.query.q || "").trim();
   const status = (req.query.status || "").trim();
   const stage = (req.query.stage || "").trim();
@@ -202,7 +225,10 @@ router.get("/", async (req, res) => {
     let where = `WHERE tenant_id = $1`;
     let i = params.length;
 
-    if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++i}`; }
+    if (companyId) {
+      params.push(companyId);
+      where += ` AND company_id::text = $${++i}`;
+    }
 
     if (q) {
       const like = `%${q}%`;
@@ -212,31 +238,45 @@ router.get("/", async (req, res) => {
       if (schema.has_email) searchCols.push("email");
       if (schema.has_phone) searchCols.push("phone");
       const or = [];
-      for (const col of searchCols) { params.push(like); or.push(`${col} ILIKE $${++i}`); }
+      for (const col of searchCols) {
+        params.push(like);
+        or.push(`${col} ILIKE $${++i}`);
+      }
       if (or.length) where += ` AND (${or.join(" OR ")})`;
     }
 
-    if (status)   { params.push(status);   where += ` AND status = $${++i}`; }
-    if (stage)    { params.push(stage);    where += ` AND stage  = $${++i}`; }
-    if (owner_id) { params.push(owner_id); where += ` AND owner_id::text = $${++i}`; }
+    if (status) {
+      params.push(status);
+      where += ` AND status = $${++i}`;
+    }
+    if (stage) {
+      params.push(stage);
+      where += ` AND stage  = $${++i}`;
+    }
+    if (owner_id) {
+      params.push(owner_id);
+      where += ` AND owner_id::text = $${++i}`;
+    }
 
     const offset = (page - 1) * size;
     const projection = buildProjection(schema);
 
-    const listSQL  = `SELECT ${projection} FROM public.leads ${where}
+    const listSQL = `SELECT ${projection} FROM public.leads ${where}
                       ORDER BY ${schema.has_updated_at ? "updated_at" : "created_at"} DESC
                       LIMIT ${size} OFFSET ${offset};`;
     const countSQL = `SELECT COUNT(*)::int AS total FROM public.leads ${where};`;
 
-    const [list, count] = await Promise.all([client.query(listSQL, params), client.query(countSQL, params)]);
+    const [list, count] = await Promise.all([
+      client.query(listSQL, params),
+      client.query(countSQL, params),
+    ]);
     const items = (list.rows || []).map((r) => ({
       ...r,
-      ai_next:
-        Array.isArray(r.ai_next)
-          ? r.ai_next
-          : (typeof r.ai_next === "string" && r.ai_next.startsWith("["))
-          ? JSON.parse(r.ai_next)
-          : r.ai_next || [],
+      ai_next: Array.isArray(r.ai_next)
+        ? r.ai_next
+        : typeof r.ai_next === "string" && r.ai_next.startsWith("[")
+        ? JSON.parse(r.ai_next)
+        : r.ai_next || [],
     }));
     res.json({ items, total: count.rows?.[0]?.total ?? 0, page, size });
   } catch (err) {
@@ -252,18 +292,34 @@ async function loadStageList(tenantId, companyId) {
   const params = [tenantId];
   let where = `WHERE tenant_id = $1 AND stage IS NOT NULL AND stage <> ''`;
   let j = params.length;
-  if (companyId) { params.push(companyId); where += ` AND company_id::text = $${++j}`; }
-  const { rows } = await pool.query(`SELECT DISTINCT stage FROM public.leads ${where} ORDER BY stage ASC`, params);
+  if (companyId) {
+    params.push(companyId);
+    where += ` AND company_id::text = $${++j}`;
+  }
+  const { rows } = await pool.query(
+    `SELECT DISTINCT stage FROM public.leads ${where} ORDER BY stage ASC`,
+    params
+  );
   const stages = rows.map((r) => r.stage).filter(Boolean);
   return stages.length ? stages : ["new", "qualified", "proposal", "won", "lost"];
 }
 router.get("/pipelines", async (req, res) => {
-  const tenantId = getTenantId(req); if (!tenantId) return res.status(401).json({ error: "No tenant" });
-  try { res.json(await loadStageList(tenantId, getCompanyId(req))); } catch { res.json(["new","qualified","proposal","won","lost"]); }
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  try {
+    res.json(await loadStageList(tenantId, getCompanyId(req)));
+  } catch {
+    res.json(["new", "qualified", "proposal", "won", "lost"]);
+  }
 });
 router.get("/stages", async (req, res) => {
-  const tenantId = getTenantId(req); if (!tenantId) return res.status(401).json({ error: "No tenant" });
-  try { res.json(await loadStageList(tenantId, getCompanyId(req))); } catch { res.json(["new","qualified","proposal","won","lost"]); }
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  try {
+    res.json(await loadStageList(tenantId, getCompanyId(req)));
+  } catch {
+    res.json(["new", "qualified", "proposal", "won", "lost"]);
+  }
 });
 
 /* ---------------- check-mobile ---------------- */
@@ -288,7 +344,11 @@ router.get("/check-mobile", async (req, res) => {
        LIMIT 1`,
       [pn]
     );
-    return res.json({ exists: rows.length > 0, lead: rows[0] || null, phone_norm: pn });
+    return res.json({
+      exists: rows.length > 0,
+      lead: rows[0] || null,
+      phone_norm: pn,
+    });
   } catch (err) {
     console.error("GET /leads/check-mobile error:", err);
     return res.status(500).json({ exists: false, error: "server_error" });
@@ -308,14 +368,23 @@ function parseCfvItems(body = {}, files = []) {
       field_id: raw.field_id != null ? String(raw.field_id) : null,
       code: raw.code != null ? String(raw.code) : null,
       value_text: raw.value_text !== undefined ? String(raw.value_text) : null,
-      value_number: raw.value_number !== undefined && raw.value_number !== "" ? Number(raw.value_number) : null,
+      value_number:
+        raw.value_number !== undefined && raw.value_number !== ""
+          ? Number(raw.value_number)
+          : null,
       value_date: raw.value_date ? String(raw.value_date).slice(0, 10) : null,
       value_json: null,
       file: raw.file || null,
     };
     if (raw.value_json !== undefined && raw.value_json !== null && raw.value_json !== "") {
-      try { item.value_json = typeof raw.value_json === "string" ? JSON.parse(raw.value_json) : raw.value_json; }
-      catch { item.value_json = String(raw.value_json); }
+      try {
+        item.value_json =
+          typeof raw.value_json === "string"
+            ? JSON.parse(raw.value_json)
+            : raw.value_json;
+      } catch {
+        item.value_json = String(raw.value_json);
+      }
     }
     if (!item.field_id && !item.code) return;
     if (item.field_id && !isU(item.field_id)) item.field_id = null; // ignore invalid uuid
@@ -334,7 +403,11 @@ function parseCfvItems(body = {}, files = []) {
           code: v.code ?? (!isU(k) ? k : undefined),
         });
       } else {
-        pushItem({ field_id: isU(k) ? k : undefined, code: !isU(k) ? k : undefined, value_text: v });
+        pushItem({
+          field_id: isU(k) ? k : undefined,
+          code: !isU(k) ? k : undefined,
+          value_text: v,
+        });
       }
     }
   } else if (typeof j === "string" && j.trim()) {
@@ -349,10 +422,17 @@ function parseCfvItems(body = {}, files = []) {
               field_id: v.field_id ?? (isU(k) ? k : undefined),
               code: v.code ?? (!isU(k) ? k : undefined),
             });
-          else pushItem({ field_id: isU(k) ? k : undefined, code: !isU(k) ? k : undefined, value_text: v });
+          else
+            pushItem({
+              field_id: isU(k) ? k : undefined,
+              code: !isU(k) ? k : undefined,
+              value_text: v,
+            });
         }
       }
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
 
   if (out.length) return out;
@@ -361,12 +441,18 @@ function parseCfvItems(body = {}, files = []) {
   const byIdx = {};
   const re = /^cfv\[(\d+)\]\[(\w+)\]$/;
   for (const [k, v] of Object.entries(body)) {
-    const m = re.exec(k); if (!m) continue;
-    const idx = +m[1], key = m[2]; (byIdx[idx] ||= {})[key] = v;
+    const m = re.exec(k);
+    if (!m) continue;
+    const idx = +m[1],
+      key = m[2];
+    (byIdx[idx] ||= {})[key] = v;
   }
   for (const f of files) {
-    const m = re.exec(f.fieldname); if (!m) continue;
-    const idx = +m[1], key = m[2]; if (key === "file") (byIdx[idx] ||= {}).file = f;
+    const m = re.exec(f.fieldname);
+    if (!m) continue;
+    const idx = +m[1],
+      key = m[2];
+    if (key === "file") (byIdx[idx] ||= {}).file = f;
   }
   Object.values(byIdx).forEach(pushItem);
   return out;
@@ -392,38 +478,42 @@ async function columnExists(client, schema, table, col) {
 async function loadFieldMetaMap(client, byFieldId, byCode) {
   const ids = [...new Set((byFieldId || []).filter(Boolean).map(String))].filter(isUuid);
   const codesLC = [
-    ...new Set((byCode || []).map((c) => String(c).trim()).filter(Boolean).map((s) => s.toLowerCase())),
+    ...new Set(
+      (byCode || [])
+        .map((c) => String(c).trim())
+        .filter(Boolean)
+        .map((s) => s.toLowerCase())
+    ),
   ];
 
   const map = new Map();
   if (!ids.length && !codesLC.length) return map;
 
   // Always try canonical table first
-  const sources = [{ schema: "public", table: "custom_fields", filterRecordType: false }];
+  const sources = [{ schema: "public", table: "custom_fields", hasRT: true }];
 
   // Try common admin tables if they exist
   if (await tableExists(client, "public.crm_custom_fields")) {
     const hasRT = await columnExists(client, "public", "crm_custom_fields", "record_type");
-    sources.push({ schema: "public", table: "crm_custom_fields", filterRecordType: hasRT });
+    sources.push({ schema: "public", table: "crm_custom_fields", hasRT });
   }
   if (await tableExists(client, "public.lead_custom_fields")) {
     const hasRT = await columnExists(client, "public", "lead_custom_fields", "record_type");
-    sources.push({ schema: "public", table: "lead_custom_fields", filterRecordType: hasRT });
+    sources.push({ schema: "public", table: "lead_custom_fields", hasRT });
   }
 
-  for (const src of sources) {
-    const rtClause = src.filterRecordType ? `AND record_type = 'lead'` : ``;
-
-    if (ids.length) {
-      const byIdSQL = `
-        SELECT id::text AS id, code::text AS code, form_version_id, LOWER(COALESCE(field_type,'')) AS field_type
+  // By ID: DO NOT filter by record_type (IDs are unique per tenant)
+  if (ids.length) {
+    for (const src of sources) {
+      const sql = `
+        SELECT id::text AS id, code::text AS code, form_version_id,
+               LOWER(COALESCE(field_type,'')) AS field_type
           FROM ${src.schema}.${src.table}
          WHERE tenant_id = ensure_tenant_scope()
-           ${rtClause}
            AND id = ANY($1::uuid[])
       `;
       try {
-        const r = await client.query(byIdSQL, [ids]);
+        const r = await client.query(sql, [ids]);
         for (const row of r.rows) {
           if (!map.has(row.id)) {
             map.set(row.id, {
@@ -438,17 +528,22 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
         if (e.code !== "42P01") throw e; // ignore missing optional tables
       }
     }
+  }
 
-    if (codesLC.length) {
-      const byCodeSQL = `
-        SELECT id::text AS id, code::text AS code, form_version_id, LOWER(COALESCE(field_type,'')) AS field_type
+  // By code: accept both 'lead' and 'leads' record_type when a table has it
+  if (codesLC.length) {
+    for (const src of sources) {
+      const rtClause = src.hasRT ? `AND record_type IN ('lead','leads')` : ``;
+      const sql = `
+        SELECT id::text AS id, code::text AS code, form_version_id,
+               LOWER(COALESCE(field_type,'')) AS field_type
           FROM ${src.schema}.${src.table}
          WHERE tenant_id = ensure_tenant_scope()
            ${rtClause}
            AND LOWER(code) = ANY($1::text[])
       `;
       try {
-        const r = await client.query(byCodeSQL, [codesLC]);
+        const r = await client.query(sql, [codesLC]);
         for (const row of r.rows) {
           if (!map.has(row.id)) {
             map.set(row.id, {
@@ -462,6 +557,26 @@ async function loadFieldMetaMap(client, byFieldId, byCode) {
       } catch (e) {
         if (e.code !== "42P01") throw e;
       }
+    }
+  }
+
+  // Fallback: if some matched rows are missing form_version_id, borrow one
+  if (map.size) {
+    const needFV = [...map.values()].filter((m) => !m.form_version_id);
+    if (
+      needFV.length &&
+      (await tableExists(client, "public.custom_fields"))
+    ) {
+      const { rows } = await client.query(
+        `SELECT DISTINCT form_version_id
+           FROM public.custom_fields
+          WHERE tenant_id = ensure_tenant_scope()
+            AND form_version_id IS NOT NULL
+          ORDER BY form_version_id ASC
+          LIMIT 1`
+      );
+      const fv = rows?.[0]?.form_version_id || null;
+      if (fv) needFV.forEach((m) => (m.form_version_id = m.form_version_id || fv));
     }
   }
 
@@ -482,7 +597,8 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
   for (const it of items) {
     let meta = null;
 
-    if (it.field_id && metaMap.has(String(it.field_id))) meta = metaMap.get(String(it.field_id));
+    if (it.field_id && metaMap.has(String(it.field_id)))
+      meta = metaMap.get(String(it.field_id));
     else if (it.code) {
       const found = [...metaMap.values()].find(
         (m) => (m.code || "").toLowerCase() === String(it.code).toLowerCase()
@@ -490,11 +606,17 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
       if (found) meta = found;
     }
 
-    if (!meta) { skipped.push({ ...it, reason: "unknown_field" }); continue; }
-    if (!meta.form_version_id) { skipped.push({ ...it, reason: "no_form_version" }); continue; }
+    if (!meta) {
+      skipped.push({ ...it, reason: "unknown_field" });
+      continue;
+    }
+    if (!meta.form_version_id) {
+      skipped.push({ ...it, reason: "no_form_version" });
+      continue;
+    }
 
     let vText = it.value_text ?? null;
-    let vNum  = it.value_number ?? null;
+    let vNum = it.value_number ?? null;
     let vDate = it.value_date ?? null;
     let vJson = it.value_json ?? null;
 
@@ -506,24 +628,33 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
       case "decimal":
       case "currency":
         vNum = Number.isFinite(Number(vNum)) ? Number(vNum) : null;
-        vText = null; vDate = null; vJson = null;
+        vText = null;
+        vDate = null;
+        vJson = null;
         break;
 
       case "date":
       case "dob":
       case "birthday":
         vDate = vDate ? String(vDate).slice(0, 10) : null;
-        vText = null; vNum = null; vJson = null;
+        vText = null;
+        vNum = null;
+        vJson = null;
         break;
 
       case "json":
       case "object":
       case "array":
         if (vJson == null && vText != null) {
-          try { vJson = JSON.parse(vText); } catch { vJson = vText; }
+          try {
+            vJson = JSON.parse(vText);
+          } catch {
+            vJson = vText;
+          }
           vText = null;
         }
-        vNum = null; vDate = null;
+        vNum = null;
+        vDate = null;
         break;
 
       case "multiselect":
@@ -533,15 +664,21 @@ async function upsertCustomFieldValues(client, tenantId, recordType, recordId, i
         if (!Array.isArray(vJson)) {
           if (Array.isArray(vText)) vJson = vText;
           else if (typeof vText === "string")
-            vJson = vText.split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+            vJson = vText
+              .split(/[,;\n]/)
+              .map((s) => s.trim())
+              .filter(Boolean);
           else vJson = vJson ?? [];
         }
-        vText = null; vNum = null; vDate = null;
+        vText = null;
+        vNum = null;
+        vDate = null;
         break;
 
       default: // text/select/email/phone/etc.
         if (vText != null) vText = String(vText);
-        vNum = null; vDate = null; // keep vJson only if explicitly provided
+        vNum = null;
+        vDate = null; // keep vJson only if explicitly provided
         break;
     }
 
@@ -606,7 +743,8 @@ router.post("/", upload.any(), async (req, res) => {
   if (!lead.name) return res.status(400).json({ error: "name is required" });
 
   const cfvItems = parseCfvItems(req.body, req.files || []);
-  const wantDebug = req.query.debug_cfv == "1" || req.get("x-debug-cfv") === "1";
+  const wantDebug =
+    req.query.debug_cfv == "1" || req.get("x-debug-cfv") === "1";
 
   const client = await pool.connect();
   try {
@@ -619,14 +757,46 @@ router.post("/", upload.any(), async (req, res) => {
     const ph = ["$1", "$2", "$3"];
     let i = 3;
 
-    if (schema.has_email)      { cols.push("email");      vals.push(lead.email ?? null);       ph.push(`$${++i}`); }
-    if (schema.has_phone)      { cols.push("phone");      vals.push(lead.phone ?? null);       ph.push(`$${++i}`); }
-    if (schema.has_website)    { cols.push("website");    vals.push(lead.website ?? null);     ph.push(`$${++i}`); }
-    if (schema.has_source)     { cols.push("source");     vals.push(lead.source ?? null);      ph.push(`$${++i}`); }
-    if (schema.has_status)     { cols.push("status");     vals.push(lead.status ?? "new");     ph.push(`$${++i}`); }
-    if (schema.has_stage)      { cols.push("stage");      vals.push(lead.stage ?? null);       ph.push(`$${++i}`); }
-    if (schema.has_followup_at){ cols.push("followup_at");vals.push(lead.followup_at ?? null); ph.push(`$${++i}`); }
-    if (schema.has_custom)     { cols.push("custom");     vals.push(JSON.stringify({}));       ph.push(`$${++i}`); }
+    if (schema.has_email) {
+      cols.push("email");
+      vals.push(lead.email ?? null);
+      ph.push(`$${++i}`);
+    }
+    if (schema.has_phone) {
+      cols.push("phone");
+      vals.push(lead.phone ?? null);
+      ph.push(`$${++i}`);
+    }
+    if (schema.has_website) {
+      cols.push("website");
+      vals.push(lead.website ?? null);
+      ph.push(`$${++i}`);
+    }
+    if (schema.has_source) {
+      cols.push("source");
+      vals.push(lead.source ?? null);
+      ph.push(`$${++i}`);
+    }
+    if (schema.has_status) {
+      cols.push("status");
+      vals.push(lead.status ?? "new");
+      ph.push(`$${++i}`);
+    }
+    if (schema.has_stage) {
+      cols.push("stage");
+      vals.push(lead.stage ?? null);
+      ph.push(`$${++i}`);
+    }
+    if (schema.has_followup_at) {
+      cols.push("followup_at");
+      vals.push(lead.followup_at ?? null);
+      ph.push(`$${++i}`);
+    }
+    if (schema.has_custom) {
+      cols.push("custom");
+      vals.push(JSON.stringify({}));
+      ph.push(`$${++i}`);
+    }
 
     const projection = buildProjection(schema);
     const insertSQL = `INSERT INTO public.leads (${cols.join(", ")})
@@ -647,7 +817,7 @@ router.post("/", upload.any(), async (req, res) => {
 
     created.ai_next = Array.isArray(created.ai_next)
       ? created.ai_next
-      : (typeof created.ai_next === "string" && created.ai_next.startsWith("["))
+      : typeof created.ai_next === "string" && created.ai_next.startsWith("[")
       ? JSON.parse(created.ai_next)
       : created.ai_next || [];
 
@@ -662,16 +832,38 @@ router.post("/", upload.any(), async (req, res) => {
     }
     return res.status(201).json({ ...created, _cfv_inserted: cfvResult.count });
   } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
+    try {
+      await client.query("ROLLBACK");
+    } catch {}
     console.error("POST /leads error:", err);
     switch (err?.code) {
-      case "23514": return res.status(400).json({ error: "Invalid phone number (too short after normalization)" });
-      case "23505": return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
-      case "22P02": return res.status(400).json({ error: "Invalid UUID in x-company-id or cfv.field_id" });
-      case "23503": return res.status(400).json({ error: "Invalid reference: company_id or custom_field_id not found for tenant" });
-      case "23502": return res.status(400).json({ error: `Missing required column: ${err.column}` });
-      case "42703": return res.status(500).json({ error: `Column not found in current schema (check logs for position)` });
-      default:      return res.status(500).json({ error: "Failed to create lead" });
+      case "23514":
+        return res
+          .status(400)
+          .json({ error: "Invalid phone number (too short after normalization)" });
+      case "23505":
+        return res
+          .status(409)
+          .json({ error: "Duplicate email or phone for this tenant" });
+      case "22P02":
+        return res
+          .status(400)
+          .json({ error: "Invalid UUID in x-company-id or cfv.field_id" });
+      case "23503":
+        return res.status(400).json({
+          error:
+            "Invalid reference: company_id or custom_field_id not found for tenant",
+        });
+      case "23502":
+        return res
+          .status(400)
+          .json({ error: `Missing required column: ${err.column}` });
+      case "42703":
+        return res.status(500).json({
+          error: `Column not found in current schema (check logs for position)`,
+        });
+      default:
+        return res.status(500).json({ error: "Failed to create lead" });
     }
   } finally {
     client.release();
@@ -680,9 +872,14 @@ router.post("/", upload.any(), async (req, res) => {
 
 /* ---------------- get one ---------------- */
 router.get("/:id", async (req, res) => {
-  const tenantId = getTenantId(req); if (!tenantId) return res.status(401).json({ error: "No tenant" });
-  const companyId = getCompanyId(req); if (companyId && !isUuid(companyId)) return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
-  const { id } = req.params; if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  const companyId = getCompanyId(req);
+  if (companyId && !isUuid(companyId))
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  const { id } = req.params;
+  if (!isUuid(id))
+    return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
 
   const client = await pool.connect();
   try {
@@ -692,7 +889,10 @@ router.get("/:id", async (req, res) => {
 
     const params = [id, tenantId];
     let extra = "";
-    if (companyId) { params.push(companyId); extra = ` AND company_id::text = $3`; }
+    if (companyId) {
+      params.push(companyId);
+      extra = ` AND company_id::text = $3`;
+    }
 
     const sql = `
       SELECT ${projection}
@@ -705,7 +905,7 @@ router.get("/:id", async (req, res) => {
     const row = r.rows[0];
     row.ai_next = Array.isArray(row.ai_next)
       ? row.ai_next
-      : (typeof row.ai_next === "string" && row.ai_next.startsWith("["))
+      : typeof row.ai_next === "string" && row.ai_next.startsWith("[")
       ? JSON.parse(row.ai_next)
       : row.ai_next || [];
     return res.json(row);
@@ -719,18 +919,35 @@ router.get("/:id", async (req, res) => {
 
 /* ---------------- patch ---------------- */
 router.patch("/:id", async (req, res) => {
-  const tenantId = getTenantId(req); if (!tenantId) return res.status(401).json({ error: "No tenant" });
-  const companyId = getCompanyId(req); if (companyId && !isUuid(companyId)) return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
+  const tenantId = getTenantId(req);
+  if (!tenantId) return res.status(401).json({ error: "No tenant" });
+  const companyId = getCompanyId(req);
+  if (companyId && !isUuid(companyId))
+    return res.status(400).json({ error: "Invalid x-company-id (must be UUID)" });
 
-  const { id } = req.params; if (!isUuid(id)) return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
+  const { id } = req.params;
+  if (!isUuid(id))
+    return res.status(400).json({ error: "Invalid lead id (must be UUID)" });
   const patch = req.body || {};
 
   const allow = {
-    name: "name", email: "email", phone: "phone", source: "source",
-    followup_at: "followup_at", company_name: "company", owner_name: "owner",
-    website: "website", priority: "priority", tags_text: "tags_text",
-    status: "status", stage: "stage", owner_id: "owner_id", score: "score",
-    ai_summary: "ai_summary", ai_next: "ai_next", ai_score: "ai_score",
+    name: "name",
+    email: "email",
+    phone: "phone",
+    source: "source",
+    followup_at: "followup_at",
+    company_name: "company",
+    owner_name: "owner",
+    website: "website",
+    priority: "priority",
+    tags_text: "tags_text",
+    status: "status",
+    stage: "stage",
+    owner_id: "owner_id",
+    score: "score",
+    ai_summary: "ai_summary",
+    ai_next: "ai_next",
+    ai_score: "ai_score",
   };
 
   const client = await pool.connect();
@@ -743,34 +960,54 @@ router.patch("/:id", async (req, res) => {
     let i = 0;
 
     const has = (col) =>
-      (col === "company"     ? (schema.has_company || schema.has_company_name)
-      : col === "owner"      ? (schema.has_owner   || schema.has_owner_name)
-      : col === "website"    ?  schema.has_website
-      : col === "priority"   ?  schema.has_priority
-      : col === "tags_text"  ?  schema.has_tags_text
-      : col === "status"     ?  schema.has_status
-      : col === "stage"      ?  schema.has_stage
-      : col === "owner_id"   ?  schema.has_owner_id
-      : col === "score"      ?  schema.has_score
-      : col === "ai_summary" ?  schema.has_ai_summary
-      : col === "ai_next"    ?  schema.has_ai_next
-      : col === "ai_score"   ?  schema.has_ai_score
-      : col === "email"      ?  schema.has_email
-      : col === "phone"      ?  schema.has_phone
-      : col === "followup_at"?  schema.has_followup_at
-      : col === "name"       ?  schema.has_name
-      : col === "source"     ?  schema.has_source
-      : false);
+      col === "company"
+        ? schema.has_company || schema.has_company_name
+        : col === "owner"
+        ? schema.has_owner || schema.has_owner_name
+        : col === "website"
+        ? schema.has_website
+        : col === "priority"
+        ? schema.has_priority
+        : col === "tags_text"
+        ? schema.has_tags_text
+        : col === "status"
+        ? schema.has_status
+        : col === "stage"
+        ? schema.has_stage
+        : col === "owner_id"
+        ? schema.has_owner_id
+        : col === "score"
+        ? schema.has_score
+        : col === "ai_summary"
+        ? schema.has_ai_summary
+        : col === "ai_next"
+        ? schema.has_ai_next
+        : col === "ai_score"
+        ? schema.has_ai_score
+        : col === "email"
+        ? schema.has_email
+        : col === "phone"
+        ? schema.has_phone
+        : col === "followup_at"
+        ? schema.has_followup_at
+        : col === "name"
+        ? schema.has_name
+        : col === "source"
+        ? schema.has_source
+        : false;
 
     for (const [uiKey, col] of Object.entries(allow)) {
       if (patch[uiKey] === undefined || !has(col)) continue;
       let v = patch[uiKey];
       if (col === "followup_at") v = v ? new Date(v) : null;
       else if (col === "ai_next" && Array.isArray(v)) v = JSON.stringify(v);
-      else if (col === "priority") v = v === "" || v === null ? null : Number(v);
+      else if (col === "priority")
+        v = v === "" || v === null ? null : Number(v);
 
-      if (uiKey === "company_name" && !schema.has_company && schema.has_company_name) fields.push(`company_name = $${++i}`);
-      else if (uiKey === "owner_name" && !schema.has_owner && schema.has_owner_name) fields.push(`owner_name = $${++i}`);
+      if (uiKey === "company_name" && !schema.has_company && schema.has_company_name)
+        fields.push(`company_name = $${++i}`);
+      else if (uiKey === "owner_name" && !schema.has_owner && schema.has_owner_name)
+        fields.push(`owner_name = $${++i}`);
       else fields.push(`${col} = $${++i}`);
       vals.push(v);
     }
@@ -779,23 +1016,38 @@ router.patch("/:id", async (req, res) => {
 
     const whereVals = [id, tenantId];
     let whereSQL = `WHERE id = $${++i} AND tenant_id = $${++i}`;
-    if (companyId) { whereVals.push(companyId); whereSQL += ` AND company_id::text = $${++i}`; }
+    if (companyId) {
+      whereVals.push(companyId);
+      whereSQL += ` AND company_id::text = $${++i}`;
+    }
 
     const projection = buildProjection(schema);
-    const sql = `UPDATE public.leads SET ${fields.join(", ")}, updated_at = NOW() ${whereSQL} RETURNING ${projection};`;
+    const sql = `UPDATE public.leads SET ${fields.join(
+      ", "
+    )}, updated_at = NOW() ${whereSQL} RETURNING ${projection};`;
     const r = await client.query(sql, [...vals, ...whereVals]);
     if (!r.rowCount) return res.status(404).json({ error: "Lead not found" });
 
     const row = r.rows[0];
-    row.ai_next = Array.isArray(row.ai_next) ? row.ai_next : JSON.parse(row.ai_next || "[]");
+    row.ai_next = Array.isArray(row.ai_next)
+      ? row.ai_next
+      : JSON.parse(row.ai_next || "[]");
     res.json(row);
   } catch (err) {
     console.error("PATCH /leads/:id error:", err);
     switch (err?.code) {
-      case "23505": return res.status(409).json({ error: "Duplicate email or phone for this tenant" });
-      case "22P02": return res.status(400).json({ error: "Invalid UUID in request" });
-      case "42703": return res.status(500).json({ error: `Column not found in current schema (check logs for position)` });
-      default:      return res.status(500).json({ error: "Failed to update lead" });
+      case "23505":
+        return res
+          .status(409)
+          .json({ error: "Duplicate email or phone for this tenant" });
+      case "22P02":
+        return res.status(400).json({ error: "Invalid UUID in request" });
+      case "42703":
+        return res.status(500).json({
+          error: `Column not found in current schema (check logs for position)`,
+        });
+      default:
+        return res.status(500).json({ error: "Failed to update lead" });
     }
   } finally {
     client.release();
