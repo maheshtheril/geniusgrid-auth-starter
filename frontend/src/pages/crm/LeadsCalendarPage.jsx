@@ -9,10 +9,10 @@ import resourceTimelinePlugin from "@fullcalendar/resource-timeline";   // premi
 import { DateTime } from "luxon";
 
 // CSS (v6)
-import "@fullcalendar/core/index.css";
-import "@fullcalendar/daygrid/index.css";
-import "@fullcalendar/timegrid/index.css";
-import "@fullcalendar/resource-timeline/index.css";
+// import "@fullcalendar/core/index.css";
+// import "@fullcalendar/daygrid/index.css";
+// import "@fullcalendar/timegrid/index.css";
+// import "@fullcalendar/resource-timeline/index.css";
 
 /**
  * World-class Lead Scheduler for SaaSERP
