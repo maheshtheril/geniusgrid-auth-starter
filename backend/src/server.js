@@ -50,6 +50,7 @@ import customFields from "./routes/customFields.js";
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
 import adminUsersRoutes from "./routes/users.routes.js";
+import { hydratePermissions } from "./middleware/hydratePermissions.js";
 
 /* ---------- App init ---------- */
 const app = express();
@@ -231,7 +232,7 @@ app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
 app.use("/api/leads-module", requireAuth, leadsModule);
-
+app.use("/api/admin", requireAuth, hydratePermissions, adminRouter);
 app.use("/api/admin",requireAuth, adminUsersRoutes);
 
 // Tenant menus (protected)
