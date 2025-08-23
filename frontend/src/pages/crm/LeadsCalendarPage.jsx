@@ -47,18 +47,27 @@ export default function LeadsScheduler({ initialView = "timeGridWeek", initialTZ
   const fetchEvents = useCallback(async ({ start, end }) => {
     setLoading(true); setError("");
     try {
-      const params = { start: DateTime.fromJSDate(start).toISO(), end: DateTime.fromJSDate(end).toISO() };
+     const params = {
+   // send strict UTC ISO without milliseconds (safer for many backends)
+   start: DateTime.fromJSDate(start).toUTC().toISO({ suppressMilliseconds: true }),
+   end:   DateTime.fromJSDate(end).toUTC().toISO({ suppressMilliseconds: true }),
+ };
       if (query) params.q = query; if (status) params.status = status; if (priority) params.priority = priority; if (ownerId) params.ownerId = ownerId;
 
       let rows = [];
+       // lightweight HEAD/OPTIONS to avoid console error spam
+      let useCalendar = true;
+      try { await http.options?.("/api/leads/calendar"); } catch { useCalendar = false; }
       try {
-        const r = await http.get("/api/leads/calendar", { params });
-        rows = r.data;
+        const r = useCalendar
+          ? await http.get("/api/leads/calendar", { params })
+          : await http.get("/api/leads", { params });
+        rows = r.data?.items || r.data || [];
       } catch {
         const r = await http.get("/api/leads", { params });
         rows = r.data?.items || r.data || [];
-        rows = rows.filter((x) => !!x.followup_at);
       }
+      rows = rows.filter((x) => !!x.followup_at);
 
       // owners (for filter)
       const oMap = new Map();
