@@ -151,23 +151,23 @@ router.get("/users", requirePermission("user_manage"), async (req, res) => {
                  FROM public.user_roles ur
                  JOIN public.roles r ON r.id = ur.role_id
                 WHERE ur.tenant_id = b.tenant_id AND ur.user_id = b.id AND r.is_active
-             ), '{}') AS roles,
+             ), '{}'::text[]) AS roles,
              COALESCE((
                SELECT array_agg(ur.role_id)
                  FROM public.user_roles ur
                 WHERE ur.tenant_id = b.tenant_id AND ur.user_id = b.id
-             ), '{}') AS role_ids,
+             ), '{}'::uuid[]) AS role_ids,
              COALESCE((
                SELECT array_agg(c.name ORDER BY c.name)
                  FROM public.res_user_companies uc
                  JOIN public.res_company c ON c.id = uc.company_id
                 WHERE uc.tenant_id = b.tenant_id AND uc.user_id = b.id
-             ), '{}') AS companies,
+             ), '{}'::text[]) AS companies,
              COALESCE((
                SELECT array_agg(uc.company_id)
                  FROM public.res_user_companies uc
                 WHERE uc.tenant_id = b.tenant_id AND uc.user_id = b.id
-             ), '{}') AS company_ids
+             ), '{}'::uuid[]) AS company_ids
       FROM base b
       ORDER BY ${col} ${d}
       LIMIT $${idx} OFFSET $${idx + 1}
