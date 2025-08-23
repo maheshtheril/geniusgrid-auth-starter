@@ -59,7 +59,7 @@ const NumberingSchemes    = React.lazy(() => import("@/pages/NumberingSchemes.js
 const CompliancePolicies  = React.lazy(() => import("@/pages/CompliancePolicies.jsx"));
 
 /* -------- Admin: RBAC & Security -------- */
-const AdminUsers         = React.lazy(() => import("@/pages/AdminUsers.jsx"));
+const AdminUsers         = React.lazy(() => import("@/pages/admin/_shared/UsersPage.jsx"));
 const AdminRoles         = React.lazy(() => import("@/pages/AdminRoles.jsx"));
 const PermissionsMatrix  = React.lazy(() => import("@/pages/PermissionsMatrix.jsx"));
 const TeamsTerritories   = React.lazy(() => import("@/pages/TeamsTerritories.jsx"));
