@@ -53,6 +53,8 @@ import devDiag from "./routes/dev.diag.js";
 /* ✅ Admin Users (RBAC) */
 import adminUsersRoutes from "./routes/users.routes.js";
 import adminUsersMin from "./routes/adminUsers.min.js";
+import adminUsersDiag from "./routes/adminUsers.diag.js";
+
 /* ---------- App init ---------- */
 const app = express();
 const PgStore = pgSimple(session);
@@ -233,7 +235,7 @@ app.use("/api/calendar", requireAuth, calendarLeadsRouter);
 
 // ✅ RBAC Admin (single, correct mount)
 app.use("/api/admin", requireAuth, hydratePermissions, adminUsersRoutes);
-
+app.use(adminUsersDiag);
 app.use(adminUsersMin);
 // Tenant menus (protected)
 app.use("/api", requireAuth, tenantMenusRoutes);
