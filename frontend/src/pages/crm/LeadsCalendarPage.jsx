@@ -9,26 +9,7 @@ import interactionPlugin from "@fullcalendar/interaction";
 import { DateTime } from "luxon";
 import { http } from "@/lib/http";
 
-/* ================================================================
-   LeadsScheduler.jsx — WORKING PAGE (Telerik‑style look & feel)
-   ------------------------------------------------------------
-   ✅ No premium deps needed (only dayGrid, timeGrid, interaction)
-   ✅ Custom header/toolbar (Kendo‑like)
-   ✅ Drag & drop + resize + create on select
-   ✅ Filters (status/priority/owner/search) + timezone switcher
-   ✅ Fast, debounced range fetch from /api/leads/calendar (fallback /api/leads)
-   ✅ Clean modern styling (see /src/styles/fc-tweaks.css content below)
 
-   Drop this file at: src/pages/crm/LeadsScheduler.jsx
-   ALSO create:      src/styles/fc-tweaks.css  (content at bottom of this file)
-   And import the CSS once in your App root:
-     import "@fullcalendar/core/index.css";
-     import "@fullcalendar/daygrid/index.css";
-     import "@fullcalendar/timegrid/index.css";
-     import "@/styles/fc-tweaks.css";
-================================================================ */
-
-/* ----------------------------- Config ----------------------------- */
 const DEFAULT_DURATION_MIN = 45;
 const TZ_CHOICES = ["Asia/Kolkata", "UTC", "Asia/Dubai", "Europe/London", "America/New_York"];
 const STATUS_COLORS = {
