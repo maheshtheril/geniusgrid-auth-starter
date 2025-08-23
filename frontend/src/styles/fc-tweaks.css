@@ -1,36 +1,35 @@
-/* src/styles/fc-tweaks.css */
+/* Toolbar + inputs */
+.ggk-wrap{padding:12px}
+.ggk-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px;background:linear-gradient(180deg,#141a22,#0f1319);border:1px solid #1f2937;border-radius:14px;padding:10px 12px;box-shadow:0 1px 0 #111,inset 0 1px 0 rgba(255,255,255,.03)}
+.ggk-left,.ggk-right{display:flex;align-items:center;gap:8px}
+.ggk-left{flex:1 1 auto}
+.ggk-right{flex:1 1 auto;justify-content:flex-end}
+.ggk-btn{border:1px solid #2b3544;background:#171e27;color:#e5e7eb;border-radius:10px;padding:6px 10px;font-size:13px}
+.ggk-btn:hover{background:#1d2632}
+.ggk-primary{background:#2563eb;border-color:#1d4ed8}
+.ggk-input,.ggk-select{border:1px solid #2b3544;background:#0f141a;color:#e5e7eb;border-radius:10px;padding:6px 10px;font-size:13px}
+.ggk-input{width:240px}
+.ggk-err{color:#f87171;font-size:12px;cursor:pointer}
+.ggk-hint{color:#9ca3af;font-size:12px}
 
-/* Make header days, date numbers, and time labels high-contrast */
-.fc .fc-col-header-cell-cushion,
-.fc .fc-daygrid-day-number,
-.fc .fc-timegrid-slot-label,
-.fc .fc-toolbar-title,
-.fc .fc-list-day-text,
-.fc .fc-list-table td,
-.fc .fc-list-table th {
-  color: #111827 !important; /* slate-900 for light mode */
-}
+/* FullCalendar skin */
+.fc{--fc-border-color:#263243;--fc-now-indicator-color:#ef4444}
+.fc .fc-toolbar-title{font-weight:600}
+.fc .fc-daygrid-day-top{padding:4px}
+.fc .fc-daygrid-day-number{color:#9fb3c8}
+.fc .fc-col-header-cell-cushion{padding:6px 0;font-size:12px;color:#93a2b2}
+.fc .fc-timegrid-slot{height:34px}
+.fc .fc-event{border-radius:10px;box-shadow:inset 0 -1px 0 rgba(0,0,0,.2)}
+.fc .fc-event:hover{filter:brightness(1.05)}
+.fc .fc-scrollgrid{border-radius:14px;overflow:hidden;border:1px solid #1f2937;background:#0b0f14}
+.fc .fc-timegrid-axis-cushion, .fc .fc-timegrid-slot-label-cushion{color:#90a4b8}
 
-/* Dark theme override (Tailwind's .dark on <html> or body) */
-.dark .fc .fc-col-header-cell-cushion,
-.dark .fc .fc-daygrid-day-number,
-.dark .fc .fc-timegrid-slot-label,
-.dark .fc .fc-toolbar-title,
-.dark .fc .fc-list-day-text,
-.dark .fc .fc-list-table td,
-.dark .fc .fc-list-table th {
-  color: #e5e7eb !important; /* slate-200 for dark mode */
-}
-
-/* Subtle grid + borders to improve legibility */
-.fc-theme-standard .fc-scrollgrid,
-.fc-theme-standard td,
-.fc-theme-standard th {
-  border-color: rgba(100, 116, 139, 0.25); /* slate-500 @ 25% */
-}
-
-/* Make day numbers clickable-looking (FC uses <a>) with better contrast */
-.fc .fc-daygrid-day-top a {
-  color: inherit !important;
-  text-decoration: none;
-}
+/* Event chips */
+.ggk-event{padding:4px 6px}
+.ggk-event-top{display:flex;align-items:center;gap:6px}
+.ggk-badge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:18px;border-radius:6px;padding:0 6px;font-weight:700;font-size:10px;background:rgba(0,0,0,.25);color:#fff}
+.ggk-badge-p1{background:#7c3aed}
+.ggk-badge-p2{background:#0ea5e9}
+.ggk-badge-p3{background:#64748b}
+.ggk-title{font-weight:600;font-size:12px;color:#eef2f7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ggk-sub{font-size:11px;color:#a3b1c2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
