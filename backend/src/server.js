@@ -49,7 +49,7 @@ import customFields from "./routes/customFields.js";
 
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
-import adminUsersRoutes from "./api/admin/users.routes.js";
+import adminUsersRoutes from "./routes/users.routes.js";
 
 /* ---------- App init ---------- */
 const app = express();
