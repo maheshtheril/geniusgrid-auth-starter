@@ -234,7 +234,7 @@ app.use("/api/leads-module", requireAuth, leadsModule);
 app.use("/api/calendar", requireAuth, calendarLeadsRouter);
 
 // ✅ RBAC Admin (single, correct mount)
-app.use("/api/admin", requireAuth, hydratePermissions, adminUsersRoutes);
+app.use("/api/admin", requireAuth,  adminUsersRoutes);
 app.use(adminUsersDiag);
 app.use(adminUsersMin);
 // Tenant menus (protected)
