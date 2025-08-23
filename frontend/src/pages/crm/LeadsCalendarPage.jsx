@@ -7,7 +7,8 @@ import interactionPlugin from "@fullcalendar/interaction";
 import resourceTimeGridPlugin from "@fullcalendar/resource-timegrid"; // premium
 import resourceTimelinePlugin from "@fullcalendar/resource-timeline"; // premium
 import { DateTime } from "luxon";
-import { http } from "@/lib/http"; // axios instance with baseURL + cookies
+
+import http from "@/lib/http"; // your axios instance
 import "@/styles/fc-tweaks.css";
 
 /* ---------- axios tiny helpers ---------- */
@@ -17,7 +18,6 @@ const httpPatch = async (url, body) => (await http.patch(url, body)).data;
 /* ---------- constants ---------- */
 const DEFAULT_DURATION_MIN = 45;
 const TZ_CHOICES = (current) => {
-  // put current tz first, then curated list (include both Kolkata/Calcutta for compatibility)
   const base = ["UTC", "Asia/Kolkata", "Asia/Calcutta", "America/New_York", "Europe/London", "Asia/Singapore"];
   const uniq = [current, ...base].filter(Boolean).filter((v, i, a) => a.indexOf(v) === i);
   return uniq;
@@ -56,9 +56,7 @@ function EventContent(arg) {
       <div className="flex items-center gap-2">
         <StageBadge stage={stageName} />
         {recurring && <span className="text-[10px] opacity-60">↻</span>}
-        {company && (
-          <span className="text-[10px] opacity-70 truncate">{company}</span>
-        )}
+        {company && <span className="text-[10px] opacity-70 truncate">{company}</span>}
       </div>
       <div className="text-[12px] font-semibold truncate">{title}</div>
       <div className="mt-1 flex items-center gap-2">
@@ -101,8 +99,7 @@ export default function LeadsCalendarPage({
     if (!canViewAll) return;
     try {
       const data = await httpGet("/api/admin/users", { active: 1 });
-      const list = Array.isArray(data) ? data : [];
-      setUsers(list);
+      setUsers(Array.isArray(data) ? data : []);
     } catch (e) {
       console.error("User list failed", e);
       setUsers([]);
@@ -161,7 +158,6 @@ export default function LeadsCalendarPage({
               : undefined);
 
           return {
-            // Use lead ID as the stable id (server doesn't emit event row id for lead_events)
             id: String(r.lead_id || r.id),
             title: r.title || r.name || "Follow-up",
             start: startISO,
@@ -188,11 +184,10 @@ export default function LeadsCalendarPage({
     [mode, search]
   );
 
-  /* ----- event sources ----- */
+  /* ----- event sources (stable + no setState inside) ----- */
   const eventsSrc = useCallback(
-    async (info, success, failure) => {
+    async (info, success /*, failure */) => {
       try {
-        setLoading(true);
         const rows = await httpGet("/api/calendar/leads", {
           from: DateTime.fromJSDate(info.start).toUTC().toISO(),
           to: DateTime.fromJSDate(info.end).toUTC().toISO(),
@@ -207,17 +202,15 @@ export default function LeadsCalendarPage({
         success(mapRowsToEvents(rows));
       } catch (e) {
         console.error("eventsSrc failed", e);
-        failure?.(e);
-      } finally {
-        setLoading(false);
+        // Avoid retry storm: return empty instead of calling failure()
+        success([]);
       }
     },
     [tz, mode, canViewAll, ownerFilter, currentUserId, myOnly, mapRowsToEvents]
   );
 
-  // Free/busy overlay for owners/timeline
   const busySrc = useCallback(
-    async (info, success, failure) => {
+    async (info, success /*, failure */) => {
       if (!(mode === "owners" || mode === "timeline")) {
         success([]);
         return;
@@ -239,17 +232,25 @@ export default function LeadsCalendarPage({
             start: b.start,
             end: b.end,
             display: "background",
-            // soft red bg for busy
             color: "rgba(239,68,68,0.08)",
             resourceId: String(b.owner_id),
           }))
         );
       } catch (e) {
         console.error("busySrc failed", e);
-        failure?.(e);
+        success([]);
       }
     },
     [mode, resources]
+  );
+
+  // IMPORTANT: keep eventSources array identity stable
+  const fcEventSources = useMemo(
+    () => [
+      { id: "events", events: eventsSrc },
+      { id: "busy", events: busySrc },
+    ],
+    [eventsSrc, busySrc]
   );
 
   /* ----- interactions ----- */
@@ -260,19 +261,24 @@ export default function LeadsCalendarPage({
         const ep = info.event.extendedProps;
         const newRes = info.newResource?.id;
 
-        // Reassign resource by mode
         if (mode === "owners" || mode === "timeline") {
           if (newRes && newRes !== String(ep.ownerUserId)) {
-            await httpPatch(`/api/leads/${info.event.id}/owner`, { owner_id: newRes });
+            await httpPatch(`/api/leads/${info.event.id}/owner`, {
+              owner_id: newRes,
+            });
           }
         } else if (mode === "stages") {
           if (newRes && newRes !== String(ep.stageName)) {
-            await httpPatch(`/api/leads/${info.event.id}/stage`, { stage: newRes });
+            await httpPatch(`/api/leads/${info.event.id}/stage`, {
+              stage: newRes,
+            });
           }
         }
 
-        // Always reschedule the followup start
-        await httpPatch(`/api/leads/${info.event.id}/schedule`, { followup_at: newStart });
+        // Persist new start
+        await httpPatch(`/api/leads/${info.event.id}/schedule`, {
+          followup_at: newStart,
+        });
       } catch (e) {
         console.error("eventDrop failed", e);
         info.revert();
@@ -283,7 +289,6 @@ export default function LeadsCalendarPage({
 
   const onEventResize = useCallback(async (info) => {
     try {
-      // Backend uses fixed duration semantics, we only persist new start
       await httpPatch(`/api/leads/${info.event.id}/schedule`, {
         followup_at: info.event.start?.toISOString(),
       });
@@ -457,7 +462,7 @@ export default function LeadsCalendarPage({
           stickyHeaderDates
           eventMinHeight={26}
           editable
-          eventDurationEditable // we still save only start; backend keeps canonical duration
+          eventDurationEditable
           eventResizableFromStart
           selectable
           selectMirror
@@ -468,10 +473,9 @@ export default function LeadsCalendarPage({
           eventDrop={onEventDrop}
           eventResize={onEventResize}
           eventClick={onEventClick}
-          eventSources={[
-            { id: "events", events: eventsSrc },
-            { id: "busy", events: busySrc },
-          ]}
+          // key fix: stable array + let FC toggle spinner
+          eventSources={fcEventSources}
+          loading={(isLoading) => setLoading(isLoading)}
           resources={isPremiumView ? resources : undefined}
           resourceAreaHeaderContent={
             mode === "owners" || mode === "timeline"
@@ -490,7 +494,6 @@ export default function LeadsCalendarPage({
             </div>
           )}
           resourceOrder="title"
-          // soft guard: don't allow dragging earlier than yesterday
           eventAllow={(dropInfo) => {
             const start = dropInfo.start;
             const cutoff = DateTime.now().minus({ days: 1 }).startOf("day").toJSDate();
