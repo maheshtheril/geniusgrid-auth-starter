@@ -49,6 +49,7 @@ import customFields from "./routes/customFields.js";
 
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
+import adminUsersRoutes from "./api/admin/users.routes.js";
 
 /* ---------- App init ---------- */
 const app = express();
@@ -230,6 +231,8 @@ app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
 app.use("/api/leads-module", requireAuth, leadsModule);
+
+app.use("/api/admin",requireAuth, adminUsersRoutes);
 
 // Tenant menus (protected)
 app.use("/api", requireAuth, tenantMenusRoutes);
