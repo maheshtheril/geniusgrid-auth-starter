@@ -22,7 +22,7 @@
 .fc .fc-event{border-radius:10px;box-shadow:inset 0 -1px 0 rgba(0,0,0,.2)}
 .fc .fc-event:hover{filter:brightness(1.05)}
 .fc .fc-scrollgrid{border-radius:14px;overflow:hidden;border:1px solid #1f2937;background:#0b0f14}
-.fc .fc-timegrid-axis-cushion, .fc .fc-timegrid-slot-label-cushion{color:#90a4b8}
+.fc .fc-timegrid-axis-cushion,.fc .fc-timegrid-slot-label-cushion{color:#90a4b8}
 
 /* Event chips */
 .ggk-event{padding:4px 6px}
