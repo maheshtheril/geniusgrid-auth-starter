@@ -15,6 +15,7 @@ import rateLimit from "express-rate-limit";
 import { pool } from "./db/pool.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import { attachCtx } from "./middleware/ctx.middleware.js";
+import { hydratePermissions } from "./middleware/hydratePermissions.js";
 
 /* ---------- Routes ---------- */
 import uiRoutes from "./routes/ui.routes.js";
@@ -24,7 +25,6 @@ import csrfRoutes from "./routes/csrf.routes.js";
 import bootstrapRoutes from "./routes/bootstrap.routes.js";
 import auth from "./routes/auth.js";
 import authMe from "./routes/auth.me.js";
-import adminUsers from "./routes/adminUsers.js";
 import dashboardRoutes from "./routes/dashboard.routes.js";
 import leadsRoutes from "./routes/leads.routes.js";
 import leadsModule from "./routes/leadsModule.routes.js";
@@ -49,8 +49,9 @@ import customFields from "./routes/customFields.js";
 
 /* 🔧 Dev diagnostics (header-gated) */
 import devDiag from "./routes/dev.diag.js";
+
+/* ✅ Admin Users (RBAC) */
 import adminUsersRoutes from "./routes/users.routes.js";
-import { hydratePermissions } from "./middleware/hydratePermissions.js";
 
 /* ---------- App init ---------- */
 const app = express();
@@ -139,10 +140,6 @@ app.use((req, res, next) => {
   next();
 });
 
-/* ---------- Mount calendar routes early (public) ---------- */
-// Keep these public so the FE can call with headers or query params.
-
-
 /* ---------- Early utility routes ---------- */
 app.use("/api", leadsCheckMobile);
 
@@ -156,7 +153,6 @@ app.head("/", (_req, res) => res.sendStatus(200));
 app.get("/", (_req, res) => res.status(200).send("GeniusGrid API OK"));
 
 /* ---------- Session ---------- */
-// For cross-site requests (FE on a different domain), cookies must be SameSite=None; Secure
 app.use(
   session({
     store: new PgStore({ pool, createTableIfMissing: true }),
@@ -217,10 +213,9 @@ app.use("/auth", authMe);
 app.use("/api/ai/prospect", requireAuth, aiProspectRoutes);
 
 /* ---------- PROTECTED routes ---------- */
-app.use("/api/admin", requireAuth, adminUsers);
 app.use("/api/dashboard", requireAuth, dashboardRoutes);
 
-// This is the CRM custom-fields admin surface; keep protected
+// CRM custom-fields admin surface; keep protected
 app.use("/api/crm", requireAuth, customFieldsRoutes);
 
 // Leads-related (protected)
@@ -232,14 +227,15 @@ app.use("/api/leads", requireAuth, leadsAssignRoutes);
 app.use("/api/leads", requireAuth, leadsMergeRoutes);
 app.use("/api/leads/imports", requireAuth, leadsImportsRoutes);
 app.use("/api/leads-module", requireAuth, leadsModule);
-app.use("/api/admin", requireAuth, hydratePermissions, adminRouter);
-app.use("/api/admin",requireAuth, adminUsersRoutes);
+
+// Calendar (protected)
+app.use("/api/calendar", requireAuth, calendarLeadsRouter);
+
+// ✅ RBAC Admin (single, correct mount)
+app.use("/api/admin", requireAuth, hydratePermissions, adminUsersRoutes);
 
 // Tenant menus (protected)
 app.use("/api", requireAuth, tenantMenusRoutes);
-app.use("/api/calendar",requireAuth, calendarLeadsRouter);
-// ❌ removed old protected mount of /api/custom-fields
-// app.use("/api/custom-fields", requireAuth, customFields);
 
 /* ---------- 404 & Errors ---------- */
 app.use((_req, res) => res.status(404).json({ message: "Not Found" }));
